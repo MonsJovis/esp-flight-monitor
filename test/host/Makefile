@@ -14,7 +14,8 @@ TESTS   := $(patsubst %.c,%,$(wildcard test_*.c))
 BINDIR  := build
 
 CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
-           -I$(ROOT)/main -I$(ROOT)/main/data -I$(ROOT)/main/net -I$(CJSON_DIR) -I. \
+           -I$(ROOT)/main -I$(ROOT)/main/data -I$(ROOT)/main/net -I$(ROOT)/main/ui \
+           -I$(CJSON_DIR) -I. \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 

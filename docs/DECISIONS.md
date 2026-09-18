@@ -194,3 +194,25 @@ is correct only if the backlight circuit is active-low. Every vendor demo uses t
 path, so it almost certainly is — but framebuffer screenshots prove what LVGL *rendered*,
 not what the panel *emitted*, so this is the one claim in this build resting on inference
 rather than measurement. Needs a human to confirm the panel is lit.
+
+## D17 — Place names are "what he would say out loud", and always exactly one name
+
+**Decision:** `Laibach → Ljubljana`, `Pressburg → Bratislava`,
+`Klausenburg (Cluj-Napoca) → Klausenburg`. Enforced table-wide by a test.
+
+**Why:** two separate faults, found by reading the generated table rather than by a
+failing test.
+
+The parenthetical dual names are unrenderable by construction. The hero fits roughly 9–10
+characters at 100 px and DESIGN.md §3 forbids truncating a city name ever — so
+`"Klausenburg (Cluj-Napoca)"`, at 25 characters, could only ever be shown small or wrong.
+The hero shows one name.
+
+Laibach and Pressburg are real German exonyms, but they are *historical* rather than
+current Austrian usage. The test for a place name on this device is not "does German have
+this word" — it is "would he recognise it in under two seconds, without translating it
+back". Mailand, Prag, Warschau and Kopenhagen pass that; Laibach does not. Klausenburg
+stays because German-language media still uses it.
+
+`test_tables.c` now asserts across the whole table that no name contains a parenthesis and
+none exceeds 24 bytes, so a future addition cannot reintroduce either fault.

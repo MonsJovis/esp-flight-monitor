@@ -196,12 +196,48 @@ int main(void)
         CHECK_STR(airport_de("LIMC"), "Mailand");
         CHECK_STR(airport_de("LKPR"), "Prag");
         CHECK_STR(airport_de("EPWA"), "Warschau");
-        CHECK_STR(airport_de("LJLJ"), "Laibach");
+        /* The rule is "the name he would say out loud", not "the name that
+         * exists in German". Laibach, Pressburg and a parenthetical
+         * "Klausenburg (Cluj-Napoca)" all failed that: the first two are
+         * historical rather than current Austrian usage, and a dual name is
+         * 25 characters, which cannot be a 100 px hero and must not be
+         * truncated (DESIGN.md §3). See docs/DECISIONS.md D17. */
+        CHECK_STR(airport_de("LJLJ"), "Ljubljana");
+        CHECK_STR(airport_de("LZIB"), "Bratislava");
+        CHECK_STR(airport_de("LRCL"), "Klausenburg");
+        /* No name may contain a parenthetical alternative -- the hero shows
+         * exactly one name. */
+        CHECK(strchr(airport_de("LRCL"), '(') == NULL);
         /* No invented German exonym for these -- Austrian usage keeps the
          * local spelling (AGENTS.md §1, the design note in the task brief). */
         CHECK_STR(airport_de("EHAM"), "Amsterdam");
         CHECK_STR(airport_de("LEMD"), "Madrid");
         CHECK_STR(airport_de("LEBL"), "Barcelona");
+    }
+
+    GROUP("every airport name is usable as a hero");
+    {
+        /* The hero renders ONE city name at up to 100 px and must never be
+         * truncated (DESIGN.md §3), so a name carrying a parenthetical
+         * alternative is unrenderable by construction. Checked across the whole
+         * table rather than per-entry, so a future addition cannot reintroduce it. */
+        size_t n = 0;
+        const str_lookup_t *e = tbl_airport_entries(&n);
+        CHECK(n > 0);
+        for (size_t i = 0; i < n; i++) {
+            if (strchr(e[i].value, '(') != NULL) {
+                printf("    FAIL  %s has a parenthetical name: \"%s\"\n",
+                       e[i].key, e[i].value);
+                CHECK(0);
+            }
+            /* 24 bytes is comfortably past the longest real entry
+             * ("Palma de Mallorca", 17) and well inside VIEW_HERO_LEN. */
+            if (strlen(e[i].value) > 24) {
+                printf("    FAIL  %s name too long for a hero: \"%s\"\n",
+                       e[i].key, e[i].value);
+                CHECK(0);
+            }
+        }
     }
 
     GROUP("unknown keys return NULL, never a garbage pointer");
