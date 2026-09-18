@@ -31,6 +31,8 @@ or it has failed. Two usage modes drive every design decision:
   - **The LVGL font must carry ä ö ü ß.** LVGL's built-in Montserrat faces are ASCII-only.
     Build a font including the Latin-1 supplement range, or umlauts render as blanks —
     and "Zurich"/"Munchen" on a German panel looks broken.
+  - The visual system — colours, type scale, size floors — is in
+    **[docs/DESIGN.md](./docs/DESIGN.md)**. Read it before building any screen.
   - **The route API returns *English* city names** ("Vienna", "Munich", "Prague"). Ship a
     small airport → German name table for the common European destinations (Wien, München,
     Zürich, Prag, Mailand, Athen, Kopenhagen, Warschau …) and fall back to the API's own
@@ -217,6 +219,16 @@ not read a manual. Design for that:
 - Anti-tearing is **off** by default (`BSP_LCD_RGB_BUFFER_NUMS=1`). 8 MB PSRAM has room
   for 2–3 framebuffers at 450 KiB each, but each one costs bandwidth. Measure.
 
+**Fonts and text**
+- **`lv_font_conv` does not apply OpenType features.** A font whose tabular figures exist
+  only behind the `tnum` feature will render digits that visibly jitter on every refresh.
+  Use a font that is tabular *by default* — IBM Plex Mono is; Barlow Condensed, Saira
+  Condensed and Oswald are not.
+- **Umlauts are not in the default ASCII range.** Subset Latin-1 supplement explicitly or
+  ä/ö/ü/ß render as blanks. Exact ranges in docs/DESIGN.md §3.
+- **Minimum readable cap height on this panel is ~30 px** (ISO 9241-303 at 70 cm). Chrome
+  may be smaller; anything he needs at a glance may not.
+
 **Data parsing**
 - **`flight` is space-padded to 8 characters** (`"AUA453  "`). Trim before sending to
   `routeset` or lookups will silently miss.
@@ -232,6 +244,8 @@ not read a manual. Design for that:
 ## 8. Decisions
 
 **Settled (2026-09-18):**
+- **Visual direction: B · Cockpit** — avionics colour semantics, IBM Plex Mono/Sans
+  Condensed, dark ground. Full system and screens in [docs/DESIGN.md](./docs/DESIGN.md).
 - **UI language: German.** See §1 for the font and place-name consequences.
 - **Form factor: desk stand**, powered over USB-C. The rear `5V_IN` header is not needed.
   It also means the device travels between the two locations — see §6.
