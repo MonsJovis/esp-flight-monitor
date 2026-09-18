@@ -283,8 +283,19 @@ void screen_overhead_update(const view_model_t *vm)
          * this case, and Plex Sans Condensed's figures are not guaranteed
          * tabular the way Plex Mono's are (DESIGN.md §3) -- acceptable
          * here because the clock repaints once a minute, not every frame. */
-        hero_text = vm->clock;
-        hero_font = &plex_sans_cond_100;
+        /* Normally the clock is the hero here. Before SNTP has answered there
+         * is no clock worth showing, so the model puts a sentence in the hero
+         * instead and we render that — at a size that fits, since it is words
+         * rather than four digits. */
+        if (vm->clock_valid) {
+            hero_text = vm->clock;
+            hero_font = &plex_sans_cond_100;
+        } else {
+            int32_t hero_px;
+            hero_text = vm->hero;
+            hero_font = pick_hero_font(hero_text, CONTENT_W, &hero_px);
+            s_last_hero_px = hero_px;
+        }
     } else {
         int32_t hero_px;
         hero_text = vm->hero;
@@ -344,7 +355,10 @@ void screen_overhead_update(const view_model_t *vm)
      * thing to show as the headline of "last aircraft seen". Same fields,
      * same objects, different meaning by position; the model is one struct
      * for all three states (view_model.h), so this is the natural reuse. */
-    const char *airline_slot_text = empty_sky ? vm->hero : vm->airline;
+    /* When the clock is not yet set, vm->hero already holds the "Kein Netz"
+     * sentence and is rendered as the hero, so this slot must not repeat it. */
+    const char *airline_slot_text =
+        empty_sky ? (vm->clock_valid ? vm->hero : "") : vm->airline;
     bool show_airline_slot = airline_slot_text[0] != '\0';
     set_hidden(s_lbl_airline, !show_airline_slot);
     if (show_airline_slot) {

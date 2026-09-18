@@ -329,3 +329,22 @@ one poll — so for this device rebooting always beats hanging.
 `esp_cpu_wait_for_intr`, the idle task. Combined with `rst:0x15 (USB_UART_CHIP_RESET)` that
 ruled out a firmware panic and pointed at an external reset plus a wedged peripheral, which
 is what made the blocking-write explanation the right one rather than a stack overflow hunt.
+
+## D23 — The first screen must not show 1970
+
+**Decision:** `view_model_t` carries `clock_valid`. Until SNTP answers, §5.3 shows
+**"Kein Netz" / "Ich suche ein bekanntes WLAN."** in the hero instead of a time.
+
+**Why:** caught by screenshotting the device in its real state rather than a replayed
+fixture. Before SNTP the clock is the Unix epoch, so the panel read
+**"01:05 · Donnerstag, 1. Jänner 1970"** at 100 px. The German was flawless and the layout
+was correct, which is exactly what made it bad: it looks like a working device confidently
+telling you the wrong thing.
+
+That is also the **first screen this device ever draws** — on the bench, and again when he
+plugs it in in Thailand before any network exists. AGENTS.md §1 says a blank panel reads as
+broken to this user; a 1970 date reads worse, because it is not obviously wrong, it is just
+wrong.
+
+`clock_valid` is an explicit field rather than the screen sniffing for `"--:--"`, so the
+rule lives in the model where both sides can see it.

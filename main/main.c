@@ -13,6 +13,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -133,10 +134,19 @@ static void provision_wifi(void)
 static void network_status(void)
 {
     char ssids[8][WIFI_SSID_LEN];
-    ESP_LOGW(TAG, "connected=%d  source=%s  stale=%d  failures=%d  last_ok=%lld ms ago",
+    /* The "never succeeded" sentinel is INT64_MAX; printing it raw gives
+     * "last_ok=9223372036854775807 ms ago", which reads as a bug. */
+    int64_t age = flight_source_last_success_age_ms();
+    char age_str[32];
+    if (age == INT64_MAX) {
+        snprintf(age_str, sizeof age_str, "never");
+    } else {
+        snprintf(age_str, sizeof age_str, "%lld ms ago", (long long)age);
+    }
+    ESP_LOGW(TAG, "connected=%d  source=%s  stale=%d  failures=%d  last_ok=%s",
              wifi_is_connected(), flight_source_current_source_name(),
              flight_source_is_stale(), flight_source_consecutive_failures(),
-             (long long)flight_source_last_success_age_ms());
+             age_str);
 
     if (wifi_creds_list(ssids, 8) == ESP_OK) {
         for (int i = 0; i < 8; i++) {

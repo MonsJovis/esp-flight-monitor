@@ -56,7 +56,12 @@ typedef struct {
     char reason[VIEW_REASON_LEN];
 
     /* Chrome */
-    char clock[8];                /* "09:47"                                      */
+    char clock[8];                /* "09:47", or "--:--" when clock_valid is false */
+    /* False until SNTP has answered. The device shows 1970 otherwise, and
+     * "Donnerstag, 1. Jänner 1970" in 100 px type is what a broken device looks
+     * like — on the very first screen he ever sees. When false, §5.3 puts an
+     * honest sentence in the hero instead of a time it cannot justify. */
+    bool clock_valid;
     char date_line[VIEW_LINE_LEN];/* "Freitag, 18. September 2026"                */
     int  traffic_count;           /* aircraft currently in range                  */
     bool online;                  /* false => amber network caution               */

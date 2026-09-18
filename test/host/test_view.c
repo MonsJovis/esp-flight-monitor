@@ -756,5 +756,33 @@ int main(void)
     /* Must run last: it scans every model remember_for_scan() collected above. */
     test_no_english_leaks_anywhere();
 
+
+    GROUP("view_build_empty: before SNTP, say so rather than show 1970");
+    {
+        /* The first screen the device ever draws, and the one he sees on
+         * arrival in Thailand before any network exists. */
+        struct tm epoch = {0};
+        epoch.tm_year = 70;   /* 1970 */
+        epoch.tm_mon = 0; epoch.tm_mday = 1; epoch.tm_wday = 4;
+        epoch.tm_hour = 1; epoch.tm_min = 5;
+
+        view_model_t vm;
+        view_build_empty(&epoch, NULL, false, &vm);
+        CHECK_INT(vm.state, VIEW_EMPTY_SKY);
+        CHECK_STR(vm.hero, "Kein Netz");
+        CHECK_STR(vm.clock, "--:--");
+        CHECK(strstr(vm.date_line, "1970") == NULL);
+        CHECK(strstr(vm.date_line, "Jänner") == NULL);
+        CHECK(vm.date_line[0] != '\0');          /* never blank */
+        CHECK(vm.online == false);
+
+        /* A real clock must still behave exactly as before. */
+        struct tm good = make_now();
+        view_build_empty(&good, NULL, true, &vm);
+        CHECK_STR(vm.clock, "09:47");
+        CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
+        CHECK(strcmp(vm.hero, "Kein Netz") != 0);
+    }
+
     return test_summary();
 }

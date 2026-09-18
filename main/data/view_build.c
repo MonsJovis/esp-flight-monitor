@@ -37,14 +37,23 @@ static void copy_trunc(char *dst, size_t dst_sz, const char *src)
 
 /* ---- chrome: clock, date, traffic count, online flag -------------------- */
 
+/* Before SNTP has ever answered, the clock reads 1970 — and "Donnerstag,
+ * 1. Jänner 1970" in 100 px type is precisely what a device looks like when it
+ * is broken. It is also the FIRST screen he sees, on a bench or on arrival in
+ * Thailand with no network yet. tm_year is years since 1900, so anything below
+ * 2020 means the clock has never been set. */
+static bool clock_is_set(const struct tm *now)
+{
+    return now != NULL && now->tm_year >= 120;
+}
+
 static void fill_chrome(view_model_t *out, const struct tm *now, int traffic_count, bool online)
 {
-    if (now != NULL) {
+    out->clock_valid = clock_is_set(now);
+    if (out->clock_valid) {
         fmt_time_de(now, out->clock, sizeof out->clock);
         fmt_date_de(now, out->date_line, sizeof out->date_line);
     } else {
-        /* Defensive only — every real caller has a wall clock by the time
-         * this runs (SNTP lands in M2.5). Still must never be blank. */
         copy_trunc(out->clock, sizeof out->clock, "--:--");
         copy_trunc(out->date_line, sizeof out->date_line, "");
     }
@@ -266,6 +275,18 @@ void view_build_empty(const struct tm *now, const aircraft_t *last_seen, bool on
     memset(out, 0, sizeof(*out));
     fill_chrome(out, now, 0, online);
     out->state = VIEW_EMPTY_SKY;
+
+    /* No clock yet means the device has never reached the network. Say that,
+     * in a sentence, instead of showing a 1970 date it cannot justify. The
+     * hero carries it because on this screen the hero IS the clock slot, and
+     * an honest "Kein Netz" is worth more to him than a wrong time. */
+    if (!clock_is_set(now)) {
+        copy_trunc(out->hero, sizeof out->hero, "Kein Netz");
+        copy_trunc(out->date_line, sizeof out->date_line,
+                   "Ich suche ein bekanntes WLAN.");
+        out->has_origin = false;
+        return;
+    }
 
     if (last_seen == NULL) {
         return;
