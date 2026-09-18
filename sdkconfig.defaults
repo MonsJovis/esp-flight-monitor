@@ -44,3 +44,20 @@ CONFIG_LV_USE_PERF_MONITOR=y
 # port, so this removes the 115200 baud ceiling — which matters because the
 # framebuffer grab in main/debug/dbg_screen.c moves 450 KiB per screenshot.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_PERF_MONITOR_ALIGN_BOTTOM_RIGHT=y
+
+# Custom partition table — the font set does not fit the 1 MB default app slot.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Framebuffers: MEASURED on the unit, not guessed (PLAN.md M1, AGENTS.md §8 open #1).
+# Full-screen invalidate every frame, 100 px face on screen:
+#   1 fb, no anti-tear : 21.4 FPS,  6.62 MB PSRAM free
+#   2 fb, anti-tear    : 28.5 FPS,  5.88 MB PSRAM free
+#   3 fb, anti-tear    : 28.4 FPS,  5.42 MB PSRAM free
+# Two is strictly better than one — faster AND tear-free. Three buys nothing and
+# costs another 461 KB. Settled: two.
+CONFIG_BSP_LCD_RGB_BUFFER_NUMS=2
+CONFIG_BSP_DISPLAY_LVGL_AVOID_TEAR=y
+CONFIG_BSP_DISPLAY_LVGL_DIRECT_MODE=y

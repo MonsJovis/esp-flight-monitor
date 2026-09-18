@@ -177,6 +177,22 @@ mkdir -p "$OUT_DIR"
 
 GENERATED_FILES=""
 
+# Two things lv_font_conv 1.5.3 gets wrong for LVGL 9.6, both fatal-but-silent
+# (text simply renders blank, with no error anywhere):
+#
+#  1. It compresses glyph bitmaps by default (.bitmap_format = 1). LVGL 9 gates
+#     that decoder behind LV_USE_FONT_COMPRESSED, which is OFF in this build, so
+#     every glyph decodes to nothing. --no-compress fixes it, and is the better
+#     trade here anyway: uncompressed glyphs cost flash but no per-frame CPU,
+#     and this product is render-bound with a 100 px face on screen.
+#  2. It predates LVGL 9.3's .static_bitmap flag. Uncompressed const bitmaps can
+#     be used in place with no copy, but only if the font says so — hence the
+#     post-processing step below.
+#
+# lv_font_conv defaults to emitting #include "lvgl/lvgl.h", which is the upstream
+# layout. The ESP-IDF LVGL component builds with LV_CONF_INCLUDE_SIMPLE and exposes
+# a bare "lvgl.h", so --lv-include is required or every generated face fails to
+# compile. Do not drop it.
 # gen_font SRC_TTF SIZE_PX OUT_NAME RANGE_SET(core|full)
 gen_font() {
     src="$1"
@@ -199,8 +215,27 @@ gen_font() {
         --bpp 4 \
         --size "$size" \
         --lv-font-name "$name" \
+        --lv-include "lvgl.h" \
+        --no-compress \
         -o "$out" \
         $ranges
+
+    # LVGL >= 9.3 needs .static_bitmap = 1 to use const glyph data in place.
+    # lv_font_conv cannot emit it, so patch it in next to .dsc.
+    tmp="$out.tmp"
+    awk '
+        /^[[:space:]]*\.dsc = &font_dsc,/ {
+            print "#if LV_VERSION_CHECK(9, 3, 0)"
+            print "    .static_bitmap = 1,   /*Uncompressed const bitmaps: use in place, no copy*/"
+            print "#endif"
+        }
+        { print }
+    ' "$out" > "$tmp" && mv "$tmp" "$out"
+
+    if ! grep -q "static_bitmap" "$out"; then
+        echo "ERROR: failed to inject .static_bitmap into $out" >&2
+        exit 1
+    fi
 
     GENERATED_FILES="$GENERATED_FILES $out"
 }

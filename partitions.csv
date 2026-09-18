@@ -1,0 +1,13 @@
+# 16 MB flash. The font set alone is ~1.53 MiB of .rodata, so the default 1 MB
+# app partition is not survivable — see docs/DECISIONS.md D10.
+#
+# Two OTA slots are laid out now even though OTA is only an optional M8 item:
+# the layout costs nothing today, and the device spends half the year in
+# Thailand, where "please plug it into a computer" is not a repair plan.
+# Name,     Type, SubType,  Offset,   Size
+nvs,        data, nvs,      0x9000,   0x6000
+otadata,    data, ota,      0xF000,   0x2000
+phy_init,   data, phy,      0x11000,  0x1000
+ota_0,      app,  ota_0,    0x20000,  0x500000
+ota_1,      app,  ota_1,    0x520000, 0x500000
+storage,    data, spiffs,   0xA20000, 0x100000

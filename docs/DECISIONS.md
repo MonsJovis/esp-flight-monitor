@@ -94,3 +94,60 @@ altitude sentinels; no module redefines them.
 **Why:** four workstreams were built in parallel against this contract. Two sentinels
 (`ALT_GROUND`, `ALT_UNKNOWN`) rather than one, because the panel must be able to say
 "am Boden" and "—" differently.
+
+## D10 — Custom partition table with two OTA slots
+
+**Decision:** `partitions.csv` — 5 MB `ota_0`, 5 MB `ota_1`, 1 MB storage.
+
+**Why:** the font set pushes the app image to 1.16 MB, past the 1 MB default slot. Since
+the table had to change anyway, the OTA slots cost nothing to lay out now — and the device
+spends half the year in Thailand, where "plug it into a computer" is not a repair plan.
+OTA itself stays an optional M8 item; only the layout is committed to.
+
+## D11 — Fonts are generated uncompressed
+
+**Decision:** `--no-compress`, plus a post-processing step that injects
+`.static_bitmap = 1`.
+
+**Why:** this cost real debugging time and is worth recording precisely. `lv_font_conv`
+compresses glyph bitmaps by default (`.bitmap_format = 1`). LVGL 9 gates that decoder
+behind `LV_USE_FONT_COMPRESSED`, which is off — so **every glyph rendered as nothing at
+all, with no error logged anywhere**. The panel showed a perfectly working LVGL perf
+monitor above a completely blank font card.
+
+Uncompressed is also the better trade on the merits: 482 KiB instead of 232 KiB, but no
+per-frame decompression, and `.static_bitmap = 1` lets LVGL use the const data in place
+with no copy. This product is render-bound; flash is not scarce.
+
+## D12 — Two framebuffers, anti-tearing on
+
+**Decision:** `CONFIG_BSP_LCD_RGB_BUFFER_NUMS=2`, `AVOID_TEAR=y`, `DIRECT_MODE=y`.
+Settles AGENTS.md §8 open question 1.
+
+**Why:** measured, not assumed — and the assumption was wrong. More framebuffers was
+framed as a bandwidth *cost* to be traded against tearing. In fact two is **faster** than
+one (28.5 vs 21.4 FPS) *and* tear-free, because direct mode removes a full-frame copy.
+Three is indistinguishable from two and costs another 461 KB.
+
+The same measurement retires the project's stated #1 risk: at two framebuffers the 100 px
+PSRAM-resident hero face costs **zero** FPS against the built-in 48 px flash face.
+
+## D13 — Benchmark measures full-screen invalidation
+
+**Decision:** `dbg_bench` invalidates the entire screen every frame.
+
+**Why:** a partial-redraw benchmark would flatter the numbers. The real UI redraws
+everything when a poll lands, so the worst case is the honest case. Note the corollary —
+28.5 FPS is a vsync ceiling at 1% CPU, not a load limit.
+
+## D14 — WiFi credentials live in NVS from day one
+
+**Decision:** PLAN M2 says "credentials hard-coded for now"; they are in NVS instead,
+with a serial provisioning command.
+
+**Why:** AGENTS.md §10 says secrets never go in the repo, and "temporarily" hard-coded
+credentials are exactly how they end up committed. NVS costs nothing extra here and is
+the seed of the M6 provisioning screen, which has to read from the same place anyway.
+
+**Consequence:** the device cannot join a network until someone provisions it once. That
+is the one step in this build that needs a human — see the note at the end of PLAN M2.

@@ -57,6 +57,7 @@ static const str_lookup_t AIRPORTS[] = {
     {"LIRF", "Rom"},
     {"LIRZ", "Perugia"},
     {"LJLJ", "Laibach"},
+    {"LKPR", "Prag"},
     {"LLBG", "Tel Aviv"},
     {"LOWG", "Graz"},
     {"LOWI", "Innsbruck"},

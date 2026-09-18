@@ -12,6 +12,8 @@
 
 static const char *TAG = "dbg";
 
+static dbg_cmd_fn s_on_cmd;
+
 static const char B64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -57,6 +59,11 @@ static void screenshot(void)
         return;
     }
 
+    /* Hold the LVGL lock for the whole capture. Otherwise anything that
+     * redraws — the perf monitor's FPS label alone is enough — mutates the
+     * framebuffer between the CRC and the transfer, and every grab fails. */
+    if (!display_lock(2000)) { ESP_LOGE(TAG, "could not lock display"); return; }
+
     const size_t n = (size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * 2;
     const uint8_t *p = (const uint8_t *)fb;
     uint32_t crc = esp_rom_crc32_le(0, p, n);
@@ -74,6 +81,7 @@ static void screenshot(void)
         emit(line, strlen(line));
     }
     emit_str("<<<ENDSHOT>>>\n");
+    display_unlock();
 }
 
 static void dbg_task(void *arg)
@@ -87,16 +95,19 @@ static void dbg_task(void *arg)
         return;
     }
     usb_serial_jtag_vfs_use_driver();   /* console shares the driver; no peripheral fight */
-    ESP_LOGI(TAG, "debug console ready ('s' = screenshot)");
+    ESP_LOGI(TAG, "debug console ready: s=screenshot, b=bench, f=fontcard");
 
     uint8_t c;
     for (;;) {
         int n = usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(500));
-        if (n == 1 && (c == 's' || c == 'S')) screenshot();
+        if (n != 1) continue;
+        if (c == 's' || c == 'S') screenshot();
+        else if (s_on_cmd && c != '\r' && c != '\n') s_on_cmd((char)c);
     }
 }
 
-void dbg_screen_start(void)
+void dbg_screen_start(dbg_cmd_fn on_cmd)
 {
+    s_on_cmd = on_cmd;
     xTaskCreate(dbg_task, "dbg", 4096, NULL, 3, NULL);
 }

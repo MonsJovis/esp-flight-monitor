@@ -86,7 +86,8 @@ goes over I²C, or by repurposing TCA9554 EXIO pins after init.
 
 ## 3. Stack
 
-**ESP-IDF 5.4.2 + official Waveshare BSP + LVGL 9.2.x.** Already installed at `~/esp/esp-idf`
+**ESP-IDF 5.4 + official Waveshare BSP + LVGL 9.6.x.** (The BSP's dependency
+solver resolves LVGL to 9.6, not the 9.2 originally assumed — see docs/DECISIONS.md D2.) Already installed at `~/esp/esp-idf`
 (v5.4) — not on PATH, so `. ~/esp/esp-idf/export.sh` first.
 
 ```bash
@@ -232,6 +233,14 @@ not read a manual. Design for that:
   only behind the `tnum` feature will render digits that visibly jitter on every refresh.
   Use a font that is tabular *by default* — IBM Plex Mono is; Barlow Condensed, Saira
   Condensed and Oswald are not.
+- **`lv_font_conv` compresses glyph bitmaps by default, and LVGL 9 will not decode
+  them.** `.bitmap_format = 1` needs `LV_USE_FONT_COMPRESSED`, which is off in this
+  build — so every glyph renders as *nothing at all*, with no error logged anywhere.
+  Generate with `--no-compress`. Uncompressed is the better trade regardless: it costs
+  flash but no per-frame CPU, and this product is render-bound.
+- **`lv_font_conv` predates LVGL 9.3's `.static_bitmap` flag** and cannot emit it, so
+  `tools/build_fonts.sh` patches it in after generating. Without it LVGL copies every
+  glyph instead of using the const data in place.
 - **Umlauts are not in the default ASCII range.** Subset Latin-1 supplement explicitly or
   ä/ö/ü/ß render as blanks. Exact ranges in docs/DESIGN.md §3.
 - **Minimum readable cap height on this panel is ~30 px** (ISO 9241-303 at 70 cm). Chrome
@@ -257,20 +266,22 @@ not read a manual. Design for that:
 - **UI language: German.** See §1 for the font and place-name consequences.
 - **Form factor: desk stand**, powered over USB-C. The rear `5V_IN` header is not needed.
   It also means the device travels between the two locations — see §6.
+- **Two framebuffers, anti-tearing on** — measured on the unit, not guessed. Two is
+  both faster than one (28.5 vs 21.4 FPS) and tear-free; three buys nothing. Numbers in
+  PLAN.md M1.
 - **WiFi setup is on-device, not a captive portal.** A portal needs a phone, a second
   network join and a browser — in a foreign country, by someone who will not read a manual.
   An on-panel network list with `lv_keyboard` costs one screen and lets him fix it standing
   in front of it. See DESIGN.md §5.7 and PLAN.md M6.
 
 **Still open — ask Markus, do not guess:**
-1. **Anti-tearing / framebuffer count** — needs measurement on the real unit (PLAN M1).
-2. **Magenta on black** — semantically exact under AC 25-11A, but a documented
+1. **Magenta on black** — semantically exact under AC 25-11A, but a documented
    high-confusion pair and 6.5:1 against our 7:1 target. If it reads badly on the panel the
    colour system changes, so it is checked in PLAN M1, not discovered in M3.
-3. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
+2. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
    settled and scheduled in M6; a second full theme is not.
-4. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
-5. **Stand / enclosure** — the board ships as a flush 86-type faceplate, 86.5 × 86.5 × 14 mm.
+3. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
+4. **Stand / enclosure** — the board ships as a flush 86-type faceplate, 86.5 × 86.5 × 14 mm.
    A desk stand has to be printed or sourced.
 
 Design-side open questions live in DESIGN.md §7 and are mirrored here. One list, not two.

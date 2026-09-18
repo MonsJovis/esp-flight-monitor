@@ -246,11 +246,18 @@ const ac_type_t *actype(const char *icao_type)
 
 const char *actype_full_or_code(const char *icao_type)
 {
+    /* "Never NULL, never empty" is absolute: the panel must always show
+     * something. A NULL/empty code is not a valid ICAO type at all, so it
+     * cannot fall back to "the raw code" -- use a visible placeholder
+     * instead of risking an empty hero line. */
+    if (icao_type == NULL || icao_type[0] == '\0') {
+        return "?";
+    }
     const ac_type_t *t = actype(icao_type);
     if (t != NULL && t->full_name != NULL && t->full_name[0] != '\0') {
         return t->full_name;
     }
-    return (icao_type != NULL) ? icao_type : "";
+    return icao_type;
 }
 
 const actype_lookup_t *tbl_actype_entries(size_t *count)

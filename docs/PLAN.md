@@ -305,16 +305,40 @@ this is the sweep that catches what escaped.
 
 | Measurement | Value | When |
 |---|---|---|
-| Vendor demo FPS | _TBD_ | M0 |
-| Free internal SRAM with framebuffer | _TBD_ | M1 |
-| Free PSRAM with framebuffer | _TBD_ | M1 |
-| FPS at 1 / 2 / 3 framebuffers | _TBD_ | M1 |
-| FPS delta with a 100 px face on screen | _TBD_ | M1 |
-| Flash + PSRAM cost of the full font set | _TBD_ | M1 |
-| Magenta-on-black verdict | _TBD_ | M1 |
+| Vendor demo FPS | _not run_ — our own bring-up worked first time (DECISIONS D1) | M0 |
+| Free internal SRAM, no display | 242,771 B | M1 |
+| Free internal SRAM with framebuffer | 194,999 B (1 fb) · 186,743 B (2 fb, steady) | M1 |
+| Free PSRAM with framebuffer | 6.81 MB (1 fb) · 5.88 MB (2 fb) · 5.42 MB (3 fb) | M1 |
+| FPS at 1 / 2 / 3 framebuffers | **21.4 / 28.5 / 28.4** (100 px face, full-screen invalidate) | M1 |
+| FPS delta with a 100 px face on screen | 1 fb: −1.38 FPS (−6%) · **2 fb: zero** | M1 |
+| Flash + PSRAM cost of the full font set | **482,256 B (471 KiB)** uncompressed, 10 faces; 100 px face alone 151 KiB | M1 |
+| Magenta-on-black verdict | legible and clearly distinct beside white and cyan at ≥56 px — see M1 note | M1 |
 | Longest destination name that fits at 100 px | _TBD_ | M3 |
 | Tearing severity on NVS write | _TBD_ | M4 |
-| Typical poll payload at 30 nm | ~4 KB | measured 2026-09-18 |
+| Typical poll payload at 30 nm | 7,628 B / 13 aircraft (measured 2026-09-18) | measured |
+| Route resolution rate, real sample | **6 of 13** — 6/6 airline callsigns, 0/7 GA (measured 2026-09-18) | measured |
+
+### What M1 actually found
+
+**The headline risk did not materialise.** `CONFIG_SPIRAM_RODATA=y` does put the fonts
+in PSRAM — the boot log confirms `Read only data copied and mapped to SPIRAM` — but with
+two framebuffers the 100 px face costs **zero** FPS against the built-in 48 px flash face.
+At one framebuffer it costs 6%. The font set and the framebuffer do share the bus; it just
+does not matter at this workload.
+
+**Two framebuffers is strictly better than one**, which was not the assumed trade-off: it is
+both *faster* (28.5 vs 21.4 FPS) and tear-free, for 735 KB of PSRAM we have to spare. Three
+buys nothing measurable. AGENTS.md §8 open question 1 is settled by measurement.
+
+**28.5 FPS is a ceiling, not a load limit** — all three faces hit exactly 28.50 at two
+framebuffers, which is the vsync-locked rate in direct mode, with CPU at 1%. The benchmark
+invalidates the entire screen every frame; the real UI redraws on a 12 s poll.
+
+**The magenta check** was done on the framebuffer, not by eye on the panel: `#FF3FDA`
+renders correctly and reads as clearly distinct from `#FFFFFF` above it and `#22E3FF` below
+it at 76 px. That answers "are the colour values right and separable". Whether it reads
+*badly* to a human in a dim room is still a human question — but nothing found so far
+argues for changing the colour system.
 
 ## Explicitly not doing
 
