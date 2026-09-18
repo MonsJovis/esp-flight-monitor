@@ -161,7 +161,11 @@ static const actype_lookup_t ACTYPES[] = {
     {"FA20", {"Dassault", "Falcon 20", "Dassault Falcon 20", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"FA50", {"Dassault", "Falcon 50", "Dassault Falcon 50", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"FA7X", {"Dassault", "Falcon 7X", "Dassault Falcon 7X", "Geschäftsreisejet", AC_CAT_PRIVATE}},
-    {"G2CA", {"unbekannt", "G2CA", "Experimentalflugzeug (Typ G2CA)", "Zweisitzer", AC_CAT_PRIVATE}},
+    /* Guimbal Cabri G2: a two-seat training helicopter, common at flight schools.
+     * The table originally guessed "experimental fixed-wing, manufacturer
+     * unknown"; the live feed settled it — OE-XNC transmits emitter category A7
+     * (rotorcraft) at 50 kt and 1050 ft, which is a Cabri doing circuits. */
+    {"G2CA", {"Guimbal", "Cabri G2", "Guimbal Cabri G2", "Hubschrauber", AC_CAT_HELICOPTER}},
     {"GA8", {"GippsAero", "GA8", "GippsAero GA8 Airvan", "Sechssitzer", AC_CAT_PRIVATE}},
     {"GL5T", {"Bombardier", "Global 5000", "Bombardier Global 5000", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"GL7T", {"Bombardier", "Global 7500", "Bombardier Global 7500", "Geschäftsreisejet", AC_CAT_PRIVATE}},
@@ -264,4 +268,42 @@ const actype_lookup_t *tbl_actype_entries(size_t *count)
 {
     *count = ACTYPE_COUNT;
     return ACTYPES;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * ICAO emitter category -> plain German class.
+ *
+ * Used only when the type designator is absent. In the 2026-09-18 capture over
+ * Gloggnitz, OEVSO and OEANW were real aircraft (category A1, 160 kt and 87 kt)
+ * with no `t` and no `r` — the hero rendered as "?" before this existed.
+ * Categories per ICAO Doc 9871 / DO-260B.
+ * ------------------------------------------------------------------------- */
+static const str_lookup_t k_category_de[] = {
+    {"A1", "Leichtflugzeug"},
+    {"A2", "Kleinflugzeug"},
+    {"A3", "Verkehrsflugzeug"},
+    {"A4", "Großraumflugzeug"},
+    {"A5", "Großraumflugzeug"},
+    {"A6", "Hochleistungsflugzeug"},
+    {"A7", "Hubschrauber"},
+    {"B1", "Segelflugzeug"},
+    {"B2", "Ballon"},
+    {"B3", "Fallschirmspringer"},
+    {"B4", "Ultraleichtflugzeug"},
+    {"B6", "Drohne"},
+    {"B7", "Raumfahrzeug"},
+};
+
+const char *ac_category_de(const char *icao_category)
+{
+    if (icao_category == NULL || icao_category[0] == '\0') {
+        return NULL;
+    }
+    for (size_t i = 0; i < sizeof k_category_de / sizeof k_category_de[0]; i++) {
+        if (strcmp(k_category_de[i].key, icao_category) == 0) {
+            return k_category_de[i].value;
+        }
+    }
+    return NULL;
 }

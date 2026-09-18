@@ -216,3 +216,39 @@ stays because German-language media still uses it.
 
 `test_tables.c` now asserts across the whole table that no name contains a parenthesis and
 none exceeds 24 bytes, so a future addition cannot reintroduce either fault.
+
+## D18 — The feed contains things that are not aircraft, and they win the headline
+
+**Decision:** `adsb_parse` drops entries with type designator `TWR` or ICAO emitter
+category `C*`, at the parse boundary.
+
+**Why:** found by printing what the panel would actually say for the real 30 nm capture,
+rather than by a failing test. **The nearest target over Gloggnitz was not an aircraft.**
+`FFMSNE` — `t:"TWR"`, `type:"mlat"`, no groundspeed, no track — is a fixed ground
+transmitter used for multilateration timing. It sat at 7.7 nm, nearer than every real
+aircraft, and the list is sorted by distance, so the device's answer to "what is that
+plane overhead?" was **"Bodenreferenz"**.
+
+Filtered at the boundary so no consumer has to know about it.
+
+## D19 — ICAO emitter category is the fallback when there is no type
+
+**Decision:** carry `category` through `aircraft_t`; when `t` is absent, the hero shows a
+plain German class name — `A1 → "Leichtflugzeug"`, `A7 → "Hubschrauber"`, `B1 →
+"Segelflugzeug"`.
+
+**Why:** two of the thirteen aircraft in the real capture (`OEVSO`, `OEANW`) are genuine
+aircraft doing 160 kt and 87 kt with **no `t` and no `r` at all**. The hero rendered as a
+literal **`?`** — the largest text on the panel, telling a non-technical user the device
+is broken. The emitter category is transmitted by the aircraft itself and still says
+*what* is up there.
+
+It also caught a wrong table entry. `G2CA` was guessed as "Experimentalflugzeug,
+manufacturer unbekannt"; `OE-XNC` transmits category **A7 (rotorcraft)** at 50 kt and
+1050 ft. It is a **Guimbal Cabri G2**, a two-seat training helicopter — corrected, and it
+now gets the helicopter reason sentence instead of the generic private-aircraft one.
+
+**Corollary:** a table entry whose manufacturer is `"unbekannt"` or `"-"` is a placeholder,
+and its "model" is just the raw ICAO code — never shown as a hero. Note the near-miss that
+makes the manufacturer the right signal rather than the model: Diamond's aircraft really
+*is* called "DV20", so "model equals the ICAO code" does not mean placeholder.

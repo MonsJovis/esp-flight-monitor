@@ -7,7 +7,13 @@ CJSON_DIR := $(IDF_PATH)/components/json/cJSON
 
 # Host-safe module sources: parsers and data tables only. Anything that touches
 # esp_* headers belongs in a different file and is not linked here.
-MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) $(wildcard $(ROOT)/main/net/*_parse.c)
+# main/net is NOT globbed wholesale: wifi.c / http_get.c / flight_source.c pull in
+# esp_* headers and cannot build on the host. Only the deliberately-pure files are
+# listed — the parsers, and the source-selection logic split out of flight_source
+# precisely so its backoff and failover rules could be tested off-device.
+MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) \
+               $(wildcard $(ROOT)/main/net/*_parse.c) \
+               $(wildcard $(ROOT)/main/net/source_logic.c)
 SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c
 
 TESTS   := $(patsubst %.c,%,$(wildcard test_*.c))

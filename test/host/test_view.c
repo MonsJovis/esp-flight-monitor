@@ -264,7 +264,9 @@ static void test_overhead_dlh1jn_munich_via_klausenburg(void)
     route_t routes[MAX_AIRCRAFT];
     int nac = adsb_parse(ac_json, strlen(ac_json), acs, MAX_AIRCRAFT);
     int nrt = route_parse(rt_json, strlen(rt_json), routes, MAX_AIRCRAFT);
-    CHECK_INT(nac, 13);
+    /* 12, not 13: the MLAT ground beacon is filtered in adsb_parse. The
+     * routeset fixture still has 13 records — it was built from the raw feed. */
+    CHECK_INT(nac, 12);
     CHECK_INT(nrt, 13);
 
     const aircraft_t *dlh = find_ac_by_hex(acs, nac, "3c658c");
@@ -492,7 +494,10 @@ static void test_no_route_unknown_no_type_info(void)
         CHECK(strcmp(vm.hero, "(null)") != 0);
         CHECK(strcmp(vm.type_full, "(null)") != 0);
         CHECK(vm.hero[0] != '\0');           /* never a blank hero either */
-        CHECK(vm.type_full[0] != '\0');
+        /* type_full MAY be empty here, deliberately: with no type designator the
+         * hero already says "Leichtflugzeug" from the emitter category, and
+         * repeating it underneath is noise. An empty supporting line disappears;
+         * what must never happen is "(null)" or a bare "?". */
         remember_for_scan("OEVSO unknown no-route", &vm);
     }
 
@@ -520,8 +525,11 @@ static void test_no_route_private_g2ca(void)
         view_build(g2ca, rt, &now, 13, true, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
-        CHECK_STR(vm.hero, "G2CA");
-        CHECK_STR(vm.reason, REASON_PRIVATE);
+        /* A Guimbal Cabri G2 — a training helicopter, per its own A7 emitter
+         * category — so the hero is the model name and the reason is the
+         * helicopter one, not the generic private-aircraft sentence. */
+        CHECK_STR(vm.hero, "Cabri G2");
+        CHECK_STR(vm.reason, REASON_HELICOPTER);
     }
 
     free(ac_json);
@@ -544,11 +552,15 @@ static void test_nearest_aircraft_field_by_field(void)
     route_t routes[MAX_AIRCRAFT];
     int nac = adsb_parse(ac_json, strlen(ac_json), acs, MAX_AIRCRAFT);
     int nrt = route_parse(rt_json, strlen(rt_json), routes, MAX_AIRCRAFT);
-    CHECK_INT(nac, 13);
+    CHECK_INT(nac, 12);
 
+    /* The nearest REAL aircraft over Gloggnitz. It used to be FFMSNE, a fixed
+     * MLAT ground-reference beacon at 7.731 nm that adsb_parse now drops —
+     * otherwise the default screen answered "what is that plane?" with
+     * "Bodenreferenz". */
     const aircraft_t *nearest = &acs[0];
-    CHECK_STR(nearest->hex, "447ac7");
-    CHECK_STR(nearest->flight, "FFMSNE");
+    CHECK_STR(nearest->hex, "4404a7");
+    CHECK_STR(nearest->flight, "OEBXP");
 
     const route_t *rt = route_find(routes, nrt, nearest->flight);
     CHECK(rt != NULL);
@@ -561,18 +573,18 @@ static void test_nearest_aircraft_field_by_field(void)
     view_build(nearest, rt, &now, nac, true, &vm);
 
     CHECK_INT(vm.state, VIEW_NO_ROUTE);
-    CHECK_STR(vm.hero, "Bodenreferenz");
+    CHECK_STR(vm.hero, "H135");
     CHECK_STR(vm.origin, "");
     CHECK(vm.has_origin == false);
     CHECK_STR(vm.airline, "");
-    CHECK_STR(vm.type_full, "Boden-Referenzsignal (MLAT)");
-    CHECK_STR(vm.size_class, "Referenzsignal");
-    CHECK_STR(vm.callsign, "FFMSNE");
-    CHECK_STR(vm.registration, "TWR");
-    CHECK_STR(vm.reason, REASON_UNKNOWN);
+    CHECK_STR(vm.type_full, "Airbus H135");
+    CHECK_STR(vm.size_class, "Hubschrauber");
+    CHECK_STR(vm.callsign, "OEBXP");
+    CHECK_STR(vm.registration, "OE-BXP");
+    CHECK_STR(vm.reason, REASON_HELICOPTER);
     CHECK_STR(vm.clock, "09:47");
     CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
-    CHECK_INT(vm.traffic_count, 13);
+    CHECK_INT(vm.traffic_count, 12);
     CHECK(vm.online == true);
     check_numeric_fields(nearest, &vm);
 

@@ -152,6 +152,21 @@ int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
             ac->alt_ft = ALT_UNKNOWN;
         }
 
+        copy_str(ac->category, sizeof ac->category,
+                 str_field(item, "category"));
+
+        /* Not everything in the feed is an aircraft, and the list is sorted by
+         * distance, so a non-aircraft near the house becomes the default screen.
+         * In our own 30 nm capture the NEAREST target was "FFMSNE" — t="TWR",
+         * type="mlat", no groundspeed: a fixed ground reference transmitter used
+         * for MLAT synchronisation. Shown as-is it reads as a plane overhead.
+         *   - t == "TWR" is the community convention for that beacon
+         *   - ICAO category C* is surface vehicles and fixed obstacles
+         * Dropped here, at the boundary, so no consumer has to know. */
+        if (strcmp(ac->type, "TWR") == 0 || ac->category[0] == 'C') {
+            continue;
+        }
+
         cJSON *dst = cJSON_GetObjectItemCaseSensitive(item, "dst");
         ac->dst_nm = cJSON_IsNumber(dst) ? (float)dst->valuedouble : DST_UNKNOWN;
 

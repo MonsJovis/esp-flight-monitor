@@ -36,6 +36,11 @@ typedef struct {
     int32_t gs_kt;        /* ground speed, knots; -1 when absent             */
     double  lat, lon;
     bool    has_track;
+    /* ICAO emitter category: "A1" light, "A3" large, "A7" rotorcraft, "B1"
+     * glider, "B4" ultralight, "C*" surface vehicle. "" when absent. It is the
+     * only thing that says WHAT is overhead when `t` is missing — which happens
+     * for real aircraft, not just blocked ones. */
+    char    category[4];
 } aircraft_t;
 
 typedef struct {

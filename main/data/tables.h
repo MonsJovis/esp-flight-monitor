@@ -79,6 +79,12 @@ const str_lookup_t   *tbl_airport_entries(size_t *count);
 const str_lookup_t   *tbl_airline_entries(size_t *count);
 const actype_lookup_t *tbl_actype_entries(size_t *count);
 
+/* ICAO emitter category ("A1", "A3", "B1", ...) -> plain German class name.
+ * Real aircraft do appear in the feed with no `t` at all — two of the thirteen
+ * in our own capture — and the hero cannot be a question mark. Returns NULL for
+ * an unknown or empty category. */
+const char *ac_category_de(const char *icao_category);
+
 #ifdef __cplusplus
 }
 #endif

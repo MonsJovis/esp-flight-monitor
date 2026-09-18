@@ -29,13 +29,17 @@ static void test_adsb_real_fixture(void)
     aircraft_t acs[MAX_AIRCRAFT];
 
     int n = adsb_parse(json, strlen(json), acs, MAX_AIRCRAFT);
-    CHECK_INT(n, 13);
+    /* 13 entries in the raw feed, but one of them (FFMSNE / 447ac7) is a fixed
+     * MLAT ground-reference beacon, not an aircraft — and it was the NEAREST
+     * target, so unfiltered it becomes the default screen. 12 aircraft. */
+    CHECK_INT(n, 12);
 
     /* Sorted ascending by dst_nm, so acs[0] is "the plane overhead". */
     for (int i = 0; i + 1 < n; i++) {
         CHECK(acs[i].dst_nm <= acs[i + 1].dst_nm);
     }
-    CHECK_STR(acs[0].hex, "447ac7"); /* FFMSNE, dst 7.731 nm — the nearest */
+    /* Nearest real aircraft, now that the ground beacon at 7.731 nm is gone. */
+    CHECK_STR(acs[0].hex, "4404a7");
 
     /* flight is space-padded to 8 chars in the raw feed; must come out trimmed. */
     const aircraft_t *dlh = find_ac_by_hex(acs, n, "3c658c");
@@ -68,13 +72,24 @@ static void test_adsb_real_fixture(void)
         CHECK_STR(oeanw->reg, "");
     }
 
-    /* FFMSNE (447ac7) has no "gs" or "track" in the raw feed. */
-    const aircraft_t *ffmsne = find_ac_by_hex(acs, n, "447ac7");
-    CHECK(ffmsne != NULL);
-    if (ffmsne != NULL) {
-        CHECK_INT(ffmsne->gs_kt, -1);
-        CHECK(ffmsne->has_track == false);
-        CHECK_STR(ffmsne->flight, "FFMSNE");
+    /* The MLAT ground reference must be gone entirely. It is t="TWR",
+     * type="mlat", no groundspeed, no track — a fixed transmitter used for
+     * multilateration sync. It sat 7.731 nm away, nearer than every real
+     * aircraft, so leaving it in would have made "Bodenreferenz" the answer to
+     * "what is that plane". */
+    CHECK(find_ac_by_hex(acs, n, "447ac7") == NULL);
+    for (int i = 0; i < n; i++) {
+        CHECK(strcmp(acs[i].type, "TWR") != 0);
+        CHECK(acs[i].category[0] != 'C');
+    }
+
+    /* ICAO emitter category is carried through: it is the only thing that says
+     * WHAT is overhead when `t` is absent. */
+    const aircraft_t *oevso_cat = find_ac_by_hex(acs, n, "440277");
+    CHECK(oevso_cat != NULL);
+    if (oevso_cat != NULL) {
+        CHECK_STR(oevso_cat->type, "");
+        CHECK_STR(oevso_cat->category, "A1");
     }
 
     /* Sanity on a fully-populated entry. */
