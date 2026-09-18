@@ -6,6 +6,11 @@ set(SRCS
     "ui/display.c"
     "debug/dbg_screen.c"
     "debug/dbg_bench.c"
+    "debug/dbg_metrics.c"
+    "data/tbl_airport.c"
+    "data/tbl_airline.c"
+    "data/tbl_actype.c"
+    "data/fmt_de.c"
 )
 
 # Generated font faces are globbed: they are build output with stable names,

@@ -18,6 +18,7 @@
 #include "ui/fonts/fonts.h"
 #include "debug/dbg_screen.h"
 #include "debug/dbg_bench.h"
+#include "debug/dbg_metrics.h"
 
 static const char *TAG = "flight";
 
@@ -79,6 +80,7 @@ static void bench_suite(void)
 static void on_cmd(char c)
 {
     if (c == 'b') bench_suite();
+    else if (c == 'm') dbg_metrics_hero();
     else if (c == 'f') font_card();
 }
 

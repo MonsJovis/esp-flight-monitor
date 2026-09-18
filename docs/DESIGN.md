@@ -173,10 +173,20 @@ it is never the answer to a question.
 | Near-view body | 24 px min | ~17 px | Near | List rows, settings labels |
 | Labels, chrome | 12–13 px mono | ~9 px | — | **Never** carries information he needs |
 
-**Hero auto-shrink.** At 100 px in Plex Sans Condensed roughly **9–10 characters** fit the
-440 px content width. "London" fits comfortably, "Kopenhagen" is at the edge,
-"Thessaloniki" is not. Measure the rendered width and step 100 → 76 → 56; do not
-truncate a city name, ever — a half-name is worse than a smaller one.
+**Hero auto-shrink.** Measured on the panel with the real face, across all 74 names in
+the airport table (`m` on the debug console):
+
+| Step | Names | Note |
+|---|---:|---|
+| fits at 100 px | 63 | longest is **"Innsbruck", 430 px of 440** |
+| shrinks to 76 px | 9 | "Kopenhagen" 525 px, "Thessaloniki" 528 px |
+| shrinks to 56 px | 2 | |
+| does not fit | **0** | the ladder is sufficient |
+
+**Character count is the wrong proxy and this document used to give one.** "Bratislava" is
+ten characters and fits at 100 px (422 px); "Kopenhagen" is also ten and does not (525 px).
+Measure the rendered width with `lv_text_get_size` and step 100 → 76 → 56. Do not truncate
+a city name, ever — a half-name is worse than a smaller one.
 
 ### Font subsetting for `lv_font_conv`
 
