@@ -84,3 +84,15 @@ CONFIG_LWIP_TCP_RECVMBOX_SIZE=6
 CONFIG_LWIP_UDP_RECVMBOX_SIZE=6
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=16
 CONFIG_LWIP_MAX_SOCKETS=6
+
+# Task watchdog, with panic-and-reboot. This device sits on a desk in a living
+# room with nothing plugged into it, so "hung until someone notices" is the worst
+# possible failure: the panel keeps showing a stale but plausible aircraft and
+# nobody can tell. A reboot loses nothing — the route cache is rebuilt in one
+# poll — so rebooting always beats hanging here.
+# 30 s is generous against a slow render; the UI task feeds it every 2 s.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y

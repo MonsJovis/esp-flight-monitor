@@ -29,6 +29,7 @@
 #include "net/wifi.h"
 #include "net/flight_source.h"
 #include "net/timesync.h"
+#include "esp_task_wdt.h"
 #include "ui/screen_overhead.h"
 #include "data/view_build.h"
 #include "net/route_parse.h"
@@ -153,6 +154,12 @@ static void network_status(void)
  * it onto the panel. All LVGL work happens here, behind the display lock. */
 static void ui_task(void *arg)
 {
+    /* The heartbeat for the whole device. If rendering, the display mutex or the
+     * snapshot copy ever wedges, this stops feeding and the watchdog reboots us
+     * — which is strictly better than a panel frozen on a stale aircraft in a
+     * room where nobody can tell the difference. */
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
     static aircraft_t ac[MAX_AIRCRAFT];
     static route_t    rt[MAX_AIRCRAFT];
     static aircraft_t last_seen;
@@ -160,6 +167,7 @@ static void ui_task(void *arg)
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_task_wdt_reset();
         if (s_fixture_mode) {
             continue;   /* a replayed screen stays up until dismissed */
         }

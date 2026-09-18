@@ -292,3 +292,40 @@ because `display_init()` logs the framebuffer count at boot.
 
 **Delete `build/` after any one-off `-D` config override**, and keep logging the values that
 matter at boot — a config that lies is worse than one that is wrong out loud.
+
+## D22 — Nothing may block waiting for a host that is not there
+
+**Decision:** the debug console does **not** install the `usb_serial_jtag` driver. It writes
+through ordinary `stdout` and polls a non-blocking `stdin`. The task watchdog is enabled
+with `CONFIG_ESP_TASK_WDT_PANIC=y`, a 30 s timeout, and the UI task feeding it every 2 s.
+
+**Why — this one was found the hard way, and it matters more than it looks.**
+
+`dbg_screen.c` installed the `usb_serial_jtag` driver and routed the console through it via
+`usb_serial_jtag_vfs_use_driver()`. That driver's write **blocks** when its TX ring fills
+and no host is draining the port. During a stability run the capture script exited, the host
+stopped reading, the device kept logging its 30 s memory line and its WiFi retries, the ring
+filled — and the firmware wedged mid-message:
+
+```
+E (86606) esp-tls: couldn't get hostna<truncated, device gone>
+```
+
+It then stopped responding to `esptool` entirely, through every `--before` reset mode, and
+needed a physical power cycle.
+
+**The normal state of this device is "no host attached."** It sits on a desk in a living
+room. A console write that blocks when nobody is listening is not a debug-tooling
+inconvenience — it is a guaranteed field hang, and the panel would freeze showing a stale
+but entirely plausible aircraft, which is the one failure mode a non-technical user cannot
+diagnose. The only reason it surfaced during development is that a test harness happens to
+attach and detach a host repeatedly.
+
+The watchdog is the second half of the fix: the first half stops this particular hang, the
+watchdog stops the *class* of it. Rebooting costs nothing here — the route cache rebuilds in
+one poll — so for this device rebooting always beats hanging.
+
+**Aside, on the crash forensics:** `Saved PC: 0x4037f94a` decoded to
+`esp_cpu_wait_for_intr`, the idle task. Combined with `rst:0x15 (USB_UART_CHIP_RESET)` that
+ruled out a firmware panic and pointed at an external reset plus a wedged peripheral, which
+is what made the blocking-write explanation the right one rather than a stack overflow hunt.

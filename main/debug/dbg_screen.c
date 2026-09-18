@@ -5,8 +5,8 @@
 #include "esp_log.h"
 #include "esp_rom_crc.h"
 #include "esp_lcd_panel_rgb.h"
-#include "driver/usb_serial_jtag.h"
-#include "driver/usb_serial_jtag_vfs.h"
+#include <unistd.h>
+#include <fcntl.h>
 #include "ui/display.h"
 #include "bsp/esp-bsp.h"
 
@@ -20,14 +20,14 @@ static const char B64[] =
 /* 57 input bytes -> 76 output chars, the classic line width. */
 #define RAW_PER_LINE 57
 
+/* Writes through the ordinary console. Deliberately NOT through the
+ * usb_serial_jtag driver: that driver's write blocks when its TX ring fills and
+ * no host is draining, which is the normal state of this device — it sits on a
+ * desk with nothing plugged into it. See docs/DECISIONS.md D22. */
 static void emit(const char *s, size_t n)
 {
-    size_t sent = 0;
-    while (sent < n) {
-        int w = usb_serial_jtag_write_bytes(s + sent, n - sent, pdMS_TO_TICKS(1000));
-        if (w <= 0) break;
-        sent += (size_t)w;
-    }
+    fwrite(s, 1, n, stdout);
+    fflush(stdout);
 }
 
 static void emit_str(const char *s) { emit(s, strlen(s)); }
@@ -89,10 +89,12 @@ int dbg_read_line(char *out, size_t out_sz, int timeout_ms)
     size_t n = 0;
     const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
     while (n + 1 < out_sz && xTaskGetTickCount() < deadline) {
-        uint8_t c;
-        if (usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(200)) != 1) {
+        int ci = fgetc(stdin);
+        if (ci == EOF) {
+            vTaskDelay(pdMS_TO_TICKS(20));
             continue;
         }
+        char c = (char)ci;
         if (c == '\r' || c == '\n') {
             if (n == 0) continue;      /* tolerate CRLF and stray newlines */
             break;
@@ -105,21 +107,19 @@ int dbg_read_line(char *out, size_t out_sz, int timeout_ms)
 
 static void dbg_task(void *arg)
 {
-    usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-    cfg.tx_buffer_size = 2048;
-    cfg.rx_buffer_size = 1024;
-    if (usb_serial_jtag_driver_install(&cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "usb_serial_jtag driver install failed");
-        vTaskDelete(NULL);
-        return;
-    }
-    usb_serial_jtag_vfs_use_driver();   /* console shares the driver; no peripheral fight */
-    ESP_LOGI(TAG, "debug console ready: s=screenshot, b=bench, f=fontcard");
+    /* Non-blocking stdin: poll for a command byte instead of parking a task on
+     * a read. Nothing here may ever block waiting for a host that is not there. */
+    int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
 
-    uint8_t c;
+    ESP_LOGI(TAG, "debug console ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net");
+
     for (;;) {
-        int n = usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(500));
-        if (n != 1) continue;
+        int c = fgetc(stdin);
+        if (c == EOF) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
         if (c == 's' || c == 'S') screenshot();
         else if (s_on_cmd && c != '\r' && c != '\n') s_on_cmd((char)c);
     }
