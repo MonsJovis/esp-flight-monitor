@@ -1,0 +1,4 @@
+{"ac":[
+ {"hex":"aaaaaa","flight":"NODST1  ","t":"A320","r":"OE-AAA","alt_baro":30000,"dir":90.0,"lat":47.0,"lon":16.0},
+ {"hex":"bbbbbb","flight":"HASDST1 ","t":"B738","r":"OE-BBB","alt_baro":31000,"dst":9.5,"dir":180.0,"lat":47.1,"lon":16.1}
+]}

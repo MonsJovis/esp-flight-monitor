@@ -367,5 +367,21 @@ int main(void)
     test_route_find_semantics();
     test_route_build_request();
 
+
+    GROUP("adsb_parse: absent dst must not sort to the front");
+    {
+        /* Regression: a missing `dst` used to default to 0.0, which sorted that
+         * aircraft first — making an aircraft we cannot place the headline. */
+        char *json = load_fixture("adsb_no_dst.json");
+        aircraft_t ac[4];
+        int n = adsb_parse(json, strlen(json), ac, 4);
+        CHECK_INT(n, 2);
+        CHECK_STR(ac[0].flight, "HASDST1");   /* the one with a real distance wins */
+        CHECK_NEAR(ac[0].dst_nm, 9.5, 0.001);
+        CHECK_STR(ac[1].flight, "NODST1");
+        CHECK(ac[1].dst_nm == DST_UNKNOWN);
+        free(json);
+    }
+
     return test_summary();
 }

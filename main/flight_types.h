@@ -14,6 +14,12 @@
 #define ALT_GROUND   (-100000)
 #define ALT_UNKNOWN  (-100001)
 
+/* adsb.lol pre-computes `dst` from the query point, so it is normally present —
+ * but a source that omits it must NOT default to 0.0, because the list is sorted
+ * by distance and 0.0 sorts an unknown aircraft to the front, where it becomes
+ * "the plane overhead" and gets the headline. Sorts last instead. */
+#define DST_UNKNOWN  (-1.0f)
+
 #define MAX_AIRCRAFT      24   /* ~13 seen at 30 nm over Gloggnitz; 45 at 60 nm */
 #define CITY_NAME_LEN     40   /* "Frankfurt am Main" = 17; 40 is slack */
 #define AIRLINE_NAME_LEN  40   /* "Middle East Airlines" = 20 */

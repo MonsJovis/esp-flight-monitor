@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "adsb_parse.h"
 
 #include <ctype.h>
@@ -70,6 +71,13 @@ static int cmp_dst_nm(const void *a, const void *b)
 {
     const aircraft_t *aa = (const aircraft_t *)a;
     const aircraft_t *bb = (const aircraft_t *)b;
+    /* Unknown distance sorts last: out[0] is read as "the plane overhead", so an
+     * aircraft we cannot place must never win that slot. */
+    const bool a_unk = (aa->dst_nm == DST_UNKNOWN);
+    const bool b_unk = (bb->dst_nm == DST_UNKNOWN);
+    if (a_unk != b_unk) {
+        return a_unk ? 1 : -1;
+    }
     if (aa->dst_nm < bb->dst_nm) {
         return -1;
     }
@@ -145,7 +153,7 @@ int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
         }
 
         cJSON *dst = cJSON_GetObjectItemCaseSensitive(item, "dst");
-        ac->dst_nm = cJSON_IsNumber(dst) ? (float)dst->valuedouble : 0.0f;
+        ac->dst_nm = cJSON_IsNumber(dst) ? (float)dst->valuedouble : DST_UNKNOWN;
 
         cJSON *dir = cJSON_GetObjectItemCaseSensitive(item, "dir");
         ac->dir_deg = cJSON_IsNumber(dir) ? (float)dir->valuedouble : 0.0f;

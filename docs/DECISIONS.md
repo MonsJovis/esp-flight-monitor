@@ -151,3 +151,46 @@ the seed of the M6 provisioning screen, which has to read from the same place an
 
 **Consequence:** the device cannot join a network until someone provisions it once. That
 is the one step in this build that needs a human — see the note at the end of PLAN M2.
+
+## D15 — No adsb.fi failover in M2; degrade instead
+
+**Decision:** ship one position source (adsb.lol over plain HTTP). On repeated failure,
+back off and keep showing the last good data behind an amber "keine Verbindung" caution,
+rather than switching to a second source. The source table and switching logic are built,
+with the second slot deliberately empty.
+
+**Why:** probed live on 2026-09-18 —
+
+| Endpoint | Plain HTTP |
+|---|---|
+| `api.adsb.lol/v2/point/...` | **200** |
+| `api.adsb.lol/v2/lat/.../lon/.../dist/...` | **200** (same host, second URL shape) |
+| `adsb.im/api/0/routeset` | **200** |
+| `opendata.adsb.fi/api/v2/...` | **301 → https** |
+| `api.adsb.one/v2/point/...` | 403 |
+| `api.airplanes.live/v2/point/...` | 403 |
+
+adsb.fi is HTTPS-only, which AGENTS.md's fallback table already said. But adding TLS for
+the failover path contradicts §4's plain-HTTP architecture, and the failover exists mainly
+to survive adsb.lol *throttling us* — which a second URL on the same host does not help
+with either. Given AGENTS.md §1 ("never show an empty screen — show the last aircraft
+seen"), degrading honestly is closer to the product's own design language than a second
+source that costs 40 KB of heap.
+
+**Revisit in M4 with numbers**, not before: we now know there is 186 KB of internal SRAM
+free, so TLS may well be affordable — and adsb.fi returns an inline `desc` field that would
+remove a lookup. That is a measurement, not an assumption.
+
+**Consequence worth knowing:** AGENTS.md §5's "treat a spurious 308 as throttling" must
+NOT be generalised to all 3xx. A 301 is a real redirect — it is exactly what adsb.fi
+returns — so the HTTP client does not auto-follow redirects, and a redirect can never
+silently become a TLS connection we did not intend.
+
+## D16 — Backlight polarity is the one thing not verified on the panel
+
+The BSP inverts brightness (`flipped = 100 - percent`) and configures LEDC with **no**
+`output_invert` flag, so `bsp_display_backlight_on()` drives GPIO4 to a constant LOW. That
+is correct only if the backlight circuit is active-low. Every vendor demo uses this same
+path, so it almost certainly is — but framebuffer screenshots prove what LVGL *rendered*,
+not what the panel *emitted*, so this is the one claim in this build resting on inference
+rather than measurement. Needs a human to confirm the panel is lit.
