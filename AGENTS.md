@@ -31,13 +31,15 @@ or it has failed. Two usage modes drive every design decision:
   - **The LVGL font must carry ä ö ü ß.** LVGL's built-in Montserrat faces are ASCII-only.
     Build a font including the Latin-1 supplement range, or umlauts render as blanks —
     and "Zurich"/"Munchen" on a German panel looks broken.
-  - The visual system — colours, type scale, size floors — is in
-    **[docs/DESIGN.md](./docs/DESIGN.md)**. Read it before building any screen.
   - **The route API returns *English* city names** ("Vienna", "Munich", "Prague"). Ship a
     small airport → German name table for the common European destinations (Wien, München,
     Zürich, Prag, Mailand, Athen, Kopenhagen, Warschau …) and fall back to the API's own
     name when there is no entry. Without this the headline reads "Vienna → London" to a
     man sitting in Austria.
+
+The visual system — colours, type scale, size floors, navigation — is in
+**[docs/DESIGN.md](./docs/DESIGN.md)**. Read it before building any screen. The build
+order is in **[docs/PLAN.md](./docs/PLAN.md)**.
 
 ## 2. Hardware — verified, do not re-derive
 
@@ -195,8 +197,9 @@ not read a manual. Design for that:
 
 - **Two WiFi networks must both be remembered**, not reconfigured on arrival. Store a list,
   not a single SSID, and reconnect to whichever is in range.
-- **Provisioning must survive a non-technical user in a foreign country.** A captive-portal
-  setup (WiFiManager-style) that appears when no known network is found is the right pattern.
+- **Provisioning must survive a non-technical user in a foreign country.** Settled in §8:
+  an **on-device** network list that appears by itself when no known network is in range.
+  Not a captive portal — that assumes a phone, a second network join and a browser.
 - **Switching location should be one tap**, not a coordinate entry form. Two named presets
   ("Gloggnitz", "Pattaya") plus an advanced custom option.
 - **Timezone changes with the location** — CEST and ICT are 5–6 h apart depending on the
@@ -218,6 +221,11 @@ not read a manual. Design for that:
   GPIO0 is BOOT. Do not back-drive these during reset.
 - Anti-tearing is **off** by default (`BSP_LCD_RGB_BUFFER_NUMS=1`). 8 MB PSRAM has room
   for 2–3 framebuffers at 450 KiB each, but each one costs bandwidth. Measure.
+- **Large fonts land in PSRAM, not flash.** `CONFIG_SPIRAM_RODATA=y` — mandated at the top of
+  this block as the tearing mitigation — relocates `.rodata`, and LVGL fonts *are* `.rodata`.
+  So the 100 px hero face and its shrink ladder compete with the framebuffer for PSRAM
+  bandwidth: the project's #1 risk and its most distinctive design choice pulling on the
+  same bus. Measure it in PLAN.md M1, before seven screens are built on the assumption.
 
 **Fonts and text**
 - **`lv_font_conv` does not apply OpenType features.** A font whose tabular figures exist
@@ -249,12 +257,23 @@ not read a manual. Design for that:
 - **UI language: German.** See §1 for the font and place-name consequences.
 - **Form factor: desk stand**, powered over USB-C. The rear `5V_IN` header is not needed.
   It also means the device travels between the two locations — see §6.
+- **WiFi setup is on-device, not a captive portal.** A portal needs a phone, a second
+  network join and a browser — in a foreign country, by someone who will not read a manual.
+  An on-panel network list with `lv_keyboard` costs one screen and lets him fix it standing
+  in front of it. See DESIGN.md §5.7 and PLAN.md M6.
 
 **Still open — ask Markus, do not guess:**
-1. **Anti-tearing / framebuffer count** — needs measurement on the real unit.
-2. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
-3. **Stand / enclosure** — the board ships as a flush 86-type faceplate, 86.5 × 86.5 × 14 mm.
+1. **Anti-tearing / framebuffer count** — needs measurement on the real unit (PLAN M1).
+2. **Magenta on black** — semantically exact under AC 25-11A, but a documented
+   high-confusion pair and 6.5:1 against our 7:1 target. If it reads badly on the panel the
+   colour system changes, so it is checked in PLAN M1, not discovered in M3.
+3. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
+   settled and scheduled in M6; a second full theme is not.
+4. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
+5. **Stand / enclosure** — the board ships as a flush 86-type faceplate, 86.5 × 86.5 × 14 mm.
    A desk stand has to be printed or sourced.
+
+Design-side open questions live in DESIGN.md §7 and are mirrored here. One list, not two.
 
 ## 9. Licence policy when copying code
 
@@ -276,6 +295,9 @@ database**. Show an attribution line in the UI.
 ## 10. Conventions
 
 - Keep all user-facing strings in one translation unit.
+- **No colour literals outside `main/ui/theme.h`.** Every token is named there, from
+  DESIGN.md §2. It is the only way the DO-257A six-colour ceiling stays enforceable once
+  there are seven screens and three people editing them.
 - Network work lives on its own FreeRTOS task; **all LVGL calls happen on the display
   task** behind a mutex. This split is non-negotiable on this hardware.
 - Prefer fixed-size `char` arrays over `String` in aircraft structs — see MatixYo's 40-byte

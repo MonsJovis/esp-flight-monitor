@@ -8,6 +8,9 @@ All mockups use **real flight data** captured over Gloggnitz on 2026-09-18 — n
 flights, no lorem ipsum. `MEA201 · Beirut → London · 15 km NO` and
 `DERKL · Diamond DV20 · 18 km OSO, ohne Route`.
 
+Implementation sequencing for everything here is in [PLAN.md](./PLAN.md). The tokens in §2
+become `main/ui/theme.h` in M1; nothing downstream should contain a hex literal.
+
 ---
 
 ## 1. The principle
@@ -39,9 +42,37 @@ Semantics follow **FAA AC 25-11A** (Electronic Flight Displays), not decoration:
 | `cyan` | `#22E3FF` | Armed modes / secondary data | Altitude, distance, settings values |
 | `amber` | `#FFB300` | Caution, abnormal source | "KEIN FLUGPLAN", missing values, no network |
 | `white` | `#FFFFFF` | Scales, figures, units, labels | The hero destination |
-| `grey` | `#94A5B2` | — | Labels (AAA contrast, see below) |
+| `grey` | `#94A5B2` | — | Labels |
 
-Ground `#0A0B0D`, hairline `#1A3340`, primary text `#DDE6EC`, tertiary `#6E8494`.
+### Text tones
+
+Three, and only three. The mockups drifted to five — `#D8E2E8` alongside `#DDE6EC`
+(15.0:1 vs 15.6:1) and `#98A9B6` alongside `#94A5B2` (8.1:1 vs 7.8:1). Those pairs are
+indistinguishable on a panel and exist only because two screens were drawn on different
+days. Collapsed:
+
+| Token | Hex | Ratio on ground | Use |
+|---|---|---|---|
+| `text-primary` | `#DDE6EC` | 15.6:1 | Body text, airline names, sentences |
+| `text-label` | `#94A5B2` | 7.8:1 | Labels, chrome, secondary values |
+| `text-tertiary` | `#6E8494` | 5.1:1 | Units and prepositions **only**, always adjacent to a brighter value — "m hoch", "von", "km Nordost" |
+
+### Surfaces and structure
+
+Non-text, so contrast rules do not apply — but they are part of the system and belong in
+`theme.h` like everything else:
+
+| Token | Hex | Use |
+|---|---|---|
+| `ground` | `#0A0B0D` | Page background |
+| `surface-sel` | `#0C131A` | Selected list row (§5.4) |
+| `surface-green` | `#08130D` | Saved-network card fill (§5.7) |
+| `surface-magenta` | `#140A15` | Active-preset card fill (§5.6) |
+| `hairline` | `#1A3340` | Section rules, outer range ring |
+| `hairline-dim` | `#12262F` | Inner range rings (§5.5) |
+| `divider` | `#101C24` | List row dividers (§5.4) |
+| `border-idle` | `#1C2B35` | Unselected cards, slider tracks |
+| `border-green` | `#1C3B2A` | Saved-network card border (§5.7) |
 
 **Rules that come with the semantics:**
 
@@ -51,18 +82,39 @@ Ground `#0A0B0D`, hairline `#1A3340`, primary text `#DDE6EC`, tertiary `#6E8494`
   everything can be red, nothing is.
 - ⚠️ **Magenta on black is a documented high-confusion pair** (AC 25-11A 31.c(5)(g)).
   We use it anyway because the semantic fit is exact, and mitigate with an adjacent text
-  label. **Verify on the real panel before treating this as settled.**
+  label. **Verification is scheduled in PLAN.md M1 — treat it as unsettled until then.**
 
 ### Ground is not pure black
 
 `#0A0B0D`, not `#000000`. Pure black maximises halation — the glow bleed around bright
 glyphs that aging eyes suffer most from.
 
-### Contrast target: AAA (7:1)
+### Contrast — measured, not claimed
 
-WCAG AA (4.5:1) is the floor; we hit AAA throughout because a single-purpose appliance
-has no reason not to. In practice: **no text dimmer than about `#949494` on this ground.**
-The first draft used `#7C92A3` for labels — 4.0:1, passes AA, fails AAA. Corrected.
+An earlier draft of this document claimed AAA throughout. Measured against the `#0A0B0D`
+ground, that was wrong in three places. The real picture:
+
+| Colour | Ratio | AA | AAA | Role |
+|---|---:|:--:|:---:|---|
+| `#FFFFFF` | 19.7 | ✅ | ✅ | Hero |
+| `#DDE6EC` | 15.6 | ✅ | ✅ | Body |
+| `#22E3FF` | 12.7 | ✅ | ✅ | Data values |
+| `#FFB300` | 11.0 | ✅ | ✅ | Caution |
+| `#00E676` | 11.8 | ✅ | ✅ | Status |
+| `#94A5B2` | 7.8 | ✅ | ✅ | Labels |
+| `#FF3FDA` | **6.5** | ✅ | ❌ | Route |
+| `#6E8494` | **5.1** | ✅ | ❌ | Units, prepositions |
+
+**The standing rules:**
+
+1. Anything that carries information on its own reaches **AAA (7:1)**.
+2. Two deliberate exceptions, both AA: **magenta** and **tertiary**. Both are only ever
+   used adjacent to an AAA element carrying the same meaning — `042°` beside a magenta
+   arrow, `m hoch` beside a 32 px cyan number. DO-257A's never-colour-alone rule is doing
+   double duty here, and it is why these two are acceptable rather than sloppy.
+3. **Nothing below AA (4.5:1), ever.** The first draft had `#8A7440` at 4.4:1 for the radar's
+   "privat" label. Removed — that label uses `amber` at label size. Dimming was solving a
+   loudness problem with the wrong lever, the same mistake the first draft made with type.
 
 ---
 
@@ -88,25 +140,43 @@ German runs long. *Voraussichtliche Ankunftszeit* is 29 characters; even
 *Frankfurt-am-Main* overflows a 480 px line at hero size. Condensed buys width back
 without dropping size, which is the wrong lever for this user.
 
-### Size floor — measured, not guessed
+### Two viewing distances, two floors
 
 ISO 9241-303/306: minimum Latin character height **16 arcmin**, displays should reach
-**20–22 arcmin**. At a 70 cm viewing distance that is a **4.5 mm cap height**. A 4″ 480×480
-panel is 6.7 px/mm, so:
+**20–22 arcmin**. That is an *angular* figure, so the floor moves with distance — and this
+device is read at two distances. One floor cannot serve both.
 
-> **Absolute floor: 30 px cap height ≈ 43 px font size.**
+| Tier | Distance | Cap-height floor | ≈ font size | Screens |
+|---|---|---|---|---|
+| **Glance** | ~70 cm, from the armchair | 30 px | 43 px | §5.1–5.3 |
+| **Near** | ~40 cm, in hand or leaned into | 17 px | 24 px | §5.4–5.7 |
 
-That floor is for *reading*. The hero datum should be 2–3× it.
+A 4″ 480×480 panel is 6.7 px/mm; the glance floor is the 4.5 mm cap height that 70 cm
+implies. **Chrome — time, location, status dot — is exempt at either distance**, because
+it is never the answer to a question.
 
-| Role | Size | ≈ cap height | Notes |
-|---|---|---|---|
-| Hero (destination, type) | 100 px | ~70 px | Must auto-shrink for long names — ship 3 sizes and pick |
-| Secondary hero (origin) | 34 px | ~24 px | |
-| Airline / body | 22–25 px | ~16–18 px | |
-| Data values | 32 px mono | ~22 px | |
-| Labels, chrome | 12–13 px mono | ~9 px | Chrome only — **never** carries information he needs at a glance |
+> ⚠️ **As drawn, §5.4 and §5.5 are below even the near floor** — list secondary lines at
+> 12 px, radar city labels at 10–11 px, and the radar's city names are the single thing
+> this product exists to show. Both need a type pass before implementation; the room
+> exists, since the list shows five rows in 300 px and could show four. Tracked in
+> PLAN.md M5.
 
-The first draft had data values at 20 px — roughly half the readable minimum. Corrected.
+### The scale
+
+| Role | Size | ≈ cap height | Tier | Notes |
+|---|---|---|---|---|
+| Hero (destination, type) | 100 px | ~70 px | Glance | Auto-shrinks — see below |
+| Hero, stepped down | 76 / 56 px | ~53 / 39 px | Glance | Both still clear the glance floor |
+| Secondary hero (origin) | 34 px | ~24 px | Glance | |
+| Airline / body | 22–25 px | ~16–18 px | Glance | |
+| Data values | 32 px mono | ~22 px | Glance | |
+| Near-view body | 24 px min | ~17 px | Near | List rows, settings labels |
+| Labels, chrome | 12–13 px mono | ~9 px | — | **Never** carries information he needs |
+
+**Hero auto-shrink.** At 100 px in Plex Sans Condensed roughly **9–10 characters** fit the
+440 px content width. "London" fits comfortably, "Kopenhagen" is at the edge,
+"Thessaloniki" is not. Measure the rendered width and step 100 → 76 → 56; do not
+truncate a city name, ever — a half-name is worse than a smaller one.
 
 ### Font subsetting for `lv_font_conv`
 
@@ -123,8 +193,12 @@ Also needed for Polish and Romanian destinations that appear in real route data
 (`Poznań`, `Timişoara`): `0x0104-0x017C` covers Latin Extended-A.
 
 Flash budget: the 100 px hero face at 4 bpp, subset to mixed-case + umlauts (~70 glyphs),
-costs roughly **150 KB**. Trivial against 16 MB. Big type is cheap here — it lives in
-flash, not RAM.
+costs roughly **150 KB**. Trivial against 16 MB.
+
+⚠️ But note **where it actually lives**: `CONFIG_SPIRAM_RODATA=y` — which AGENTS.md §7
+mandates as the tearing mitigation — relocates `.rodata` into PSRAM, and LVGL fonts are
+`.rodata`. So the font set competes with the framebuffer for PSRAM bandwidth, which is the
+project's #1 risk. Measured in PLAN.md M1, before the screens are built on top of it.
 
 ### Weights
 
@@ -153,13 +227,13 @@ data**. Consistent across all seven screens so the eye learns one map.
 
 | # | Screen | Purpose |
 |---|---|---|
-| 1 | **Über dir jetzt** | Default. Nearest aircraft, destination as hero. No interaction needed. |
-| 2 | **Ohne Route** | Same screen when there is no flight plan — see below. |
-| 3 | **Himmel frei** | Empty sky: clock, date, last aircraft seen. Never a blank panel. |
-| 4 | **Liste** | Everything nearby, sorted by distance. Tap a row for its card. |
-| 5 | **Radar** | PPI scope, range rings, heading-rotated glyphs. |
-| 6 | **Einstellungen** | Location preset, radius, brightness. |
-| 7 | **WLAN** | Provisioning, both networks remembered — the device travels. |
+| 5.1 | **Über dir jetzt** | Default. Nearest aircraft, destination as hero. No interaction needed. |
+| 5.2 | **Ohne Route** | Same screen when there is no flight plan — see below. |
+| 5.3 | **Himmel frei** | Empty sky: clock, date, last aircraft seen. Never a blank panel. |
+| 5.4 | **Liste** | Everything nearby, sorted by distance. Tap a row for its card. |
+| 5.5 | **Radar** | PPI scope, range rings, heading-rotated glyphs. |
+| 5.6 | **Einstellungen** | Location preset, radius, brightness. |
+| 5.7 | **WLAN** | Provisioning, both networks remembered — the device travels. |
 
 ### The no-route case is not an edge case
 
@@ -170,22 +244,47 @@ flight plan. In one 40 nm sample, **14 of 38 aircraft** were local light aircraf
 The aircraft he actually *sees and hears* skew towards exactly those: low, slow, loud. The
 airliner at 9.100 m with the beautiful route is a speck.
 
-So screen 2 is not a fallback, it is a co-equal state. It keeps the layout and swaps the
+So §5.2 is not a fallback, it is a co-equal state. It keeps the layout and swaps the
 hero from destination to aircraft type, and it **says why** there is no route
 ("Eine Route gibt es nur bei Linienflügen"). A blank slot reads as broken; a sentence
-reads as informative.
+reads as informative. It ships in the same milestone as §5.1 — PLAN.md M3.
 
 ---
 
-## 6. Open
+## 6. Navigation
 
-1. **Magenta on black** — see §2. Needs eyes on the real panel.
+Three swipe pages, one deck:
+
+```
+        ←   Über dir jetzt   ·   Liste   ·   Radar   →
+             §5.1/5.2/5.3       §5.4        §5.5
+                  ●               ○           ○
+```
+
+- **§5.1, §5.2 and §5.3 are one page in three states**, not three pages. The device picks
+  the state; he never navigates between them.
+- **The page indicator shows three dots because the deck has three pages.** The mockups
+  currently mark Liste as position 1 and Radar as position 2 — under this model they are
+  2 and 3. Minor mockup fix.
+- **§5.6 Einstellungen is not in the deck.** Long-press the chrome bar. He will be shown it
+  once and then never need it; putting it in the swipe path means finding it by accident,
+  which for this user means being lost.
+- **§5.7 WLAN** is reached from Einstellungen, and appears by itself when no known network
+  is in range — the one case where the device must interrupt him.
+- **Auto-return** to §5.1 happens **only from §5.3**, and only after 30 s without a touch.
+  If he is reading the list, traffic appearing must not yank the screen away.
+
+---
+
+## 7. Open
+
+1. **Magenta on black** — see §2. Measured at 6.5:1 and flagged by AC 25-11A as a
+   high-confusion pair. Needs eyes on the real panel; scheduled in PLAN.md M1.
 2. **Light theme.** The evidence on polarity is genuinely split: Piepenbrock et al. (2013)
    favours dark-on-light for all ages; Wang et al. (2024, n=134 incl. 66 aged 60+) found
-   neither polarity consistently better and recommends shipping both. A glowing dark panel
-   in a dim living room at 22:00 is glare. **Auto-dim is not optional; a light theme is
-   worth considering.**
-3. **Hero auto-shrink** for long destination names — needs the 3-size ladder built.
+   neither polarity consistently better and recommends shipping both. **Auto-dim is settled
+   and scheduled (M6); a full light theme is not.**
+3. **The §5.4 / §5.5 type pass** — see the warning in §3. Tracked in PLAN.md M5.
 4. **Aircraft photos** — still deferred (AGENTS.md §8).
 
 ## Sources
