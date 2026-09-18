@@ -8,8 +8,14 @@
  * Debug scaffolding, not product code: costs nothing until a byte arrives.
  */
 #pragma once
+#include <stddef.h>
 
 /* Called for any command byte dbg_screen does not handle itself. */
 typedef void (*dbg_cmd_fn)(char c);
 
 void dbg_screen_start(dbg_cmd_fn on_cmd);
+
+/* Blocking line read from the debug console, for the one-off WiFi provisioning
+ * step. Credentials are typed in over serial and stored in NVS — they must never
+ * live in the repo (AGENTS.md §10). Returns bytes read, or -1 on timeout. */
+int dbg_read_line(char *out, size_t out_sz, int timeout_ms);

@@ -252,3 +252,43 @@ now gets the helicopter reason sentence instead of the generic private-aircraft 
 and its "model" is just the raw ICAO code — never shown as a hero. Note the near-miss that
 makes the manufacturer the right signal rather than the model: Diamond's aircraft really
 *is* called "DV20", so "model equals the ICAO code" does not mean placeholder.
+
+## D20 — Internal SRAM is the scarce resource, and it was nearly gone
+
+**Measured on the unit, with WiFi up:**
+
+| Stage | internal free | largest block |
+|---|---:|---:|
+| boot, no display | 182.0 KB | 116 KB |
+| display up, 2 framebuffers | 132.3 KB | 68 KB |
+| font card drawn | 124.2 KB | 60 KB |
+| **WiFi + poller started (before tuning)** | **24.9 KB** | **17 KB** |
+| after tuning | **50.2 KB** | 31 KB |
+
+WiFi and lwIP take ~75 KB of internal SRAM, which is not PSRAM-relocatable. Tuning the
+buffer counts to the traffic this device actually moves — one connection at a time, 8–34 KB
+of JSON every 12 s, no throughput requirement — recovered 25 KB. Settings are in
+`sdkconfig.defaults` with the reasoning next to them.
+
+**This retroactively justifies the plain-HTTP architecture on measured grounds rather than
+assumed ones.** A TLS handshake wants ~40 KB; at 24.9 KB free with a 17 KB largest block it
+would simply have failed, and even at 50 KB it would be marginal. AGENTS.md §4 called no-TLS
+"the single biggest win available on this platform" — that is now a number, not a claim.
+
+**A latent stack overflow found on the way.** `route_parse` filled a `route_t[64]` — about
+6.9 KB — as a stack array inside the routeset handler, on an 8 KB task stack. It could only
+fire once a routeset POST actually *succeeded*, which had never happened because the device
+has no credentials yet, so it would have appeared as a mystery crash on the first working
+network. Moved to PSRAM along with the request and response buffers, which the poll path
+already used.
+
+## D21 — `idf.py -DSDKCONFIG_DEFAULTS=...` is sticky, and silently wins
+
+Passing `-DSDKCONFIG_DEFAULTS='sdkconfig.defaults;/tmp/.../fb3.conf'` for the M1 framebuffer
+sweep wrote that path into `build/CMakeCache.txt`. Every later `idf.py build` kept using it,
+including after `rm sdkconfig` — so the committed `sdkconfig.defaults` was being silently
+overridden and the device ran three framebuffers while the repo said two. Caught only
+because `display_init()` logs the framebuffer count at boot.
+
+**Delete `build/` after any one-off `-D` config override**, and keep logging the values that
+matter at boot — a config that lies is worse than one that is wrong out loud.

@@ -84,6 +84,25 @@ static void screenshot(void)
     display_unlock();
 }
 
+int dbg_read_line(char *out, size_t out_sz, int timeout_ms)
+{
+    size_t n = 0;
+    const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
+    while (n + 1 < out_sz && xTaskGetTickCount() < deadline) {
+        uint8_t c;
+        if (usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(200)) != 1) {
+            continue;
+        }
+        if (c == '\r' || c == '\n') {
+            if (n == 0) continue;      /* tolerate CRLF and stray newlines */
+            break;
+        }
+        out[n++] = (char)c;
+    }
+    out[n] = '\0';
+    return (n == 0) ? -1 : (int)n;
+}
+
 static void dbg_task(void *arg)
 {
     usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();

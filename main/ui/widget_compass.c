@@ -51,7 +51,7 @@ lv_obj_t *widget_compass_create(lv_obj_t *parent, int32_t width,
     lv_obj_set_style_bg_opa(cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_style_pad_all(cont, 0, 0);
-    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(cont, false);
 
     /* The tape's baseline. */
     lv_obj_t *baseline = lv_obj_create(cont);
@@ -132,7 +132,8 @@ void widget_compass_set_bearing(lv_obj_t *compass, float bearing_deg, const char
 
     /* The only formatting this widget does: a raw float in, a short
      * degree figure out. No lookup, no German — see widget_compass.h. */
-    char deg_buf[8];
+    char deg_buf[16]; /* generous: GCC's format-truncation check sizes "%d" against the
+                        * full int range, not the 0-359 this code actually produces */
     int  deg = (int)(b + 0.5f);
     if (deg >= 360) {
         deg = 0;

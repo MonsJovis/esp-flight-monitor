@@ -150,18 +150,37 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
         return;
     }
 
-    static char req_buf[ROUTE_REQ_BUF_SZ];
-    static char resp_buf[ROUTE_RESP_BUF_SZ];
+    /* In PSRAM, not .bss. These are 8 KB together, and internal SRAM is the
+     * scarce resource once WiFi is up — 42 KB free, 31 KB largest block. The
+     * routeset POST happens at most once every two minutes, so allocating for
+     * it is far cheaper than holding the space permanently. */
+    char *req_buf  = heap_caps_malloc(ROUTE_REQ_BUF_SZ,  MALLOC_CAP_SPIRAM);
+    char *resp_buf = heap_caps_malloc(ROUTE_RESP_BUF_SZ, MALLOC_CAP_SPIRAM);
+    /* route_t[64] is ~6.9 KB. It was a stack array, on an 8 KB task stack —
+     * a latent overflow that could only fire once a routeset POST actually
+     * succeeded, which had never happened yet because the device has no
+     * credentials. PSRAM, like the other two. */
+    route_t *results = heap_caps_malloc(sizeof(route_t) * ROUTE_CACHE_MAX,
+                                        MALLOC_CAP_SPIRAM);
+    if (req_buf == NULL || resp_buf == NULL || results == NULL) {
+        ESP_LOGW(TAG, "no memory for routeset buffers; skipping this batch");
+        free(req_buf);
+        free(resp_buf);
+        free(results);
+        return;
+    }
 
-    int req_len = route_build_request(batch, n_batch, req_buf, sizeof req_buf);
+    int req_len = route_build_request(batch, n_batch, req_buf, ROUTE_REQ_BUF_SZ);
     if (req_len < 0) {
         ESP_LOGW(TAG, "routeset request for %d callsigns does not fit the buffer", n_batch);
+        free(req_buf);
+        free(resp_buf);
         return;
     }
 
     int status = 0;
     bool truncated = false;
-    int resp_len = http_post_json(ROUTESET_URL, req_buf, resp_buf, sizeof resp_buf,
+    int resp_len = http_post_json(ROUTESET_URL, req_buf, resp_buf, ROUTE_RESP_BUF_SZ,
                                    ROUTE_HTTP_TIMEOUT_MS, &status, &truncated);
 
     xSemaphoreTake(s.mutex, portMAX_DELAY);
@@ -171,17 +190,16 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
     if (resp_len < 0 || status != 200) {
         ESP_LOGW(TAG, "routeset POST failed (n=%d, http=%d) -- %d callsign(s) stay queued",
                  resp_len, status, n_batch);
-        return;
+        goto done;
     }
     if (truncated) {
         ESP_LOGW(TAG, "routeset response truncated at %d bytes", resp_len);
     }
 
-    route_t results[ROUTE_CACHE_MAX];
     int n_results = route_parse(resp_buf, (size_t)resp_len, results, ROUTE_CACHE_MAX);
     if (n_results < 0) {
         ESP_LOGW(TAG, "routeset response failed to parse");
-        return;
+        goto done;
     }
 
     xSemaphoreTake(s.mutex, portMAX_DELAY);
@@ -198,6 +216,11 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
         e->status = r->resolved ? ROUTE_STATUS_RESOLVED : ROUTE_STATUS_NONE;
     }
     xSemaphoreGive(s.mutex);
+
+done:
+    free(req_buf);
+    free(resp_buf);
+    free(results);
 }
 
 /* ---- Logging (PLAN.md M2 done-when) ------------------------------------- */

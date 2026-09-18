@@ -9,6 +9,7 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include "screen_overhead.h"
 #include "theme.h"
 #include "fonts/fonts.h"
@@ -106,11 +107,7 @@ static int32_t s_last_hero_px = 100;
 
 static inline void set_hidden(lv_obj_t *obj, bool hidden)
 {
-    if (hidden) {
-        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    }
+    lv_obj_set_hidden(obj, hidden);
 }
 
 /* DESIGN.md §3 hero auto-shrink: measure the RENDERED, unwrapped width of
@@ -122,7 +119,7 @@ static const lv_font_t *pick_hero_font(const char *text, int32_t max_width, int3
 {
     for (size_t i = 0; i < HERO_LADDER_LEN; i++) {
         lv_point_t sz;
-        lv_text_get_size(&sz, text, HERO_LADDER[i].font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_EXPAND);
+        lv_text_get_size(&sz, text, HERO_LADDER[i].font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
         bool last = (i == HERO_LADDER_LEN - 1);
         if (sz.x <= max_width || last) {
             if (out_px) {
@@ -170,7 +167,7 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(s_cont, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(s_cont, 0, 0);
     lv_obj_set_style_border_width(s_cont, 0, 0);
-    lv_obj_remove_flag(s_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_cont, false);
 
     /* --- Chrome band -- present in every state (DESIGN.md §4: "consistent
      * across all seven screens so the eye learns one map"). --- */
@@ -181,7 +178,7 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_label_set_text(s_lbl_offline, CHROME_NO_NETWORK);
     lv_obj_update_layout(s_lbl_offline);
     lv_obj_set_pos(s_lbl_offline, PAD + CONTENT_W - lv_obj_get_width(s_lbl_offline), Y_CHROME);
-    lv_obj_add_flag(s_lbl_offline, LV_OBJ_FLAG_HIDDEN); /* shown only when !vm->online */
+    lv_obj_set_hidden(s_lbl_offline, true); /* shown only when !vm->online */
 
     /* --- Compass tape band --- */
     s_compass = widget_compass_create(s_cont, CONTENT_W, CHROME_CARDINALS);
@@ -193,9 +190,9 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_label_set_text(s_lbl_arrow, CHROME_ROUTE_ARROW);
     s_lbl_no_route_tag = make_label(s_cont, &plex_sans_cond_34, THEME_AMBER);
     lv_label_set_text(s_lbl_no_route_tag, CHROME_NO_FLIGHT_PLAN);
-    lv_obj_add_flag(s_lbl_origin, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_arrow, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_no_route_tag, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_lbl_origin, true);
+    lv_obj_set_hidden(s_lbl_arrow, true);
+    lv_obj_set_hidden(s_lbl_no_route_tag, true);
 
     /* --- Hero band -- the single most important thing on the panel --- */
     s_lbl_hero = make_wrapped_label(s_cont, &plex_sans_cond_100, THEME_WHITE);
@@ -207,19 +204,19 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_label_set_text(s_lbl_last_seen_caption, CHROME_LAST_SEEN);
     s_lbl_airline   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     s_lbl_type_full = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
-    lv_obj_add_flag(s_lbl_reason, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_date, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_last_seen_caption, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_airline, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_type_full, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_lbl_reason, true);
+    lv_obj_set_hidden(s_lbl_date, true);
+    lv_obj_set_hidden(s_lbl_last_seen_caption, true);
+    lv_obj_set_hidden(s_lbl_airline, true);
+    lv_obj_set_hidden(s_lbl_type_full, true);
 
     /* --- Data band -- cyan values, tertiary word beside distance --- */
     s_lbl_altitude = make_label(s_cont, &plex_mono_32, THEME_CYAN);
     s_lbl_distance = make_label(s_cont, &plex_mono_32, THEME_CYAN);
     s_lbl_direction_word = make_label(s_cont, &plex_sans_cond_22, THEME_TEXT_TERTIARY);
-    lv_obj_add_flag(s_lbl_altitude, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_distance, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_direction_word, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_lbl_altitude, true);
+    lv_obj_set_hidden(s_lbl_distance, true);
+    lv_obj_set_hidden(s_lbl_direction_word, true);
 }
 
 void screen_overhead_update(const view_model_t *vm)
@@ -287,13 +284,24 @@ void screen_overhead_update(const view_model_t *vm)
     lv_obj_update_layout(s_lbl_hero);
     int32_t y_next = y_hero + lv_obj_get_height(s_lbl_hero) + GAP_MD;
 
-    /* --- Supporting + data bands -- content differs by state --- */
+    /* --- Supporting + data bands -- content differs by state ---
+     *
+     * `show_data` is true whenever view_build.c actually had a real
+     * aircraft_t behind this view and ran fill_aircraft_common() on it:
+     * always true for VIEW_OVERHEAD/VIEW_NO_ROUTE, and true for
+     * VIEW_EMPTY_SKY only when a last-seen aircraft exists (view_build.c's
+     * `view_build_empty()` leaves altitude/distance/direction_word blank
+     * when `last_seen == NULL`). Gating on the field's own emptiness --
+     * rather than on `state` -- means the same "is there aircraft data"
+     * question covers all three states with one check, including the
+     * no-last-seen edge case where §5.3 must show only clock + date and
+     * nothing else, which is still "not blank" (AGENTS.md §1). */
+    bool show_data = vm->altitude[0] != '\0';
+    bool show_last_seen_block = empty_sky && show_data;
+
     set_hidden(s_lbl_reason, !no_route);
     set_hidden(s_lbl_date, !empty_sky);
-    set_hidden(s_lbl_last_seen_caption, !empty_sky);
-    set_hidden(s_lbl_altitude, empty_sky);
-    set_hidden(s_lbl_distance, empty_sky);
-    set_hidden(s_lbl_direction_word, empty_sky);
+    set_hidden(s_lbl_last_seen_caption, !show_last_seen_block);
 
     if (no_route) {
         lv_label_set_text(s_lbl_reason, vm->reason);
@@ -308,26 +316,36 @@ void screen_overhead_update(const view_model_t *vm)
         lv_obj_update_layout(s_lbl_date);
         y_next += lv_obj_get_height(s_lbl_date) + GAP_MD;
 
-        lv_obj_set_pos(s_lbl_last_seen_caption, PAD, y_next);
-        lv_obj_update_layout(s_lbl_last_seen_caption);
-        y_next += lv_obj_get_height(s_lbl_last_seen_caption) + GAP_SM;
+        if (show_last_seen_block) {
+            lv_obj_set_pos(s_lbl_last_seen_caption, PAD, y_next);
+            lv_obj_update_layout(s_lbl_last_seen_caption);
+            y_next += lv_obj_get_height(s_lbl_last_seen_caption) + GAP_SM;
+        }
     }
 
-    /* Airline + full type: the ordinary supporting band in §5.1/§5.2, and
-     * -- relabelled by CHROME_LAST_SEEN above -- "last aircraft seen" in
-     * §5.3. Same view_model_t fields, same objects, different meaning by
-     * position; the model is one struct for all three states
-     * (view_model.h), so this is the natural way to reuse it. */
-    bool show_airline = vm->airline[0] != '\0';
-    set_hidden(s_lbl_airline, !show_airline);
-    if (show_airline) {
-        lv_label_set_text(s_lbl_airline, vm->airline);
+    /* The "airline" slot: vm->airline in §5.1/§5.2. In §5.3 it is
+     * relabelled by CHROME_LAST_SEEN above and reused for vm->hero instead
+     * -- view_build_empty() runs the last-seen aircraft's type through the
+     * same hero_from_type() helper VIEW_NO_ROUTE's true hero uses, which is
+     * a better, never-"?" string than type_full alone, so it is the right
+     * thing to show as the headline of "last aircraft seen". Same fields,
+     * same objects, different meaning by position; the model is one struct
+     * for all three states (view_model.h), so this is the natural reuse. */
+    const char *airline_slot_text = empty_sky ? vm->hero : vm->airline;
+    bool show_airline_slot = airline_slot_text[0] != '\0';
+    set_hidden(s_lbl_airline, !show_airline_slot);
+    if (show_airline_slot) {
+        lv_label_set_text(s_lbl_airline, airline_slot_text);
         lv_obj_set_pos(s_lbl_airline, PAD, y_next);
         lv_obj_update_layout(s_lbl_airline);
         y_next += lv_obj_get_height(s_lbl_airline) + GAP_SM;
     }
 
-    bool show_type = vm->type_full[0] != '\0';
+    /* view_build() already blanks type_full when it is identical to the
+     * hero (avoids "Leichtflugzeug" over "Leichtflugzeug"); view_build_empty()
+     * has no such dedup against the airline-slot text above, so this file
+     * does it for that one case rather than showing the same name twice. */
+    bool show_type = vm->type_full[0] != '\0' && strcmp(vm->type_full, airline_slot_text) != 0;
     set_hidden(s_lbl_type_full, !show_type);
     if (show_type) {
         lv_label_set_text(s_lbl_type_full, vm->type_full);
@@ -336,8 +354,10 @@ void screen_overhead_update(const view_model_t *vm)
         y_next += lv_obj_get_height(s_lbl_type_full) + GAP_MD;
     }
 
-    /* --- Data band -- §5.1/§5.2 only --- */
-    if (!empty_sky) {
+    /* --- Data band --- */
+    set_hidden(s_lbl_altitude, !show_data);
+    set_hidden(s_lbl_distance, !show_data);
+    if (show_data) {
         lv_label_set_text(s_lbl_altitude, vm->altitude);
         lv_obj_set_pos(s_lbl_altitude, PAD, y_next);
         lv_obj_update_layout(s_lbl_altitude);
@@ -349,12 +369,21 @@ void screen_overhead_update(const view_model_t *vm)
         int32_t dist_w = lv_obj_get_width(s_lbl_distance);
         int32_t dist_h = lv_obj_get_height(s_lbl_distance);
 
-        lv_label_set_text(s_lbl_direction_word, vm->direction_word);
-        lv_obj_update_layout(s_lbl_direction_word);
-        int32_t dir_h = lv_obj_get_height(s_lbl_direction_word);
-        /* Vertically centre the (shorter) sans-serif word on the taller
-         * mono figure it sits beside, rather than top-aligning the two. */
-        lv_obj_set_pos(s_lbl_direction_word, PAD + dist_w + GAP_MD, y_next + (dist_h - dir_h) / 2);
+        /* A bearing without a distance is not meaningful, so view_build.c
+         * leaves direction_word blank in that one case (DST_UNKNOWN) --
+         * show the distance value alone rather than an empty word beside it. */
+        bool show_dir = vm->direction_word[0] != '\0';
+        set_hidden(s_lbl_direction_word, !show_dir);
+        if (show_dir) {
+            lv_label_set_text(s_lbl_direction_word, vm->direction_word);
+            lv_obj_update_layout(s_lbl_direction_word);
+            int32_t dir_h = lv_obj_get_height(s_lbl_direction_word);
+            /* Vertically centre the (shorter) sans-serif word on the taller
+             * mono figure it sits beside, rather than top-aligning the two. */
+            lv_obj_set_pos(s_lbl_direction_word, PAD + dist_w + GAP_MD, y_next + (dist_h - dir_h) / 2);
+        }
+    } else {
+        set_hidden(s_lbl_direction_word, true);
     }
 }
 
