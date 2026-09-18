@@ -90,19 +90,24 @@ static bool is_placeholder_type(const ac_type_t *t)
 static void hero_from_type(const ac_type_t *t, const char *icao_type,
                            const char *icao_category, char *out, size_t outsz)
 {
-    /* A model name only helps if the entry is a real identification. A few are
-     * placeholders for targets nobody could identify (G2CA: manufacturer
-     * "unbekannt", model "G2CA"), and their "model" is just the raw ICAO code —
-     * exactly what AGENTS.md §1 says never to show this user. The emitter
-     * category says more with fewer letters.
+    /* Plain language over codes (AGENTS.md §1): the hero is the FULL name —
+     * "Diamond DV20 Katana", not "DV20" — and the hero shrink ladder deals with
+     * the length. Using the bare model here meant the panel showed a code as its
+     * largest text, with the full name repeated underneath as a second line the
+     * 480 px panel could not afford.
      *
-     * Note the near-miss: Diamond's aircraft really IS called "DV20", so
-     * "model equals the ICAO code" does NOT mean placeholder. The manufacturer
-     * is the honest signal. */
-    if (t != NULL && t->model != NULL && t->model[0] != '\0' &&
-        !is_placeholder_type(t)) {
-        copy_trunc(out, outsz, t->model);
-        return;
+     * A few entries are placeholders for targets nobody could identify (G2CA
+     * before it was corrected: manufacturer "unbekannt"), and their name is just
+     * the raw ICAO code. The emitter category says more with fewer letters.
+     * Note the near-miss that makes the MANUFACTURER the right signal rather
+     * than the model: Diamond's aircraft really is called "DV20". */
+    if (t != NULL && !is_placeholder_type(t)) {
+        const char *name = (t->full_name != NULL && t->full_name[0] != '\0')
+                               ? t->full_name : t->model;
+        if (name != NULL && name[0] != '\0') {
+            copy_trunc(out, outsz, name);
+            return;
+        }
     }
     /* No usable type designator. Two of the thirteen aircraft in the real
      * Gloggnitz capture were exactly this — genuine aircraft doing 160 kt with
@@ -242,10 +247,12 @@ void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now
         fill_reason(t, out->reason, sizeof out->reason);
     }
 
-    /* The supporting line repeating the hero verbatim is noise — "Leichtflugzeug"
-     * above "Leichtflugzeug". Must run after the hero is chosen. An empty
-     * supporting line simply disappears; that is the point. */
-    if (strcmp(out->type_full, out->hero) == 0) {
+    /* A supporting line that merely restates the hero is noise, and on a 480 px
+     * panel it is noise that costs a whole row: hero "H135" above "Airbus H135"
+     * pushed the distance off the bottom of §5.2 and §5.3 entirely. Substring,
+     * not equality — "Airbus H135" is not equal to "H135" but tells him nothing
+     * new. A city hero never matches an aircraft type, so §5.1 keeps both. */
+    if (out->hero[0] != '\0' && strstr(out->type_full, out->hero) != NULL) {
         out->type_full[0] = '\0';
     }
 }
@@ -267,6 +274,11 @@ void view_build_empty(const struct tm *now, const aircraft_t *last_seen, bool on
     const ac_type_t *t = actype(last_seen->type);
     fill_aircraft_common(last_seen, t, out);
     hero_from_type(t, last_seen->type, last_seen->category, out->hero, sizeof out->hero);
+    /* Same dedupe as view_build(): §5.3 shows the last-seen aircraft with the
+     * same hero/supporting pair, so it inherits the same redundancy. */
+    if (out->hero[0] != '\0' && strstr(out->type_full, out->hero) != NULL) {
+        out->type_full[0] = '\0';
+    }
     /* origin/airline/reason intentionally left blank: there is no route
      * context for a historical sighting, and `reason` is reserved for
      * VIEW_NO_ROUTE (view_model.h). */

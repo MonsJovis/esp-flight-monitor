@@ -8,6 +8,8 @@
  *   m  measure every place name against the hero shrink ladder
  *   w  provision WiFi (typed in over serial, stored in NVS — never in the repo)
  *   n  network status and a scan of what is in range
+ *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
+ *   3  §5.3 Himmel frei                    4  longest destination (shrink ladder)
  */
 #include <stdio.h>
 #include <string.h>
@@ -26,8 +28,17 @@
 #include "nvs_flash.h"
 #include "net/wifi.h"
 #include "net/flight_source.h"
+#include "net/timesync.h"
+#include "ui/screen_overhead.h"
+#include "data/view_build.h"
+#include "net/route_parse.h"
+#include "debug/dbg_fixture.h"
+#include <time.h>
 
 static const char *TAG = "flight";
+
+/* A replayed fixture screen must not be overwritten by the next live poll. */
+static volatile bool s_fixture_mode = false;
 
 static void log_memory_budget(const char *when)
 {
@@ -137,8 +148,56 @@ static void network_status(void)
     }
 }
 
+/* Reads the poller's snapshot and repaints. Owns no network state and does no
+ * formatting — view_build turns raw API data into final German, this just moves
+ * it onto the panel. All LVGL work happens here, behind the display lock. */
+static void ui_task(void *arg)
+{
+    static aircraft_t ac[MAX_AIRCRAFT];
+    static route_t    rt[MAX_AIRCRAFT];
+    static aircraft_t last_seen;
+    static bool       have_last_seen = false;
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (s_fixture_mode) {
+            continue;   /* a replayed screen stays up until dismissed */
+        }
+
+        int n = flight_source_snapshot(ac, MAX_AIRCRAFT, rt, MAX_AIRCRAFT);
+        time_t raw = time(NULL);
+        struct tm now;
+        localtime_r(&raw, &now);
+
+        view_model_t vm;
+        if (n > 0) {
+            last_seen = ac[0];
+            have_last_seen = true;
+            view_build(&ac[0], route_find(rt, n, ac[0].flight), &now, n,
+                       !flight_source_is_stale(), &vm);
+        } else {
+            view_build_empty(&now, have_last_seen ? &last_seen : NULL,
+                             !flight_source_is_stale(), &vm);
+        }
+
+        display_lock(0);
+        screen_overhead_update(&vm);
+        display_unlock();
+    }
+}
+
 static void on_cmd(char c)
 {
+    if (c >= '1' && c <= '4') {
+        s_fixture_mode = true;
+        dbg_fixture_show(c - '0');
+        return;
+    }
+    if (c == '0') {
+        s_fixture_mode = false;      /* back to live data */
+        ESP_LOGW(TAG, "fixture mode off; resuming live snapshots");
+        return;
+    }
     if (c == 'b') bench_suite();
     else if (c == 'm') dbg_metrics_hero();
     else if (c == 'w') provision_wifi();
@@ -167,20 +226,28 @@ void app_main(void)
 
     dbg_bench_init();
     dbg_screen_start(on_cmd);
-    font_card();
-    log_memory_budget("after font card drawn");
+
+    display_lock(0);
+    screen_overhead_create(lv_screen_active());
+    display_unlock();
+    log_memory_budget("after screen built");
 
     /* Network last, and never fatal: the panel must come up and show something
      * even with no credentials stored, which is the state every new device is
      * in and the state he will be in when he lands in Thailand. */
     if (wifi_start() == ESP_OK) {
+        /* Timezone follows the location preset — he never sets a clock. The
+         * preset picker is M6; for now it is compiled in with the coordinates. */
+        timesync_start(TZ_GLOGGNITZ);
         ESP_ERROR_CHECK(flight_source_start(HOME_LAT, HOME_LON, HOME_RADIUS_NM));
         log_memory_budget("after wifi + poller started");
     } else {
         ESP_LOGW(TAG, "no WiFi credentials stored — press 'w' to provision");
     }
 
-    ESP_LOGW(TAG, "ready: s=screenshot f=fontcard b=bench m=metrics w=wifi n=netstatus");
+    xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
+
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net 1-4=fixture 0=live");
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(30000));

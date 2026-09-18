@@ -226,7 +226,11 @@ void screen_overhead_update(const view_model_t *vm)
     bool overhead  = (vm->state == VIEW_OVERHEAD);
 
     /* --- Chrome --- */
+    /* In §5.3 the hero IS the clock, so the chrome copy is the same four
+     * characters twice on one screen — it reads as a rendering fault rather
+     * than as chrome. Hide it there. */
     lv_label_set_text(s_lbl_clock, vm->clock);
+    set_hidden(s_lbl_clock, vm->state == VIEW_EMPTY_SKY);
     set_hidden(s_lbl_offline, vm->online);
 
     /* --- Compass tape -- nothing to point at when the sky is empty --- */
@@ -248,6 +252,15 @@ void screen_overhead_update(const view_model_t *vm)
      * or disappears. */
     int32_t toprow_h = lv_font_get_line_height(&plex_sans_cond_34);
     int32_t y_hero   = Y_TOPROW + toprow_h + GAP_SM;
+
+    /* §5.3 shows neither the compass tape nor the top row, so holding their
+     * space open leaves ~124 px of dead panel above the clock while the data
+     * band falls off the bottom. The no-jump rule above is about §5.1 <-> §5.2,
+     * which are the same screen in two states; the empty sky is a different
+     * mode and is allowed to lay itself out. */
+    if (empty_sky) {
+        y_hero = Y_COMPASS;
+    }
 
     if (show_origin) {
         lv_label_set_text(s_lbl_origin, vm->origin);
@@ -358,14 +371,35 @@ void screen_overhead_update(const view_model_t *vm)
     set_hidden(s_lbl_altitude, !show_data);
     set_hidden(s_lbl_distance, !show_data);
     if (show_data) {
+        /* The data band is ANCHORED TO THE BOTTOM, not flowed after the
+         * supporting text. Flowing it fell off the panel in two of the three
+         * real states: a two-line reason sentence in §5.2, and the date plus
+         * "ZULETZT GESEHEN" plus the last-seen type in §5.3, both pushed
+         * "16,8 km Nordosten" past y=480 where it was simply cut in half.
+         * DESIGN.md §4's band order already implies this — data is the bottom
+         * band, so it belongs to the bottom edge. Anchoring also means the
+         * distance sits in the same place on every screen, which is what makes
+         * it readable at a glance instead of something you have to find. */
         lv_label_set_text(s_lbl_altitude, vm->altitude);
-        lv_obj_set_pos(s_lbl_altitude, PAD, y_next);
-        lv_obj_update_layout(s_lbl_altitude);
-        y_next += lv_obj_get_height(s_lbl_altitude) + GAP_SM;
-
         lv_label_set_text(s_lbl_distance, vm->distance);
-        lv_obj_set_pos(s_lbl_distance, PAD, y_next);
+        lv_obj_update_layout(s_lbl_altitude);
         lv_obj_update_layout(s_lbl_distance);
+
+        int32_t alt_h  = lv_obj_get_height(s_lbl_altitude);
+        int32_t band_h = alt_h + GAP_SM + lv_obj_get_height(s_lbl_distance);
+        int32_t y_band = THEME_SCREEN_HEIGHT - PAD - band_h;
+
+        /* If the supporting text really is long enough to reach the band, let
+         * it flow instead of overlapping — smaller type is recoverable, two
+         * strings drawn on top of each other is not. */
+        if (y_band < y_next) {
+            y_band = y_next;
+        }
+
+        lv_obj_set_pos(s_lbl_altitude, PAD, y_band);
+        y_next = y_band + alt_h + GAP_SM;
+
+        lv_obj_set_pos(s_lbl_distance, PAD, y_next);
         int32_t dist_w = lv_obj_get_width(s_lbl_distance);
         int32_t dist_h = lv_obj_get_height(s_lbl_distance);
 

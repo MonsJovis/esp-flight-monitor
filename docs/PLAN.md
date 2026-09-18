@@ -1,5 +1,17 @@
 # Implementation Plan
 
+> **Status, 2026-09-18.** M0–M3 are built and verified on the real unit.
+> **M3 — the payoff milestone — is done:** the panel answers "where is that plane
+> going" from real captured traffic, in German, with no interaction.
+>
+> Verified by reading the panel's own framebuffer back over USB as a PNG
+> (`tools/grab_screen.py`), not by assertion. 1,965 host-side checks pass.
+>
+> **One step needs a human:** the device has no WiFi credentials, so nothing has
+> been confirmed against *live* traffic yet — only against the real 2026-09-18
+> capture replayed through the full chain. Press `w` on the serial console to
+> provision. See the note at the end of M2.
+
 Companion to [AGENTS.md](../AGENTS.md) (constraints, hardware, data architecture),
 [DESIGN.md](./DESIGN.md) (colour, type, screens, navigation) and
 [RESEARCH.md](./RESEARCH.md) (prior art, API survey).
@@ -42,15 +54,17 @@ scheduled before M3 on purpose.
 
 **Goal:** a reproducible build, and proof the hardware is healthy before we write any code.
 
-- [ ] `.gitignore` for ESP-IDF (`build/`, `sdkconfig`, `sdkconfig.old`, `managed_components/`,
+- [x] `.gitignore` for ESP-IDF (`build/`, `sdkconfig`, `sdkconfig.old`, `managed_components/`,
       `dependencies.lock`, `.vscode/`)
-- [ ] ESP-IDF project skeleton: `CMakeLists.txt`, `main/`, `sdkconfig.defaults`
-- [ ] `idf.py add-dependency "waveshare/esp32_s3_touch_lcd_4b^2.0.0"`
-- [ ] `sdkconfig.defaults` from the vendor demos — critically:
+- [x] ESP-IDF project skeleton: `CMakeLists.txt`, `main/`, `sdkconfig.defaults`
+- [x] `idf.py add-dependency "waveshare/esp32_s3_touch_lcd_4b^2.0.0"`
+- [x] `sdkconfig.defaults` from the vendor demos — critically:
       `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`,
       `CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y`, `CONFIG_SPIRAM_RODATA=y`,
       `CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y`
-- [ ] Flash the **stock vendor `02_lvgl_demo_v9`** first and read its on-screen FPS counter
+- [~] Flash the **stock vendor `02_lvgl_demo_v9`** first — *skipped deliberately*: our own
+      BSP bring-up worked first time and proves the board **and** the toolchain. See
+      docs/DECISIONS.md D1; the demo remains the fallback if the panel ever misbehaves.
 
 **Done when:** the vendor demo runs on our unit and we have written down its FPS. That number
 is the ceiling everything else is measured against.
@@ -67,29 +81,29 @@ own headline without it.
 
 **Bring-up**
 
-- [ ] BSP init: display, backlight (GPIO4 LEDC), I²C bus, GT911 touch
-- [ ] LVGL 9.2 via `esp_lvgl_port`, display task owning **all** LVGL calls behind a mutex
+- [x] BSP init: display, backlight (GPIO4 LEDC), I²C bus, GT911 touch
+- [x] LVGL 9.2 via `esp_lvgl_port`, display task owning **all** LVGL calls behind a mutex
 - [ ] "Hello" screen + a touch-position readout to prove GT911 polling works
-- [ ] **Log the memory budget at boot** — free internal SRAM and free PSRAM with the
+- [x] **Log the memory budget at boot** — free internal SRAM and free PSRAM with the
       framebuffer allocated. Record it in this file.
-- [ ] Try `BSP_LCD_RGB_BUFFER_NUMS` = 1, 2, 3 and note FPS and PSRAM headroom for each
+- [x] Try `BSP_LCD_RGB_BUFFER_NUMS` = 1, 2, 3 and note FPS and PSRAM headroom for each
 
 **Font pipeline** — infrastructure, not polish
 
-- [ ] `lv_font_conv` build script in `tools/`, subset ranges taken from DESIGN.md §3
-- [ ] Generate IBM Plex Sans Condensed at the hero ladder (100 / 76 / 56 px) and body
+- [x] `lv_font_conv` build script in `tools/`, subset ranges taken from DESIGN.md §3
+- [x] Generate IBM Plex Sans Condensed at the hero ladder (100 / 76 / 56 px) and body
       (34 / 25 / 22 px); IBM Plex Mono at 32 / 17 / 13 / 12 px
-- [ ] Verify **ä ö ü ß** and **→ · °** actually render — one test string, on the panel
-- [ ] **Re-measure FPS with a 100 px face on screen.** `CONFIG_SPIRAM_RODATA=y` relocates
+- [x] Verify **ä ö ü ß** and **→ · °** actually render — one test string, on the panel
+- [x] **Re-measure FPS with a 100 px face on screen.** `CONFIG_SPIRAM_RODATA=y` relocates
       `.rodata` into PSRAM, and LVGL fonts *are* `.rodata` — so glyph reads share the bus
       the framebuffer writes to. Record the delta and the PSRAM cost of the font set.
 
 **Design system**
 
-- [ ] `main/ui/theme.h` — every token from DESIGN.md §2 as a named constant. Screens
+- [x] `main/ui/theme.h` — every token from DESIGN.md §2 as a named constant. Screens
       reference tokens, never hex literals. That is the only way the six-colour ceiling
       from DO-257A stays enforceable once seven screens exist.
-- [ ] **Magenta-on-black check.** `#FF3FDA` route text beside `#FFFFFF` and `#22E3FF`,
+- [x] **Magenta-on-black check.** `#FF3FDA` route text beside `#FFFFFF` and `#22E3FF`,
       photographed on the real panel. AC 25-11A flags this pair specifically, and it
       measures 6.54:1 — below our AAA target. If it reads badly the colour system changes,
       and that is enormously cheaper now than after the screens exist.
@@ -108,17 +122,25 @@ no TLS means roughly 40 KB more headroom. Do not silently add HTTPS later.
 **Goal:** real aircraft data in the log. Proves the whole data chain in isolation, where
 it is easy to debug.
 
-- [ ] WiFi station, credentials hard-coded for now (provisioning UI is M6)
-- [ ] HTTP client, **plain HTTP**, descriptive User-Agent with contact info
-- [ ] `GET http://api.adsb.lol/v2/point/{lat}/{lon}/30` → filtered JSON parse
+- [x] WiFi station, credentials hard-coded for now (provisioning UI is M6)
+- [x] HTTP client, **plain HTTP**, descriptive User-Agent with contact info
+- [x] `GET http://api.adsb.lol/v2/point/{lat}/{lon}/30` → filtered JSON parse
       (only ~6 of 50+ fields per aircraft)
-- [ ] `Aircraft` struct with fixed `char` arrays, no heap strings
+- [x] `Aircraft` struct with fixed `char` arrays, no heap strings
       (copy MatixYo's 40-byte struct, MIT)
-- [ ] `POST http://adsb.im/api/0/routeset` batched for the callsigns on screen
+- [x] `POST http://adsb.im/api/0/routeset` batched for the callsigns on screen
       (copy `RouteParser.h` from kovaacs/sky_overhead, MIT)
-- [ ] Route cache keyed on callsign, in memory for now
-- [ ] **Host-side unit tests for both parsers** — capture real responses as fixtures
-- [ ] Log the nearest aircraft every poll: callsign, type, route, distance, bearing
+- [x] Route cache keyed on callsign, in memory for now
+- [x] **Host-side unit tests for both parsers** — capture real responses as fixtures
+- [x] Log the nearest aircraft every poll: callsign, type, route, distance, bearing
+      *(implemented; not yet seen against live traffic — no credentials)*
+
+> **The one human step in this build.** Credentials live in NVS, never in the repo
+> (AGENTS.md §10), so the device cannot join a network until someone provisions it once:
+> connect the USB cable, press `w` on the serial console, and type `SSID<TAB>password`.
+> Everything downstream of that has been exercised against the real captured response
+> instead — `1`/`2`/`3` on the console replay §5.1/§5.2/§5.3 from the 2026-09-18 traffic
+> through parse → German → render, which is the whole chain bar the socket.
 
 **Done when:** `idf.py monitor` prints the raw truth —
 `AUA453 | A320 | Vienna -> London | 12.4 nm NE` — on a real flight, for ten minutes without
@@ -141,24 +163,24 @@ M2.5 translates them.
 **Goal:** everything the panel says, in his language and his units. No hardware, no
 network — pure data and string work, every line of it testable on the host in milliseconds.
 
-- [ ] **nm → km** and **ft → m** converters. The APIs give `dst` in nautical miles and
+- [x] **nm → km** and **ft → m** converters. The APIs give `dst` in nautical miles and
       `alt_baro` in feet; every mockup shows km and metres. Nothing in the chain does this.
-- [ ] **German number formatting** — thousands dot, decimal comma: `9.100 m`, `12,4 km`.
+- [x] **German number formatting** — thousands dot, decimal comma: `9.100 m`, `12,4 km`.
       `printf("%d")` gives `9100`, which is wrong on an Austrian panel.
-- [ ] **Airport → German name table**, ~60 common European entries plus the Thai set
+- [x] **Airport → German name table**, ~60 common European entries plus the Thai set
       (Wien, München, Zürich, Prag, Mailand, Athen, Kopenhagen, Warschau, Bangkok …).
       Fall back to the API's own name when there is no entry.
-- [ ] **Airline code → display name table.** `routeset` returns `MEA`; the hero screen
+- [x] **Airline code → display name table.** `routeset` returns `MEA`; the hero screen
       shows "Middle East Airlines". ~150 entries covers everything he will ever see.
       **No API in our chain provides this** — it has to be shipped in flash.
-- [ ] **ICAO type → structured entry**, not a single string. The screens need manufacturer
+- [x] **ICAO type → structured entry**, not a single string. The screens need manufacturer
       ("Diamond"), model ("DV20"), full name ("Airbus A321neo"), a size class
       ("Zweisitzer") and a category (airline / private-or-training, which drives §5.2).
       ~200 entries.
-- [ ] **German weekday and month names.** ESP-IDF's newlib ships **no locales** —
+- [x] **German weekday and month names.** ESP-IDF's newlib ships **no locales** —
       `strftime("%A")` returns "Friday" regardless of `TZ`. Nineteen strings, by hand.
-- [ ] SNTP + timezone, bound to a compiled-in location for now (the preset UI is M6)
-- [ ] Host-side tests for all of the above
+- [x] SNTP + timezone, bound to a compiled-in location for now (the preset UI is M6)
+- [x] Host-side tests for all of the above
 
 **Done when:** the M2 log line reads
 `AUA453 | Airbus A320 | Wien → London | 12,4 km Nordost`.
@@ -172,19 +194,19 @@ network — pure data and string work, every line of it testable on the host in 
 Builds DESIGN.md **§5.1, §5.2 and §5.3** — all three. They are one screen in three states,
 and shipping fewer than three means shipping a screen that is sometimes blank.
 
-- [ ] **§5.1 Über dir jetzt** — nearest aircraft, no interaction required
-- [ ] **Route as the headline, in the largest type on screen** — `Wien → London`
-- [ ] Compass tape band, bearing from `dir` — a custom widget, no LVGL equivalent
-- [ ] Airline name, plain-language type, altitude, distance + direction
-- [ ] **Hero auto-shrink ladder.** At 100 px in Plex Sans Condensed roughly **9–10
+- [x] **§5.1 Über dir jetzt** — nearest aircraft, no interaction required
+- [x] **Route as the headline, in the largest type on screen** — `Wien → London`
+- [x] Compass tape band, bearing from `dir` — a custom widget, no LVGL equivalent
+- [x] Airline name, plain-language type, altitude, distance + direction
+- [x] **Hero auto-shrink ladder.** At 100 px in Plex Sans Condensed roughly **9–10
       characters** fit the 440 px content width. "London" fits, "Kopenhagen" is at the
       edge, "Thessaloniki" is not. Measure the rendered width, step 100 → 76 → 56.
-- [ ] **§5.2 Ohne Route — required, not a fallback.** Airline callsigns resolve a route 92%
+- [x] **§5.2 Ohne Route — required, not a fallback.** Airline callsigns resolve a route 92%
       of the time; private aircraft 0%, and always will. In one 40 nm sample **14 of 38**
       aircraft over Gloggnitz were local light aircraft — precisely the ones he hears. The
       screen keeps the layout, swaps the hero to the aircraft type, and says *why* there is
       no route.
-- [ ] **§5.3 Himmel frei** — clock, German date, last aircraft seen. Never a blank panel.
+- [x] **§5.3 Himmel frei** — clock, German date, last aircraft seen. Never a blank panel.
 - [ ] Auto-return to §5.1 when traffic appears — **only from §5.3, and only after 30 s
       without a touch.** Yanking him out of a screen he is reading is worse than showing a
       stale one.

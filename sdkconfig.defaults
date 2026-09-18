@@ -38,7 +38,9 @@ CONFIG_ESP_TLS_INSECURE=n
 # 100 px PSRAM-resident font against.
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
-CONFIG_LV_USE_PERF_MONITOR=y
+# CONFIG_LV_USE_PERF_MONITOR is deliberately off: it overlays the bottom-right
+# corner of every screen. Turn it on to re-run the M1 benchmark, not to ship.
+# CONFIG_LV_USE_PERF_MONITOR is not set
 
 # Console on USB-Serial-JTAG rather than UART0. The board exposes a native USB
 # port, so this removes the 115200 baud ceiling — which matters because the

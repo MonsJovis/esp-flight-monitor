@@ -128,10 +128,10 @@ static void test_empty_sky_with_history(void)
     CHECK(vm.online == true);
     CHECK_INT(vm.traffic_count, 0);
 
-    CHECK_STR(vm.hero, "DV20");             /* plain-language type, per §5.2's rule */
+    CHECK_STR(vm.hero, "Diamond DV20 Katana");             /* plain-language type, per §5.2's rule */
     CHECK_STR(vm.callsign, "OEAAM");
     CHECK_STR(vm.registration, "OE-AAM");
-    CHECK_STR(vm.type_full, "Diamond DV20 Katana");
+    CHECK_STR(vm.type_full, "");
     CHECK_STR(vm.size_class, "Zweisitzer");
     CHECK_STR(vm.origin, "");                /* no route context for history */
     CHECK(vm.has_origin == false);
@@ -378,11 +378,11 @@ static void test_no_route_private_dv20s(void)
         view_build(ac, rt, &now, 13, true, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
-        CHECK_STR(vm.hero, "DV20");
+        CHECK_STR(vm.hero, "Diamond DV20 Katana");
         CHECK(vm.has_origin == false);
         CHECK_STR(vm.origin, "");
         CHECK_STR(vm.reason, REASON_PRIVATE);
-        CHECK_STR(vm.type_full, "Diamond DV20 Katana");
+        CHECK_STR(vm.type_full, "");
         CHECK_STR(vm.size_class, "Zweisitzer");
         check_numeric_fields(ac, &vm);
 
@@ -415,9 +415,9 @@ static void test_no_route_helicopter_ec35(void)
         view_build(ec35, rt, &now, 13, true, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
-        CHECK_STR(vm.hero, "H135");
+        CHECK_STR(vm.hero, "Airbus H135");
         CHECK_STR(vm.reason, REASON_HELICOPTER);
-        CHECK_STR(vm.type_full, "Airbus H135");
+        CHECK_STR(vm.type_full, "");
         CHECK_STR(vm.size_class, "Hubschrauber");
         remember_for_scan("OEBXP helicopter no-route", &vm);
     }
@@ -453,7 +453,7 @@ static void test_no_route_airliner_route_unavailable(void)
         view_build(ryr, rt, &now, 13, true, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
-        CHECK_STR(vm.hero, "737 MAX 8");
+        CHECK_STR(vm.hero, "Boeing 737 MAX 8");
         CHECK_STR(vm.reason, REASON_AIRLINER);
         /* We still know the airline even though the route is unusable —
          * airline_code is populated on this entry regardless of plausible. */
@@ -528,7 +528,7 @@ static void test_no_route_private_g2ca(void)
         /* A Guimbal Cabri G2 — a training helicopter, per its own A7 emitter
          * category — so the hero is the model name and the reason is the
          * helicopter one, not the generic private-aircraft sentence. */
-        CHECK_STR(vm.hero, "Cabri G2");
+        CHECK_STR(vm.hero, "Guimbal Cabri G2");
         CHECK_STR(vm.reason, REASON_HELICOPTER);
     }
 
@@ -573,11 +573,11 @@ static void test_nearest_aircraft_field_by_field(void)
     view_build(nearest, rt, &now, nac, true, &vm);
 
     CHECK_INT(vm.state, VIEW_NO_ROUTE);
-    CHECK_STR(vm.hero, "H135");
+    CHECK_STR(vm.hero, "Airbus H135");
     CHECK_STR(vm.origin, "");
     CHECK(vm.has_origin == false);
     CHECK_STR(vm.airline, "");
-    CHECK_STR(vm.type_full, "Airbus H135");
+    CHECK_STR(vm.type_full, "");
     CHECK_STR(vm.size_class, "Hubschrauber");
     CHECK_STR(vm.callsign, "OEBXP");
     CHECK_STR(vm.registration, "OE-BXP");
@@ -659,7 +659,7 @@ static void test_synthetic_military_reason(void)
     view_build(&ac, NULL, &now, 1, true, &vm);
 
     CHECK_INT(vm.state, VIEW_NO_ROUTE);
-    CHECK_STR(vm.hero, "F-16");
+    CHECK_STR(vm.hero, "General Dynamics F-16 Fighting Falcon");
     CHECK_STR(vm.reason, REASON_MILITARY);
     CHECK_STR(vm.callsign, "");
     CHECK_STR(vm.registration, "");
