@@ -11,8 +11,32 @@ appears in any log or transcript.
 Slot 0 is the Austrian network, slot 1 the Thai one — the device stores several
 and connects to whichever is in range, because it travels (AGENTS.md §6).
 """
-import argparse, getpass, sys, time
+import argparse, getpass, json, subprocess, sys, time
 import serial
+
+
+def _osascript(prompt, hidden):
+    """Native macOS dialog. Used when stdin is not a TTY — which is the case
+    when this is launched from a tool runner rather than a shell. The answer is
+    captured here and never echoed, so it cannot reach a terminal or a log."""
+    hide = " with hidden answer" if hidden else ""
+    script = (f'display dialog {json.dumps(prompt)} default answer ""'
+              f'{hide} with title "Flugradar — WLAN einrichten"')
+    r = subprocess.run(["osascript", "-e", script],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit("cancelled")
+    marker = "text returned:"
+    out = r.stdout.strip()
+    return out[out.index(marker) + len(marker):] if marker in out else ""
+
+
+def prompt_credentials():
+    if sys.stdin.isatty():
+        return input("SSID: ").strip(), getpass.getpass("Password (not echoed): ")
+    print("no TTY here — opening a dialog on your desktop...", flush=True)
+    return _osascript("WLAN-Name (SSID):", False).strip(), \
+           _osascript("WLAN-Passwort:", True)
 
 
 def main():
@@ -21,10 +45,9 @@ def main():
     ap.add_argument("--slot", type=int, default=0, choices=range(4))
     a = ap.parse_args()
 
-    ssid = input("SSID: ").strip()
+    ssid, password = prompt_credentials()
     if not ssid:
         sys.exit("no SSID given, nothing sent")
-    password = getpass.getpass("Password (not echoed): ")
     if "\t" in ssid or "\t" in password:
         sys.exit("SSID/password must not contain a tab — that is the field separator")
 
