@@ -1,0 +1,46 @@
+# Target
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash: 16 MB quad (AGENTS.md §2 — verified on the unit)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# PSRAM: 8 MB octal @ 80 MHz. 120 MHz is experimental and temperature-sensitive
+# for an always-on panel — AGENTS.md §7 says stay at 80.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# Tearing mitigation for espressif/esp-bsp#570. NOTE: this also relocates .rodata
+# into PSRAM, and LVGL fonts ARE .rodata — the font set therefore competes with the
+# framebuffer for PSRAM bandwidth. Measured in PLAN.md M1.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+
+# Cache
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+
+# CPU
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Plain HTTP only — no TLS anywhere (AGENTS.md §4: ~40 KB more heap per connection)
+CONFIG_ESP_TLS_INSECURE=n
+
+# LVGL: enable a large built-in face so M1 has a baseline to measure our own
+# 100 px PSRAM-resident font against.
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+CONFIG_LV_USE_PERF_MONITOR=y
+
+# Console on USB-Serial-JTAG rather than UART0. The board exposes a native USB
+# port, so this removes the 115200 baud ceiling — which matters because the
+# framebuffer grab in main/debug/dbg_screen.c moves 450 KiB per screenshot.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

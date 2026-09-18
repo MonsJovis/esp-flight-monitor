@@ -1,0 +1,23 @@
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+.vscode/
+
+# Host tests
+test/host/build/
+test/host/*.dSYM/
+
+# Font pipeline
+tools/node_modules/
+tools/fonts/*.ttf
+tools/fonts/*.otf
+
+# Secrets — WiFi credentials live in NVS, never here (AGENTS.md §10)
+secrets.h
+main/secrets.h
+
+# macOS
+.DS_Store

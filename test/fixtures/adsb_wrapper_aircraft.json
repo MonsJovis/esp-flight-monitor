@@ -1,0 +1,15 @@
+{
+  "aircraft": [
+    {
+      "hex": "cccccc",
+      "flight": "WRAP0001",
+      "alt_baro": 1000,
+      "dst": 5.5,
+      "dir": 10,
+      "gs": 100,
+      "track": 90,
+      "lat": 10.0,
+      "lon": 20.0
+    }
+  ]
+}

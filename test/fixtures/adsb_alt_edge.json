@@ -1,0 +1,22 @@
+{
+  "ac": [
+    {
+      "hex": "aaaaaa",
+      "flight": "GRND0001",
+      "alt_baro": "ground",
+      "dst": 1.0,
+      "dir": 0,
+      "gs": 0,
+      "lat": 47.1,
+      "lon": 15.1
+    },
+    {
+      "hex": "bbbbbb",
+      "flight": "UNK00002",
+      "dst": 2.0,
+      "dir": 0,
+      "lat": 47.2,
+      "lon": 15.2
+    }
+  ]
+}

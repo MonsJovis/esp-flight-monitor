@@ -1,0 +1,250 @@
+[
+  {
+    "_airport_codes_iata": "CLJ-MUC",
+    "_airports": [
+      {
+        "alt_feet": 1036.0,
+        "alt_meters": 315.77,
+        "countryiso2": "RO",
+        "iata": "CLJ",
+        "icao": "LRCL",
+        "lat": 46.785198,
+        "location": "Cluj-Napoca",
+        "lon": 23.686199,
+        "name": "Cluj-Napoca International Airport"
+      },
+      {
+        "alt_feet": 1487.0,
+        "alt_meters": 453.24,
+        "countryiso2": "DE",
+        "iata": "MUC",
+        "icao": "EDDM",
+        "lat": 48.353802,
+        "location": "Munich",
+        "lon": 11.7861,
+        "name": "Munich International Airport"
+      }
+    ],
+    "airline_code": "DLH",
+    "airport_codes": "LRCL-EDDM",
+    "callsign": "DLH1JN",
+    "number": "1JN",
+    "plausible": true
+  },
+  {
+    "_airport_codes_iata": "SMI-AMS",
+    "_airports": [
+      {
+        "alt_feet": 19.0,
+        "alt_meters": 5.79,
+        "countryiso2": "GR",
+        "iata": "SMI",
+        "icao": "LGSM",
+        "lat": 37.689999,
+        "location": "Samos Island",
+        "lon": 26.911699,
+        "name": "Samos Airport"
+      },
+      {
+        "alt_feet": -11.0,
+        "alt_meters": -3.35,
+        "countryiso2": "NL",
+        "iata": "AMS",
+        "icao": "EHAM",
+        "lat": 52.308601,
+        "location": "Amsterdam",
+        "lon": 4.76389,
+        "name": "Amsterdam Airport Schiphol"
+      }
+    ],
+    "airline_code": "CND",
+    "airport_codes": "LGSM-EHAM",
+    "callsign": "CND4NX",
+    "number": "4NX",
+    "plausible": true
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "OEAAM",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "FFMSNE",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "DEVSL",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "STN-BRE",
+    "_airports": [
+      {
+        "alt_feet": 348.0,
+        "alt_meters": 106.07,
+        "countryiso2": "GB",
+        "iata": "STN",
+        "icao": "EGSS",
+        "lat": 51.884998,
+        "location": "London",
+        "lon": 0.235,
+        "name": "London Stansted Airport"
+      },
+      {
+        "alt_feet": 14.0,
+        "alt_meters": 4.27,
+        "countryiso2": "DE",
+        "iata": "BRE",
+        "icao": "EDDW",
+        "lat": 53.047501,
+        "location": "Bremen",
+        "lon": 8.78667,
+        "name": "Bremen Airport"
+      }
+    ],
+    "airline_code": "RYR",
+    "airport_codes": "EGSS-EDDW",
+    "callsign": "RYR4MR",
+    "number": "4MR",
+    "plausible": false
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "OEVSO",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "OEBXP",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "SKP-VIE",
+    "_airports": [
+      {
+        "alt_feet": 781.0,
+        "alt_meters": 238.05,
+        "countryiso2": "MK",
+        "iata": "SKP",
+        "icao": "LWSK",
+        "lat": 41.961601,
+        "location": "Skopje",
+        "lon": 21.621401,
+        "name": "Skopje Alexander the Great Airport"
+      },
+      {
+        "alt_feet": 600.0,
+        "alt_meters": 182.88,
+        "countryiso2": "AT",
+        "iata": "VIE",
+        "icao": "LOWW",
+        "lat": 48.110298,
+        "location": "Vienna",
+        "lon": 16.5697,
+        "name": "Vienna International Airport"
+      }
+    ],
+    "airline_code": "AUA",
+    "airport_codes": "LWSK-LOWW",
+    "callsign": "AUA76PZ",
+    "number": "76PZ",
+    "plausible": true
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "OEXNC",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "unknown",
+    "_airports": [],
+    "airline_code": "unknown",
+    "airport_codes": "unknown",
+    "callsign": "OEANW",
+    "number": "unknown"
+  },
+  {
+    "_airport_codes_iata": "PEG-KRK",
+    "_airports": [
+      {
+        "alt_feet": 697.0,
+        "alt_meters": 212.45,
+        "countryiso2": "IT",
+        "iata": "PEG",
+        "icao": "LIRZ",
+        "lat": 43.095901,
+        "location": "Perugia",
+        "lon": 12.5132,
+        "name": "Perugia / San Egidio Airport"
+      },
+      {
+        "alt_feet": 791.0,
+        "alt_meters": 241.1,
+        "countryiso2": "PL",
+        "iata": "KRK",
+        "icao": "EPKK",
+        "lat": 50.077702,
+        "location": "Kraków",
+        "lon": 19.7848,
+        "name": "John Paul II International Airport Kraków-Balice Airport"
+      }
+    ],
+    "airline_code": "RYR",
+    "airport_codes": "LIRZ-EPKK",
+    "callsign": "RYR2381",
+    "number": "2381",
+    "plausible": true
+  },
+  {
+    "_airport_codes_iata": "VIE-OTP",
+    "_airports": [
+      {
+        "alt_feet": 600.0,
+        "alt_meters": 182.88,
+        "countryiso2": "AT",
+        "iata": "VIE",
+        "icao": "LOWW",
+        "lat": 48.110298,
+        "location": "Vienna",
+        "lon": 16.5697,
+        "name": "Vienna International Airport"
+      },
+      {
+        "alt_feet": 314.0,
+        "alt_meters": 95.71,
+        "countryiso2": "RO",
+        "iata": "OTP",
+        "icao": "LROP",
+        "lat": 44.572201,
+        "location": "Bucharest",
+        "lon": 26.1022,
+        "name": "Henri Coandă International Airport"
+      }
+    ],
+    "airline_code": "AUA",
+    "airport_codes": "LOWW-LROP",
+    "callsign": "AUA695J",
+    "number": "695J",
+    "plausible": true
+  }
+]
