@@ -1,23 +1,25 @@
 # Implementation Plan
 
-> **Status, 2026-09-19.** M0–M3 are built and **verified against live traffic** on the
-> real unit. **M3 — the payoff milestone — is done:** the panel answers "where is that
-> plane going" in German, with no interaction.
+> **Status, 2026-09-19.** **M0–M8 are built and verified on the real unit against live
+> traffic.** One checklist item remains open in the whole plan, and it is the one no tool
+> can close: *read every screen aloud with someone Austrian* (M7).
 >
-> Proven end to end on real aircraft, not fixtures:
+> What the panel says, unprompted, on real aircraft over Gloggnitz:
 > ```
-> PGT61V | A21N | Amsterdam -> Istanbul | 6.1 nm SW
-> EWG4FX | A319 | Stuttgart -> Stuttgart | 10.2 nm N
-> DMAVT  | ?    | no route              |  9.2 nm NE
+> Wien → Bologna · Austrian Airlines · 4.793 m · 16,4 km nordöstlich
+> Scheibe SF-25 Falke · Eine Route gibt es nur bei Linienflügen. · 11,5 km nordwestlich
+> München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
-> and on the panel: **Bodrum → London · Boeing 737 MAX 8 · 10.973 m · 16,7 km Süden**.
 >
-> Soak on a −72 dBm holiday-apartment link: **11 of 12 polls succeeded, 0 reboots,
-> 0 watchdog trips, memory flat**. Verified by reading the panel's own framebuffer back
-> over USB as a PNG (`tools/grab_screen.py`), not by assertion. 1,984 host-side checks pass.
+> **19,518 host checks across seven suites, 0 failed**, plus two gates that run with them:
+> a font-coverage check (LVGL draws a missing glyph as *nothing*) and a string audit
+> (every German word must come from `main/strings_de.h`). Every screenshot in README.md is
+> the panel's own framebuffer read back over USB by `tools/grab_screen.py`.
 >
-> Five defects that only live traffic could find are written up in docs/DECISIONS.md D24 —
-> the sharpest being a routeset buffer smaller than a fixture already sitting in this repo.
+> Fifty-one decisions are written up in docs/DECISIONS.md, including the ones that were
+> wrong. The sharpest of the late ones: **consolidating every German string into one file
+> walked them out from under the font gate** (D39), which then passed for having nothing
+> left to check — a silent hole in the one tool whose entire job is catching silence.
 
 ## Sequencing principle
 
