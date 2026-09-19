@@ -67,8 +67,14 @@ typedef struct {
 #define OTA_CHECK_INTERVAL_MS (24 * 60 * 60 * 1000LL)
 
 /* True when it is time to fetch the manifest. Needs a URL, a network and a
- * clock — without a clock the interval cannot be honoured and the device
- * would re-check on every reboot. */
+ * clock.
+ *
+ * The caller's `last_check_ms` is not persisted anywhere, so this is an
+ * interval per UPTIME, not per day: a device that reboots checks again
+ * straight away. That is deliberate — a manifest fetch is one small GET, and
+ * persisting the timestamp would cost an NVS write a day to save it — but it
+ * is not what this comment used to claim, which was that the clock gate
+ * stopped a re-check on every reboot. It does not. */
 bool ota_should_check(const ota_ctx_t *ctx);
 
 /* True when an update that is known to be available may be downloaded and

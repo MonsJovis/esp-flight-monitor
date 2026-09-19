@@ -769,6 +769,17 @@ void app_main(void)
         ESP_LOGW(TAG, "no WiFi credentials stored — press 'w' to provision");
     }
 
+    /* Go through apply_settings() rather than trusting the open-coded
+     * bootstrap above to stay in step with it. It did not: apply_settings()
+     * grew a call to ota_settings_update(), the boot path did not, and so
+     * s_settings stayed all-zero — auto_dim false — for the entire life of
+     * the device unless he happened to change a setting by hand. The OTA task
+     * would find an update, log it, and then decline to install it every five
+     * minutes forever, while the console cheerfully printed the night window
+     * it believed was in force. Safe to call here now that the flight source
+     * tolerates not having been started. */
+    apply_settings();
+
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
     ota_start();
 

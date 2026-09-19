@@ -7,6 +7,10 @@
 #include "cJSON.h"
 #include "compat.h"
 
+/* One quadrillion. Past any real version, below int64 overflow when
+ * multiplied by ten. */
+#define OTA_VERSION_COMPONENT_MAX 1000000000000000LL
+
 static const char *TAG = "ota";
 
 /* ---- manifest ---------------------------------------------------------- */
@@ -72,19 +76,28 @@ bool ota_manifest_parse(const char *json, size_t len, ota_manifest_t *out)
 /* Reads one numeric component and advances *p past it and any single
  * separating '.'. Stops at anything that is not a digit or a dot, which is
  * how "0.4.2-3-gdeadbee" compares equal to "0.4.2". */
-static int next_component(const char **p, bool *ran_out)
+static int64_t next_component(const char **p, bool *ran_out)
 {
     const char *s = *p;
     if (!isdigit((unsigned char)*s)) {
         *ran_out = true;
         return 0;                       /* missing components are zero */
     }
-    int v = 0;
+    /* Saturating, and WIDE. The first version of this clamped at 100000,
+     * which is not the same thing: "1000000" stopped accumulating and came
+     * out as 100000 while "999999" came out whole, so the larger version
+     * compared as SMALLER. A clamp that is not monotonic has the exact
+     * failure it was written to prevent — an old build looking newer — just
+     * further up the number line. The ceiling here is past any version anyone
+     * will ship, so ordering holds everywhere it can matter, and two absurd
+     * values merely compare equal instead of inverting. */
+    int64_t v = 0;
     while (isdigit((unsigned char)*s)) {
-        /* Clamp rather than overflow. A version number this large is someone
-         * else's bug, and wrapping it would make an old build look new. */
-        if (v < 100000) {
+        if (v <= OTA_VERSION_COMPONENT_MAX / 10) {
             v = v * 10 + (*s - '0');
+        }
+        if (v > OTA_VERSION_COMPONENT_MAX) {
+            v = OTA_VERSION_COMPONENT_MAX;
         }
         s++;
     }
@@ -105,8 +118,8 @@ int ota_version_cmp(const char *a, const char *b)
     /* Four components is more than semver needs and costs nothing. */
     for (int i = 0; i < 4; i++) {
         bool a_out = false, b_out = false;
-        int va = next_component(&a, &a_out);
-        int vb = next_component(&b, &b_out);
+        int64_t va = next_component(&a, &a_out);
+        int64_t vb = next_component(&b, &b_out);
         if (va != vb) {
             return (va < vb) ? -1 : 1;
         }

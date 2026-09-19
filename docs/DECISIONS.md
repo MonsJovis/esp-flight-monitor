@@ -995,3 +995,56 @@ Coordinates geocoded rather than estimated. A transposed lat/lon or a stale 0.0 
 invisible on a panel that only ever shows a distance, so the test also asserts Vienna is
 north **and** east of Gloggnitz — the cheapest available check that the row is in the right
 hemisphere.
+
+## D54 — The review findings, and the one that mattered most
+
+A full review of this session's work found nine defects in the new C and thirteen in the
+tooling and tests. The headline is not in either list, because it predates the session:
+
+**A brand-new board boot-looped.** `s.mutex` is created inside `flight_source_start()`, and
+`main.c` only starts the poller when `wifi_start()` succeeds — so a device with no stored
+credentials never called it, and `ui_task` called `flight_source_snapshot()` two seconds
+later into a NULL mutex. Reproduced on hardware: four reboots in eighteen seconds,
+`assert failed: xQueueSemaphoreTake queue.c:1709`. The console message telling you to press
+'w' was scrolling past in the reboot loop, so even the recovery path was a race. Seven
+accessors had the hole. The module now answers "I have not been started" honestly — no
+aircraft, not stale, still resolving — all of which the §5.3 empty-sky screen already
+renders, because that screen was built for this.
+
+**OTA found updates and could never install them.** `ota_settings_update()` was called only
+from `apply_settings()`, and `app_main()` open-coded a *subset* of `apply_settings()` rather
+than calling it. So `s_settings` stayed all-zero for the life of the device, `auto_dim` read
+false, and `ota_should_install()` refused every night forever — while `update_console()`
+printed the night window it believed was in force. The fix is to call the real function at
+boot, which is only safe because of the guard above. Duplication that drifts, again: the
+same shape as D36 and D46.
+
+**The manifest fetch could not follow a redirect**, though its comment named GitHub release
+assets as the case it existed for. `.disable_auto_redirect` is inert on the
+open/fetch_headers/read path — `esp_http_client` only acts on it inside
+`esp_http_client_perform()`, which is why `esp_https_ota` rolls its own loop. The failure
+was asymmetric and so particularly nasty: the `.bin` named *inside* the manifest would have
+downloaded fine, because `esp_https_ota` handles its own redirects. Only the first hop was
+broken.
+
+**Replacing the update source did not invalidate the image pending from the old one.** Point
+the device at a new source because the old one was wrong or compromised, have the new one
+fail to answer, and the night's install pulls the binary from the source you just removed.
+
+Five smaller ones, all real: 4 KB of `.bss` — internal DRAM — spent by a feature that ships
+switched off, in a module that goes to real lengths elsewhere to cost nothing while off; a
+rolled-back image re-downloaded and re-flashed every night forever, because nothing survived
+the reboot to say it had already failed (now recorded in NVS from the other slot's
+descriptor); the manifest's `size` field documented as a safety check and never read; a
+version clamp that stopped accumulating at 100000 and therefore made **"1000000" compare as
+smaller than "999999"** — the exact inversion the clamp was written to prevent, moved further
+up the number line; and `start_task_once()`, a check-then-act reachable from two tasks
+seconds apart, where the likely outcome was not two tasks but a failed second `xTaskCreate`
+NULLing the handle of the one that had started.
+
+**What this says about the session.** Almost every one of these is a comment that had
+drifted from its code — `.disable_auto_redirect` "for GitHub releases", `size` "to reject an
+obviously wrong image", the clamp that "does not wrap", the 24 h interval that "would
+otherwise re-check on every reboot". The code was reviewed; the comments were believed. A
+comment asserting a property is a claim, and claims are the cheapest thing in a repository
+to get wrong.
