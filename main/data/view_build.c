@@ -223,7 +223,14 @@ static void fill_airline(const route_t *route, view_model_t *out)
 /* ---- public API ----------------------------------------------------------- */
 
 void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now,
-                 int traffic_count, bool online, view_model_t *out)
+                int traffic_count, bool online, view_model_t *out)
+{
+    view_build_ex(ac, route, false, now, traffic_count, online, out);
+}
+
+void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_searching,
+                   const struct tm *now, int traffic_count, bool online,
+                   view_model_t *out)
 {
     if (out == NULL) {
         return;
@@ -253,7 +260,15 @@ void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now
         hero_from_type(t, ac->type, ac->category, out->hero, sizeof out->hero);
         out->origin[0] = '\0';
         out->has_origin = false;
-        fill_reason(t, out->reason, sizeof out->reason);
+        out->route_searching = route_searching;
+        if (route_searching) {
+            /* Still looking. Do NOT assert there is no flight plan — say what is
+             * actually happening, and let the settled answer replace it. */
+            copy_trunc(out->reason, sizeof out->reason,
+                       "Die Route wird noch gesucht.");
+        } else {
+            fill_reason(t, out->reason, sizeof out->reason);
+        }
     }
 
     /* A supporting line that merely restates the hero is noise, and on a 480 px

@@ -138,7 +138,19 @@ int source_find_uncached(const char (*onscreen)[9], int n_onscreen,
 
 bool source_should_post_routes(int n_pending, int64_t ms_since_last_post)
 {
-    return n_pending > 0 && ms_since_last_post >= SRC_ROUTE_POST_MIN_INTERVAL_MS;
+    return source_should_post_routes_ex(n_pending, 0, ms_since_last_post);
+}
+
+bool source_should_post_routes_ex(int n_pending, int n_never_asked,
+                                  int64_t ms_since_last_post)
+{
+    if (n_pending <= 0) {
+        return false;
+    }
+    const int64_t floor_ms = (n_never_asked > 0)
+                                 ? SRC_ROUTE_POST_NEW_INTERVAL_MS
+                                 : SRC_ROUTE_POST_MIN_INTERVAL_MS;
+    return ms_since_last_post >= floor_ms;
 }
 
 const char *source_compass_abbrev_en(float bearing_deg)

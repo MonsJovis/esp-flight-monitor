@@ -784,5 +784,43 @@ int main(void)
         CHECK(strcmp(vm.hero, "Kein Netz") != 0);
     }
 
+
+    GROUP("\"still looking\" must not be reported as \"no flight plan\"");
+    {
+        /* The 2E0LXY lesson (PLAN.md M4): during the seconds between sending a
+         * callsign to routeset and getting an answer, the panel used to assert
+         * there was no flight plan — then contradict itself. A panel that
+         * corrects itself is one he stops believing. */
+        char *ac_json = load_fixture("adsblol_gloggnitz_30nm.json");
+        aircraft_t acs[MAX_AIRCRAFT];
+        int nac = adsb_parse(ac_json, strlen(ac_json), acs, MAX_AIRCRAFT);
+        CHECK(nac > 0);
+
+        struct tm now = make_now();
+        view_model_t pending, settled;
+
+        view_build_ex(&acs[0], NULL, true,  &now, nac, true, &pending);
+        view_build_ex(&acs[0], NULL, false, &now, nac, true, &settled);
+
+        /* Same screen, same layout — only the explanation differs. */
+        CHECK_INT(pending.state, VIEW_NO_ROUTE);
+        CHECK_INT(settled.state, VIEW_NO_ROUTE);
+        CHECK(pending.route_searching == true);
+        CHECK(settled.route_searching == false);
+        CHECK(strcmp(pending.reason, settled.reason) != 0);
+        CHECK(pending.reason[0] != '\0');
+        /* Must not claim absence while still asking. */
+        CHECK(strstr(pending.reason, "gibt es nur") == NULL);
+        CHECK_STR(pending.hero, settled.hero);
+
+        /* The plain view_build() keeps its old meaning: settled, not searching. */
+        view_model_t plain;
+        view_build(&acs[0], NULL, &now, nac, true, &plain);
+        CHECK(plain.route_searching == false);
+        CHECK_STR(plain.reason, settled.reason);
+
+        free(ac_json);
+    }
+
     return test_summary();
 }

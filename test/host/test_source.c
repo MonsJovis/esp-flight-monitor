@@ -198,5 +198,37 @@ int main(void)
         free(rt);
     }
 
+
+    GROUP("a newly-seen callsign gets its route asked promptly");
+    {
+        /* The route is the single most important thing on the panel, and a flat
+         * 2-minute batch interval meant a plane could cross the whole 30 nm ring
+         * still showing "ROUTE WIRD GESUCHT". New callsigns get the fast floor;
+         * retries of ones already asked keep the slow one, which is what
+         * actually protects the free service (AGENTS.md §5). */
+        const int64_t fast = SRC_ROUTE_POST_NEW_INTERVAL_MS;
+        const int64_t slow = SRC_ROUTE_POST_MIN_INTERVAL_MS;
+        CHECK(fast < slow);
+
+        /* Nothing queued: never post, however long it has been. */
+        CHECK(source_should_post_routes_ex(0, 0, slow * 10) == false);
+
+        /* One never asked: fires once the fast floor has passed, not before. */
+        CHECK(source_should_post_routes_ex(1, 1, fast - 1) == false);
+        CHECK(source_should_post_routes_ex(1, 1, fast)     == true);
+
+        /* All previously asked: must wait out the slow interval. */
+        CHECK(source_should_post_routes_ex(3, 0, fast)     == false);
+        CHECK(source_should_post_routes_ex(3, 0, slow - 1) == false);
+        CHECK(source_should_post_routes_ex(3, 0, slow)     == true);
+
+        /* One new among many old still earns the fast path — that is the point. */
+        CHECK(source_should_post_routes_ex(8, 1, fast)     == true);
+
+        /* The old two-argument form must keep the conservative meaning. */
+        CHECK(source_should_post_routes(3, fast)  == false);
+        CHECK(source_should_post_routes(3, slow)  == true);
+    }
+
     return test_summary();
 }

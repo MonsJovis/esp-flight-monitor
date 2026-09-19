@@ -24,6 +24,10 @@
  * ============================================================================
  */
 #define CHROME_NO_FLIGHT_PLAN "KEIN FLUGPLAN"   /* §5.2 amber caution tag, beside the reason sentence */
+/* Shown instead while the routeset lookup is still outstanding. Claiming
+ * "KEIN FLUGPLAN" during those seconds is a lie the device then corrects a few
+ * seconds later, and a panel that corrects itself is one he stops believing. */
+#define CHROME_ROUTE_SEARCHING "ROUTE WIRD GESUCHT"
 #define CHROME_NO_NETWORK     "KEIN NETZ"       /* chrome caution, shown only when vm->online is false */
 #define CHROME_LAST_SEEN      "ZULETZT GESEHEN" /* §5.3 caption above the last known aircraft's data */
 #define CHROME_ROUTE_ARROW    "\xE2\x86\x92"    /* U+2192 "→" — not a word, the route glyph (magenta) */
@@ -189,7 +193,7 @@ void screen_overhead_create(lv_obj_t *parent)
     s_lbl_arrow  = make_label(s_cont, &plex_sans_cond_34, THEME_MAGENTA);
     lv_label_set_text(s_lbl_arrow, CHROME_ROUTE_ARROW);
     s_lbl_no_route_tag = make_label(s_cont, &plex_sans_cond_34, THEME_AMBER);
-    lv_label_set_text(s_lbl_no_route_tag, CHROME_NO_FLIGHT_PLAN);
+    lv_label_set_text(s_lbl_no_route_tag, CHROME_NO_FLIGHT_PLAN); /* replaced per-update */
     lv_obj_set_hidden(s_lbl_origin, true);
     lv_obj_set_hidden(s_lbl_arrow, true);
     lv_obj_set_hidden(s_lbl_no_route_tag, true);
@@ -270,6 +274,9 @@ void screen_overhead_update(const view_model_t *vm)
         lv_obj_set_pos(s_lbl_arrow, arrow_x, Y_TOPROW);
     }
     if (show_no_route) {
+        lv_label_set_text(s_lbl_no_route_tag,
+                          vm->route_searching ? CHROME_ROUTE_SEARCHING
+                                              : CHROME_NO_FLIGHT_PLAN);
         lv_obj_set_pos(s_lbl_no_route_tag, PAD, Y_TOPROW);
     }
 

@@ -413,3 +413,33 @@ answering" are different problems with different fixes, and they currently share
 
 The board enumerates as `/dev/cu.usbmodem1101` or `/dev/cu.usbmodem101` depending on the
 replug, which broke every hardcoded tool. `tools/*.py` now discover it.
+
+## D27 — "Still looking" and "no flight plan" are different answers
+
+**Decision:** `view_model_t` carries `route_searching`. While a callsign is queued with the
+routeset API and unanswered, the amber tag reads **"ROUTE WIRD GESUCHT"** with
+*"Die Route wird noch gesucht."*, not "KEIN FLUGPLAN".
+
+**Why:** PLAN.md M4 calls this the 2E0LXY lesson, and it is the sharpest one in the plan.
+Asserting "this aircraft has no flight plan" and then replacing it with a route a few
+seconds later does not read as a device updating — it reads as a device that was wrong.
+A panel he has caught being wrong is worse than no panel, because the whole product is a
+claim that it is faster and more trustworthy than reaching for his phone.
+
+Same layout, same hero, same data band; only the explanation differs.
+
+## D28 — New callsigns get their route asked promptly; retries do not
+
+**Decision:** two intervals. A batch containing a callsign never sent to the API fires after
+**15 s**; a batch of pure retries keeps the **120 s** floor.
+
+**Why:** the flat 2-minute batch interval was a correct reading of AGENTS.md §5 ("one POST
+every few minutes, not one per poll") applied to the wrong thing. That rule exists to stop
+us re-asking about the same flight, and the per-callsign cache already achieves it. What the
+flat interval actually did was make the **route** — the single most important thing on the
+panel — arrive up to two minutes after the aircraft did, by which time it may have crossed
+the entire 30 nm ring. Measured after the change: **route resolved 11.6 s after boot**.
+
+The fast path cannot run away, because the cache means any callsign is asked at most once
+per flight, and the `asked` flag is set on any completed attempt — success or failure — so a
+failing POST drops to the slow interval instead of looping.

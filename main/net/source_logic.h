@@ -29,7 +29,21 @@ extern "C" {
 #define SRC_POLL_INTERVAL_MS    12000   /* normal cadence; never < 10000 */
 #define SRC_BACKOFF_BASE_MS     12000   /* first failure: just retry at the normal cadence */
 #define SRC_BACKOFF_CAP_MS      300000  /* 5 min — matches adsb.lol's documented 503 cooldown */
-#define SRC_ROUTE_POST_MIN_INTERVAL_MS 120000 /* routeset batches at most once per 2 min */
+/* Two callsign states, two rate limits.
+ *
+ * A callsign nobody has ever asked about is why the screen currently says
+ * "ROUTE WIRD GESUCHT", and the route is the single most important thing on the
+ * panel — making him wait two minutes for it, by which time the aircraft may
+ * have flown out of range, defeats the product. Ask promptly.
+ *
+ * A callsign already asked about and still unanswered is just a retry, and
+ * retries are what get a free community service annoyed (AGENTS.md §5). Those
+ * keep the slow interval.
+ *
+ * The cache means any given callsign is only ever asked once per flight, so the
+ * fast path cannot run away: it fires when genuinely NEW traffic appears. */
+#define SRC_ROUTE_POST_MIN_INTERVAL_MS  120000   /* retries of unanswered ones */
+#define SRC_ROUTE_POST_NEW_INTERVAL_MS   15000   /* at least one never asked  */ /* routeset batches at most once per 2 min */
 
 /* Delay before the next poll attempt, given how many polls in a row have
  * failed (0 = the previous poll succeeded). Doubles from SRC_BACKOFF_BASE_MS,
@@ -118,6 +132,11 @@ int source_find_uncached(const char (*onscreen)[9], int n_onscreen,
  * (AGENTS.md §5 — "one POST every few minutes, not one per poll"). Pass
  * INT64_MAX for ms_since_last_post if a POST has never been made. */
 bool source_should_post_routes(int n_pending, int64_t ms_since_last_post);
+
+/* As above, but `n_never_asked` counts callsigns that have not yet been sent to
+ * the API even once. Those earn the fast interval. */
+bool source_should_post_routes_ex(int n_pending, int n_never_asked,
+                                  int64_t ms_since_last_post);
 
 /* ---- Compass -----------------------------------------------------------
  *

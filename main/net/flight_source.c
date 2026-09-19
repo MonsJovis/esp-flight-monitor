@@ -50,6 +50,12 @@ typedef struct {
                                  if the aircraft has since left the ring */
     route_t        route;    /* valid iff status == ROUTE_STATUS_RESOLVED */
     bool           used;
+    /* False until this callsign has actually been sent to the API at least
+     * once. A never-asked callsign is why the panel says "ROUTE WIRD GESUCHT"
+     * right now, so it earns the fast interval; a repeat is just a retry and
+     * keeps the slow one. Set on any completed attempt, success or failure, so
+     * a failing POST cannot loop on the fast path. */
+    bool           asked;
 } route_cache_entry_t;
 
 static struct {
@@ -135,18 +141,22 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
 
     aircraft_t batch[ROUTE_CACHE_MAX];
     int n_batch = 0;
+    int n_never_asked = 0;
     for (int i = 0; i < s.route_count; i++) {
         if (s.routes[i].status == ROUTE_STATUS_RESOLVING) {
             memset(&batch[n_batch], 0, sizeof batch[n_batch]);
             strncpy(batch[n_batch].flight, s.routes[i].callsign, sizeof batch[n_batch].flight - 1);
             batch[n_batch].lat = s.routes[i].lat;
             batch[n_batch].lon = s.routes[i].lon;
+            if (!s.routes[i].asked) {
+                n_never_asked++;
+            }
             n_batch++;
         }
     }
 
     int64_t since_last_post = (s.last_route_post_ms == 0) ? INT64_MAX : (now_ms - s.last_route_post_ms);
-    bool do_post = source_should_post_routes(n_batch, since_last_post);
+    bool do_post = source_should_post_routes_ex(n_batch, n_never_asked, since_last_post);
 
     xSemaphoreGive(s.mutex);
 
@@ -189,6 +199,12 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
 
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     s.last_route_post_ms = now_ms; /* count the attempt even on failure -- don't hammer on error */
+    for (int i = 0; i < n_batch; i++) {
+        route_cache_entry_t *e = cache_find_locked(batch[i].flight);
+        if (e != NULL) {
+            e->asked = true;
+        }
+    }
     xSemaphoreGive(s.mutex);
 
     if (resp_len < 0 || status != 200) {
@@ -202,7 +218,13 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
 
     int n_results = route_parse(resp_buf, (size_t)resp_len, results, ROUTE_CACHE_MAX);
     if (n_results < 0) {
-        ESP_LOGW(TAG, "routeset response failed to parse");
+        /* Say what came back. "malformed JSON" alone cannot distinguish a body
+         * cut short by the link from an error page the API returned instead. */
+        ESP_LOGW(TAG, "routeset parse failed: %d bytes, starts \"%.40s\"",
+                 resp_len, resp_buf);
+        if (resp_len >= 24) {
+            ESP_LOGW(TAG, "  ...ends \"%.24s\"", resp_buf + resp_len - 24);
+        }
         goto done;
     }
 

@@ -43,6 +43,14 @@ extern "C" {
  *   ac != NULL, route resolved AND plausible     -> VIEW_OVERHEAD
  *   ac != NULL, otherwise                        -> VIEW_NO_ROUTE
  */
+/* As view_build(), but says whether the route lookup is still outstanding.
+ * Pass route_searching = true only when the callsign has been sent to the
+ * routeset API and no answer has come back yet — NOT when the answer was
+ * "this aircraft has no flight plan". */
+void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_searching,
+                   const struct tm *now, int traffic_count, bool online,
+                   view_model_t *out);
+
 void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now,
                  int traffic_count, bool online, view_model_t *out);
 

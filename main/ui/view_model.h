@@ -51,6 +51,13 @@ typedef struct {
     char direction_abbr[8];       /* "NO" — German uses O for Ost, never E        */
     float bearing_deg;            /* for the compass tape; 0..360                 */
 
+    /* True while the route lookup is still in flight — asked, no answer yet.
+     * Different from "this aircraft has no flight plan", and the difference
+     * matters: showing "Kein Flugplan" during the seconds before routeset
+     * answers teaches him the panel is wrong, and a panel he distrusts is
+     * worse than no panel. (PLAN.md M4, the 2E0LXY lesson.) */
+    bool route_searching;
+
     /* §5.2 only: the sentence that explains the missing route. A blank slot
      * reads as broken; a sentence reads as informative. */
     char reason[VIEW_REASON_LEN];

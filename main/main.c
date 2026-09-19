@@ -294,8 +294,12 @@ static void ui_task(void *arg)
         if (n > 0) {
             last_seen = ac[0];
             have_last_seen = true;
-            view_build(&ac[0], route_find(rt, n, ac[0].flight), &now, n,
-                       net_ok, &vm);
+            /* "Still looking" and "has no flight plan" are different answers
+             * and must not share a screen. flight_source knows which it is. */
+            bool searching =
+                flight_source_route_status(ac[0].flight) == ROUTE_STATUS_RESOLVING;
+            view_build_ex(&ac[0], route_find(rt, n, ac[0].flight), searching,
+                          &now, n, net_ok, &vm);
         } else {
             view_build_empty(&now, have_last_seen ? &last_seen : NULL,
                              net_ok, &vm);
