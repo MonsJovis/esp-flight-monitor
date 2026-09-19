@@ -942,3 +942,26 @@ Thirteen designators from the brief were left out because they could not be conf
 (ARCP, HU1, SZD5, TWIN, PK20, K126, SIRA and others). That is the right trade: a wrong
 designator shows him the wrong aircraft with total confidence, which is worse than
 "Unbekanntes Flugzeug" — and the device now logs every miss, so the gaps name themselves.
+
+## D52 — A feature that ships off should cost nothing while it is off
+
+**Decision:** the OTA task is created on demand — at boot only if a URL is stored, otherwise
+the first time one is. Its startup delay is an interruptible wait, not a sleep.
+
+**Why:** a four-minute soak put steady-state internal heap at **16,383 B free, largest block
+7,168 B**. About 10 KB of that was an OTA task stack, sitting idle on a device with no
+update source configured and no prospect of getting one. 10 KB is cheap when it is doing
+something and indefensible when it is not — this board runs for months between power cycles
+and internal SRAM is the scarce resource, not PSRAM, of which 4.7 MB is free.
+
+Creating it lazily returned **27,039 B free with a 15,360 B largest block**: ten and a half
+kilobytes back, and the largest contiguous block doubled, which is the number that actually
+decides whether the next allocation succeeds.
+
+The follow-on was immediate and would have been a small, lasting annoyance. The task opened
+with a 60-second settling delay — right at boot, where it keeps the radio and the PSRAM bus
+clear of the thing he is actually looking at. But the task is now also created the moment
+someone types in an update URL and sits watching the console for an answer, and there a
+settling delay settles nothing. It is a semaphore wait now, and `ota_request_check()` has
+already posted by then, so the check runs in under two seconds instead of after a minute of
+apparent silence.

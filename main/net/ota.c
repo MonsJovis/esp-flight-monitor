@@ -46,6 +46,9 @@ static settings_t s_settings;
 /* Poked by ota_request_check() so the task wakes instead of sleeping out its
  * five-minute tick. */
 static SemaphoreHandle_t s_wake;
+static TaskHandle_t      s_task;
+
+static void start_task_once(void);   /* defined with ota_start(), below */
 
 /* ---- version ----------------------------------------------------------- */
 
@@ -286,6 +289,7 @@ void ota_confirm_running_image(void)
 void ota_request_check(void)
 {
     s_last_check_ms = 0;               /* make ota_should_check() say yes */
+    start_task_once();                 /* may be the first URL ever stored */
     if (s_wake != NULL) {
         xSemaphoreGive(s_wake);
     }
@@ -329,8 +333,15 @@ static void ota_task(void *arg)
 {
     /* Let the rest of the system come up first. Nothing here is urgent and
      * everything here competes for the same radio and the same PSRAM bus as
-     * the thing he is actually looking at. */
-    vTaskDelay(pdMS_TO_TICKS(60 * 1000));
+     * the thing he is actually looking at.
+     *
+     * A WAIT, not a sleep. The task is now created on demand as well as at
+     * boot, so this delay can also be the first minute after someone has just
+     * typed in an update URL and is watching the console for an answer —
+     * where a settling delay is not settling anything, it is only confusing.
+     * ota_request_check() has already given the semaphore by then, so the
+     * wait returns at once. */
+    xSemaphoreTake(s_wake, pdMS_TO_TICKS(60 * 1000));
 
     for (;;) {
         ota_ctx_t c = build_ctx();
@@ -356,17 +367,42 @@ static void ota_task(void *arg)
     }
 }
 
+/* Creates the task, once, the first time there is anything for it to do.
+ *
+ * A feature that ships switched off should cost nothing while it is off. The
+ * stack is 10 KB of INTERNAL heap, and this board runs at about 16 KB free
+ * internal in steady state once the framebuffer, WiFi and the whole deck are
+ * up — so an always-created task would have spent well over half the
+ * remaining headroom sleeping, on a device that is expected to run for months
+ * between power cycles and that has no update source configured. 10 KB is
+ * cheap when it is doing something and indefensible when it is not. */
+static void start_task_once(void)
+{
+    if (s_task != NULL) {
+        return;
+    }
+    if (s_wake == NULL) {
+        s_wake = xSemaphoreCreateBinary();
+    }
+    /* 10 KB. A TLS handshake verified against the full Mozilla root bundle is
+     * the deepest thing this firmware does; 6 KB was not enough and 4 KB
+     * corrupted the touch driver rather than reporting itself (D45). A real
+     * handshake leaves 6,172 B of this unused. */
+    if (xTaskCreate(ota_task, "ota", 10240, NULL, 3, &s_task) != pdPASS) {
+        s_task = NULL;
+        ESP_LOGE(TAG, "could not start the update task");
+    }
+}
+
 void ota_start(void)
 {
     char url[OTA_URL_LEN];
     ota_get_url(url, sizeof url);
-    ESP_LOGI(TAG, "running %s; updates %s",
-             ota_running_version(),
-             (url[0] != '\0') ? "enabled" : "disabled (no source stored)");
-    s_wake = xSemaphoreCreateBinary();
-    /* 10 KB. A TLS handshake verified against the full Mozilla root bundle is
-     * the deepest thing this firmware does; 6 KB was not enough and 4 KB
-     * corrupted the touch driver rather than reporting itself. The task sleeps
-     * for 24 hours at a time, so the memory is not the scarce thing here. */
-    xTaskCreate(ota_task, "ota", 10240, NULL, 3, NULL);
+    if (url[0] == '\0') {
+        ESP_LOGI(TAG, "running %s; updates disabled (no source stored)",
+                 ota_running_version());
+        return;                        /* no task, no stack, no cost */
+    }
+    ESP_LOGI(TAG, "running %s; updates enabled", ota_running_version());
+    start_task_once();
 }
