@@ -186,14 +186,18 @@ NOT be generalised to all 3xx. A 301 is a real redirect — it is exactly what a
 returns — so the HTTP client does not auto-follow redirects, and a redirect can never
 silently become a TLS connection we did not intend.
 
-## D16 — Backlight polarity is the one thing not verified on the panel
+## D16 — Backlight polarity — CONFIRMED lit on 2026-09-19
 
 The BSP inverts brightness (`flipped = 100 - percent`) and configures LEDC with **no**
 `output_invert` flag, so `bsp_display_backlight_on()` drives GPIO4 to a constant LOW. That
 is correct only if the backlight circuit is active-low. Every vendor demo uses this same
 path, so it almost certainly is — but framebuffer screenshots prove what LVGL *rendered*,
-not what the panel *emitted*, so this is the one claim in this build resting on inference
-rather than measurement. Needs a human to confirm the panel is lit.
+not what the panel *emitted*, so this was the one claim in the build resting on inference
+rather than measurement.
+
+**Confirmed by eye on 2026-09-19: the panel is lit.** The BSP's inverted convention is
+correct for this hardware, and `flipped 0%` in the log does mean full brightness. Nothing
+to change — recorded so the next person reading that alarming log line does not go hunting.
 
 ## D17 — Place names are "what he would say out loud", and always exactly one name
 
