@@ -830,3 +830,34 @@ touch input.
 Left alone deliberately. It is a managed component, patching it forks a dependency, and
 nothing observed so far suggests spontaneous I²C failure on this unit. Written down because
 the next unexplained reboot should start here.
+
+## D48 — The supporting text gives way, not the distance
+
+**Decision:** the data band's anchored position is fixed. When the supporting text reaches
+it, supporting lines are hidden bottom-up (type, then airline, then the reason sentence).
+
+**Why:** the band was already anchored to the bottom edge, for the reason recorded in the
+code — "the distance sits in the same place on every screen, which is what makes it readable
+at a glance instead of something you have to find". But it carried an escape hatch: if the
+supporting text reached the band, the band flowed down instead, on the argument that an
+overlap is worse than smaller type.
+
+That argument is wrong, and the panel proved it. Flowing does not avoid the collision; it
+converts it into **"9,3 km südöstlich" cut in half at y=480**. An overlap is ugly and the
+distance is still there. Clipped, it is gone. The header comment two lines above the escape
+hatch already described this exact failure as the thing anchoring was introduced to fix.
+
+D46 made it common rather than rare: an unnameable aircraft now reads "Unbekanntes
+Flugzeug", which is two lines at the ladder's smallest face where "C177" was one.
+
+The drop order is the product's own priority — the hero is the answer, the distance is the
+second question he asks, and the type line is the first thing he can do without, especially
+in the state where the hero is already saying everything that is known. Verified both ways
+on the panel: with a 76 px hero all three supporting lines stay (Samos → Amsterdam, Corendon
+Dutch Airlines, Boeing 737 MAX 9, 45,8 km nordwestlich); with a 100 px hero the type line
+yields (München → Seoul, Lufthansa, 8,9 km nordwestlich).
+
+Clipping is now impossible by construction rather than by test: `y_band` is computed once
+from the bottom edge and never increased. The hero itself is deliberately not droppable, and
+cannot reach the band — `pick_hero_font()` only selects the 100 px and 76 px faces for text
+that fits on one line, so only the 56 px rung can wrap, and two lines of it end well clear.

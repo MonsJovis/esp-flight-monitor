@@ -166,15 +166,18 @@ static void fill_aircraft_common(const aircraft_t *ac, const ac_type_t *t, view_
     copy_trunc(out->callsign, sizeof out->callsign, ac->flight);
     copy_trunc(out->registration, sizeof out->registration, ac->reg);
 
-    /* Same rule as the hero: "?" is not a thing to show a non-technical user.
-     * An empty supporting line simply disappears; a question mark looks broken. */
+    /* actype_display_name(), the same single source the hero and the list use
+     * (tables.h) — NOT actype_full_or_code(), whose last resort is the raw
+     * ICAO designator. This line had the same bug the hero had (D46) and it
+     * outlived the hero's fix by one screenshot: with the hero correctly
+     * reading "Unbekanntes Flugzeug", the panel still printed "C177"
+     * underneath it.
+     *
+     * NULL here means nothing is known, and an empty supporting line simply
+     * disappears — which is right. A code, or a question mark, looks broken. */
     {
-        const char *tf = actype_full_or_code(ac->type);
-        if (tf == NULL || strcmp(tf, ACTYPE_NO_TYPE) == 0) {
-            const char *cls = ac_category_de(ac->category);
-            tf = (cls != NULL) ? cls : "";
-        }
-        copy_trunc(out->type_full, sizeof out->type_full, tf);
+        const char *tf = actype_display_name(ac->type, ac->category);
+        copy_trunc(out->type_full, sizeof out->type_full, (tf != NULL) ? tf : "");
     }
     copy_trunc(out->size_class, sizeof out->size_class,
                (t != NULL && t->size_class != NULL) ? t->size_class : "");

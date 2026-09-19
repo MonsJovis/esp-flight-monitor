@@ -409,11 +409,32 @@ void screen_overhead_update(const view_model_t *vm)
         int32_t band_h = alt_h + GAP_SM + lv_obj_get_height(s_lbl_distance);
         int32_t y_band = THEME_SCREEN_HEIGHT - PAD - band_h;
 
-        /* If the supporting text really is long enough to reach the band, let
-         * it flow instead of overlapping — smaller type is recoverable, two
-         * strings drawn on top of each other is not. */
-        if (y_band < y_next) {
-            y_band = y_next;
+        /* The band is anchored, full stop. What used to be here let it flow
+         * down when the supporting text reached it, on the reasoning that an
+         * overlap is worse than smaller type — but flowing does not avoid the
+         * collision, it converts it into a distance cut in half at y=480.
+         * A two-line hero ("Unbekanntes Flugzeug" at the ladder's smallest
+         * face) does exactly that, and it is now a common state rather than a
+         * rare one, because an unnameable aircraft no longer renders as its
+         * ICAO code (D46).
+         *
+         * So the supporting text gives way instead, bottom-up. The order is
+         * the product's own priority: the hero is the answer, the distance is
+         * the second question he asks, and the type line is the first thing
+         * he can do without — especially here, where the hero is already
+         * saying everything that is known about the aircraft. */
+        int32_t y_limit = y_band - GAP_SM;
+        lv_obj_t *const droppable[] = {
+            s_lbl_type_full, s_lbl_airline, s_lbl_reason,
+        };
+        for (size_t i = 0; i < sizeof droppable / sizeof droppable[0]; i++) {
+            lv_obj_t *l = droppable[i];
+            if (l == NULL || lv_obj_is_hidden(l)) {
+                continue;
+            }
+            if (lv_obj_get_y(l) + lv_obj_get_height(l) > y_limit) {
+                lv_obj_set_hidden(l, true);
+            }
         }
 
         lv_obj_set_pos(s_lbl_altitude, PAD, y_band);

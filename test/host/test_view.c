@@ -720,6 +720,13 @@ static void test_hero_is_never_a_bare_code(void)
         CHECK(strstr(vm.hero, unknown_types[i]) == NULL);
         CHECK(vm.hero[0] != '\0');
         CHECK_STR(vm.hero, "Unbekanntes Flugzeug");
+        /* And not in the supporting line either. Fixing only the hero left
+         * "C177" printed directly underneath "Unbekanntes Flugzeug" — the
+         * same bug, one font size down, found by the screenshot taken to
+         * confirm the first fix. */
+        CHECK(strstr(vm.type_full, unknown_types[i]) == NULL);
+        CHECK(strstr(vm.size_class, unknown_types[i]) == NULL);
+        CHECK(strstr(vm.airline, unknown_types[i]) == NULL);
         remember_for_scan("unknown type designator", &vm);
     }
 
