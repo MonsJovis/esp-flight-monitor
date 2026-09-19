@@ -1048,3 +1048,47 @@ obviously wrong image", the clamp that "does not wrap", the 24 h interval that "
 otherwise re-check on every reboot". The code was reviewed; the comments were believed. A
 comment asserting a property is a claim, and claims are the cheapest thing in a repository
 to get wrong.
+
+## D55 — Both gates could be walked around, and one had the bug it was written to catch
+
+**Decision:** the string gate scans `main/` recursively with a minimum-file floor; both gates
+share one C lexer and one unescaper; `LOG-ONLY` is anchored; the host Makefile tracks header
+dependencies.
+
+**The string gate had D39's bug, one level up.** `enforced_files()` was a non-recursive
+`main/ui/*.c` glob. Moving the screens into a subdirectory made it report success —
+*verbatim* the failure it was written to prevent, three days later, in the checker itself. It
+also never opened a `.h`, `main.c`, `main/net` or `main/data`, so German in any of those
+passed. Now 44 files instead of 8, and a floor of 38 that fails loudly. **The floor is the
+fix; the glob was the symptom.** A gate whose subject can move out from under it needs to
+know how much it is supposed to be looking at.
+
+**Four evasions of the font gate, closed at the root.** Line continuation, a char literal
+holding a quote, a `\U` 8-digit escape, and `ESP_LOG` sharing a line with a label call. The
+root cause was that two scripts each had their own C lexer and their own unescaper, and
+**they disagreed** — `check_strings.py` handled `\U`, `check_font_coverage.py` did not. One
+lexer and one unescaper now, imported, with an assertion at import that pins the five
+spellings of U+2026 together so the sharing cannot rot.
+
+**`LOG-ONLY` exempted a line for merely mentioning it.** `/* NOT LOG-ONLY: this really does
+reach a label */` granted the exemption — writing the negation of the claim satisfied it. So
+did `/* see docs/ANALOG-ONLY.md */`. It now requires a comment whose whole body is the
+marker. An escape hatch that fires on a *substring* is not an escape hatch, it is a hole with
+documentation.
+
+**The host Makefile listed no headers.** Changing `VIEW_HERO_LEN` from 48 to 6 gave
+"0 failed". It gives 882 failures and a non-zero exit now. Worth recording that the obvious
+`-MMD -MP` does **not** work here: one compile-and-link command over 21 sources points every
+translation unit at the same `.d` file and the last one wins. Dependencies come from a second
+`-MM` pass per unit instead, which make unions.
+
+**`--list` went from 110 entries to 688.** It was missing the 556 German city names that
+*are* the route headline, and the 22 aircraft-class words. A string it does not print is a
+string nobody reviews — and the whole point of that listing is that someone reads it.
+
+**Two lessons worth separating.** The first is that a gate needs a floor: "I checked
+everything I found" is worthless without "and I expected to find about this much". The
+second is that the exemption list is where a gate goes to die. Eight font-specimen strings
+were listed in it by spelling; they moved to `main/debug/dbg_fontcard.c` instead, because
+"developer diagnostics live in main/debug" is a rule, and eight spellings is a list someone
+has to maintain forever.
