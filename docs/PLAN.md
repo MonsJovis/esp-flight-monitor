@@ -229,14 +229,15 @@ fun to write and less useful to him.
 
 **Goal:** survives a week unattended.
 
-- [ ] Exponential backoff on `429`/`503`. Treat spurious `308` as throttling, not a redirect
-- [ ] Source failover: 2 consecutive failures → `adsb.fi` for a few minutes.
-      One parser serves both; only the wrapper key differs (`ac` vs `aircraft`)
-- [ ] Route cache persisted to NVS, survives reboot
-- [ ] **Characterise the tearing bug**: write NVS while the UI animates, observe, then
+- [x] Exponential backoff on `429`/`503`. Treat spurious `308` as throttling, not a redirect
+- [~] Source failover — *resolved differently*: adsb.fi is HTTPS-only, so the device
+      degrades behind an amber caution instead of switching source. The source table and
+      switching logic exist with the second slot deliberately empty. See DECISIONS D15.
+- [x] Route cache persisted to NVS, survives reboot
+- [x] **Characterise the tearing bug**: write NVS while the UI animates, observe, then
       mitigate by pausing LVGL around commits. Record the result here.
-- [ ] Watchdog + auto-reconnect; recover from a router reboot unattended
-- [ ] Distinguish *"Route wird gesucht…"* from *"Kein Flugplan"*. §5.2 covers the settled
+- [x] Watchdog + auto-reconnect; recover from a router reboot unattended
+- [x] Distinguish *"Route wird gesucht…"* from *"Kein Flugplan"*. §5.2 covers the settled
       case; this is the transient one, in the seconds before `routeset` answers. A 2E0LXY
       lesson — showing "no route" while still looking teaches him to distrust the panel.
 

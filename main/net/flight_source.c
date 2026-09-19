@@ -1,5 +1,7 @@
 #include "flight_source.h"
 #include "wifi.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -74,6 +76,8 @@ static struct {
     route_cache_entry_t routes[ROUTE_CACHE_MAX];
     int                  route_count;
     int64_t              last_route_post_ms; /* 0 = never posted */
+    int64_t              last_route_save_ms; /* 0 = never persisted */
+    bool                 routes_dirty;       /* a route resolved since the save */
 
     /* Health. */
     source_id_t active_source;
@@ -240,6 +244,9 @@ static void poll_routes(const aircraft_t *ac, int n, int64_t now_ms)
         }
         e->route = *r;
         e->status = r->resolved ? ROUTE_STATUS_RESOLVED : ROUTE_STATUS_NONE;
+        if (e->status == ROUTE_STATUS_RESOLVED) {
+            s.routes_dirty = true;
+        }
     }
     xSemaphoreGive(s.mutex);
 
@@ -290,6 +297,113 @@ static void log_nearest(const aircraft_t *ac, int n)
     ESP_LOGI(TAG, "%s | %s | %s | %.1f nm %s",
              flight, type, route_str, (double)nearest->dst_nm,
              source_compass_abbrev_en(nearest->dir_deg));
+}
+
+/* ---- Route cache persistence (PLAN.md M4) --------------------------------
+ *
+ * A route never changes mid-flight, so a cache that survives a reboot means the
+ * aircraft still overhead keeps its route instead of showing "ROUTE WIRD
+ * GESUCHT" again while the API is re-asked. It also costs the free service one
+ * fewer batch every time the device restarts.
+ *
+ * Only RESOLVED entries are stored. An unanswered lookup is worth nothing
+ * across a reboot, and a persisted "no flight plan" would freeze a wrong answer
+ * in flash. Writes are debounced and only happen when the set actually changed
+ * — and D29 measured NVS commits at 3 us of render impact, so this is cheap.
+ */
+#define ROUTE_NVS_NAMESPACE  "flight"
+#define ROUTE_NVS_KEY        "routes"
+#define ROUTE_NVS_VERSION    1u
+#define ROUTE_NVS_MAX        24        /* ~2.8 KB; well past a 30 nm ring */
+#define ROUTE_SAVE_MIN_MS    60000
+
+typedef struct {
+    char    callsign[9];
+    route_t route;
+} route_persist_t;
+
+typedef struct {
+    uint32_t        version;
+    uint32_t        count;
+    route_persist_t entries[ROUTE_NVS_MAX];
+} route_blob_t;
+
+static void route_cache_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(ROUTE_NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) {
+        return;                       /* nothing stored yet — normal first boot */
+    }
+    route_blob_t *blob = heap_caps_malloc(sizeof *blob, MALLOC_CAP_SPIRAM);
+    if (blob == NULL) { nvs_close(h); return; }
+
+    size_t len = sizeof *blob;
+    esp_err_t err = nvs_get_blob(h, ROUTE_NVS_KEY, blob, &len);
+    nvs_close(h);
+
+    if (err != ESP_OK || len != sizeof *blob || blob->version != ROUTE_NVS_VERSION) {
+        /* A stale format is not an error worth shouting about: drop it and
+         * rebuild from the network, which takes one poll. */
+        free(blob);
+        return;
+    }
+
+    uint32_t n = blob->count > ROUTE_NVS_MAX ? ROUTE_NVS_MAX : blob->count;
+    xSemaphoreTake(s.mutex, portMAX_DELAY);
+    for (uint32_t i = 0; i < n && s.route_count < ROUTE_CACHE_MAX; i++) {
+        route_cache_entry_t *e = &s.routes[s.route_count++];
+        memset(e, 0, sizeof *e);
+        strncpy(e->callsign, blob->entries[i].callsign, sizeof e->callsign - 1);
+        e->route  = blob->entries[i].route;
+        e->status = ROUTE_STATUS_RESOLVED;
+        e->used   = true;
+        e->asked  = true;
+    }
+    xSemaphoreGive(s.mutex);
+    ESP_LOGI(TAG, "restored %u cached route(s) from NVS", (unsigned)n);
+    free(blob);
+}
+
+static void route_cache_save_if_due(int64_t now_ms)
+{
+    if (!s.routes_dirty) {
+        return;
+    }
+    if (s.last_route_save_ms != 0 && now_ms - s.last_route_save_ms < ROUTE_SAVE_MIN_MS) {
+        return;
+    }
+
+    route_blob_t *blob = heap_caps_calloc(1, sizeof *blob, MALLOC_CAP_SPIRAM);
+    if (blob == NULL) {
+        return;
+    }
+    blob->version = ROUTE_NVS_VERSION;
+
+    xSemaphoreTake(s.mutex, portMAX_DELAY);
+    for (int i = 0; i < s.route_count && blob->count < ROUTE_NVS_MAX; i++) {
+        if (s.routes[i].status != ROUTE_STATUS_RESOLVED) {
+            continue;
+        }
+        route_persist_t *d = &blob->entries[blob->count++];
+        strncpy(d->callsign, s.routes[i].callsign, sizeof d->callsign - 1);
+        d->route = s.routes[i].route;
+    }
+    s.routes_dirty = false;
+    s.last_route_save_ms = now_ms;
+    xSemaphoreGive(s.mutex);
+
+    nvs_handle_t h;
+    if (nvs_open(ROUTE_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        /* Deliberately NOT pausing LVGL around this: measured at 3 us of render
+         * impact on this configuration, while holding the display lock across a
+         * commit stalls rendering for seconds. See docs/DECISIONS.md D29. */
+        if (nvs_set_blob(h, ROUTE_NVS_KEY, blob, sizeof *blob) == ESP_OK) {
+            nvs_commit(h);
+            ESP_LOGI(TAG, "persisted %u route(s)", (unsigned)blob->count);
+        }
+        nvs_close(h);
+    }
+    free(blob);
 }
 
 /* ---- Poll loop ----------------------------------------------------------- */
@@ -396,6 +510,7 @@ static void flight_source_task(void *arg)
                  (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
 
         int64_t now = esp_timer_get_time() / 1000;
+        route_cache_save_if_due(now);
 
         xSemaphoreTake(s.mutex, portMAX_DELAY);
         if (success) {
@@ -453,6 +568,10 @@ esp_err_t flight_source_start(double lat, double lon, int radius_nm)
      * which presented as an endless run of ESP_ERR_HTTP_CONNECT rather than as a
      * stack problem. The task logs its own high-water mark each poll so this
      * number stays honest rather than superstitious. */
+    /* Before the task starts, so the first poll already has whatever survived
+     * the last power cycle. */
+    route_cache_load();
+
     BaseType_t ok = xTaskCreate(flight_source_task, "flight_source", 16384, NULL, 5, NULL);
     if (ok != pdPASS) {
         return ESP_ERR_NO_MEM;
