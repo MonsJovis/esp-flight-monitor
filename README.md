@@ -95,7 +95,10 @@ Everything that can be tested off the device is:
 cd test/host && make
 ```
 
-3.638 checks across six suites, plus two gates that run with them:
+Seven suites and two gates. The check count is in the tens of thousands, but most of
+that is one exhaustive cross-product — every hour against every night-window setting,
+checked against the dimmer's own answer, because a midnight wrap that looks right and is
+not is the kind of bug you otherwise find at 3 a.m. six months later. The gates:
 
 - **`check_font_coverage.py`** — LVGL draws a missing glyph as *nothing at all*. No error,
   no placeholder, just text that is shorter than you wrote. This fails the build if any

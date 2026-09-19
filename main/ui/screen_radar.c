@@ -630,8 +630,45 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     }
     lv_label_set_text(s_labels[0].dist, dist_buf);
 
-    lv_obj_set_hidden(s_labels[0].name, false);
+    /* ONE line, or no name at all.
+     *
+     * The caption band is the 44 px between the scope and the page dots, so a
+     * name that wraps does not get taller — it gets cut across the distance
+     * and the dots. "Unbekanntes Flugzeug" did exactly that, rendering as
+     * "Unbekannte / s Flugzeug" over the top of "9,7 km NNO", and D46 made
+     * that string common rather than rare.
+     *
+     * When the pair will not fit on one line the NAME yields, not the
+     * distance — the same priority D48 applies to the hero screen, and for
+     * the same reason: the magenta mark already says WHICH aircraft this is,
+     * so the caption's remaining job is how far and which way. Measured
+     * unwrapped, because a wrapped label reports the width it was given
+     * rather than the width it wants. */
+    lv_point_t want;
+    lv_text_get_size(&want, name, &plex_sans_cond_25, 0, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_NONE);
+    lv_obj_update_layout(s_labels[0].dist);
+    bool name_fits = (want.x + RADAR_CAPTION_GAP + lv_obj_get_width(s_labels[0].dist))
+                     <= (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING);
+
+    lv_obj_set_hidden(s_labels[0].name, !name_fits);
     lv_obj_set_hidden(s_labels[0].dist, false);
+
+    if (!name_fits) {
+        lv_obj_update_layout(s_labels[0].dist);
+        int32_t w = lv_obj_get_width(s_labels[0].dist);
+        lv_obj_set_pos(s_labels[0].dist, (THEME_SCREEN_WIDTH - w) / 2,
+                       RADAR_CAPTION_Y);
+        return;
+    }
+
+    /* Give the label the width the text actually wants. It was created with a
+     * fixed 132 px and LV_LABEL_LONG_MODE_WRAP, which is about eleven
+     * characters at 25 px — so "Thessaloniki" would have wrapped too, and the
+     * check above would have called it a fit. The cap exists to stop a
+     * caption running off the panel; now that the fit is measured properly,
+     * the cap is the measurement. */
+    lv_obj_set_width(s_labels[0].name, want.x);
 
     /* One line, centred as a pair, so a long name and a short distance stay
      * visually joined instead of drifting to opposite edges. */

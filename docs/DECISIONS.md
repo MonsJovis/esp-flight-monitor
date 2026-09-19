@@ -888,3 +888,24 @@ is the one he can fix.
 One detail that would have been a bug: the caution is right-aligned to the content edge, and
 "KEINE DATEN" is wider than "KEIN NETZ". The text has to be set before the position is
 recomputed, or the longer string hangs off the edge it is aligned to.
+
+## D50 — The radar caption wraps into the page dots
+
+**Decision:** the caption is one line or the name is dropped. The distance always stays.
+
+**Why:** D35 moved the radar caption out of the scope and into the 44 px band between the
+scope and the page indicator. That band cannot grow, so a name that wraps is not taller —
+it is drawn across the distance and the dots. **"Unbekanntes Flugzeug"** rendered as
+"Unbekannte / s Flugzeug" over the top of "9,7 km NNO", and D46 turned that string from rare
+into ordinary.
+
+Same priority as D48, for the same reason: the magenta mark already says *which* aircraft
+this is, so the caption's remaining job is how far and which way. The name yields; the
+distance never does.
+
+**The measurement was also wrong, in the other direction.** The label was created with a
+fixed 132 px width and `LV_LABEL_LONG_MODE_WRAP` — about eleven characters at 25 px — so
+"Thessaloniki", the name DESIGN.md §3 uses as its own worked example of a long destination,
+would have wrapped too, and a naive fit check would have called it a fit. The width is now
+measured unwrapped and then applied to the label, so the cap *is* the measurement rather
+than a second, tighter limit hiding underneath it.
