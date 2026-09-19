@@ -75,6 +75,36 @@ void screen_radar_create(lv_obj_t *parent);
 void screen_radar_update(const aircraft_t *ac, int n,
                          const route_t *routes, int n_routes, int radius_nm);
 
+/* --- Touch ---------------------------------------------------------------
+ *
+ * Two taps, deliberately different:
+ *
+ *   Tapping a MARK re-points the caption at that aircraft. It stays there —
+ *   through polls, and through the aircraft moving — until he taps another
+ *   mark, or the aircraft leaves the ring, at which point the caption falls
+ *   back to the nearest. Nothing leaves the screen: he is reading the scope,
+ *   and pulling him off it to answer "which one is that" would be the wrong
+ *   trade.
+ *
+ *   Tapping the CAPTION is the one that commits: it asks for the full view of
+ *   whatever the caption is currently naming. The caption is the only thing on
+ *   this screen with words on it, so it is the only thing that reads as "press
+ *   me for more".
+ *
+ * The callback is handed the aircraft's ICAO hex rather than an aircraft_t,
+ * because by the time it runs the caller's array has usually been re-sorted
+ * (main.c carries every fix forward between polls, which can change who is
+ * nearest). The hex is the only identifier that survives that. */
+typedef void (*radar_select_cb)(const char *hex);
+
+/* Registered once at startup; NULL disables the caption tap. */
+void screen_radar_set_select_cb(radar_select_cb cb);
+
+/* Drops any mark selection, so the caption goes back to the nearest aircraft.
+ * Call when the deck leaves this page: a selection he made five minutes ago
+ * is not what he means by a glance. */
+void screen_radar_clear_selection(void);
+
 #ifdef __cplusplus
 }
 #endif

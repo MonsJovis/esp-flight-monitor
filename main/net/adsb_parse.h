@@ -17,3 +17,15 @@
  * JSON object containing an array under either wrapper key.
  */
 int adsb_parse(const char *json, size_t len, aircraft_t *out, int max);
+
+/* Re-applies that ordering to a list already in hand.
+ *
+ * Exposed because the ordering rule — nearest first, and an aircraft whose
+ * distance is unknown never wins slot 0 — belongs to this module and is
+ * relied on structurally elsewhere (screen_list.c treats row 0 as "the
+ * nearest", main.c reads ac[0] as "the plane overhead"). Anything that
+ * changes a distance after parsing has to restore it, and must not
+ * reimplement the DST_UNKNOWN half by hand: see main/data/extrapolate.h,
+ * which moves every aircraft between polls.
+ */
+void adsb_sort_by_distance(aircraft_t *ac, int n);

@@ -76,6 +76,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
+
 #include "screen_radar.h"
 #include "theme.h"
 #include "fonts/fonts.h"
@@ -139,6 +141,11 @@
 #define RADAR_CAPTION_Y   416
 #define RADAR_CAPTION_GAP 12
 
+/* Invisible touch margin around each mark. A fingertip is ~10 mm; the mark is
+ * a 16 px triangle. */
+#define RADAR_MARK_TOUCH_PAD 14
+#define RADAR_CAPTION_TOUCH_PAD 16
+
 #define RADAR_NEAR_LABEL_COUNT 2
 #define RADAR_LABEL_NAME_W     132
 #define RADAR_LABEL_GAP_MARK   6
@@ -171,6 +178,34 @@ typedef struct {
 
 static lv_obj_t          *s_marks[MAX_AIRCRAFT];
 static radar_mark_state_t s_mark_state[MAX_AIRCRAFT];
+
+/* Which aircraft the caption is pointed at, by ICAO hex. Empty means "the
+ * nearest", which is the default and what it falls back to when the chosen
+ * aircraft leaves the ring. Held as a hex rather than an index because the
+ * caller re-sorts the array between polls (main.c carries every fix forward,
+ * which can change who is nearest) — an index would silently start naming a
+ * different aircraft. */
+static char s_caption_hex[sizeof ((aircraft_t *)0)->hex];
+
+/* The caption text for every mark on screen, rendered during the update that
+ * drew them. A tap can then repaint the caption IMMEDIATELY instead of
+ * waiting up to two seconds for the next redraw — at which point he would
+ * have tapped again, assuming he had missed. Costs ~1.4 KB of BSS and only
+ * ever runs while this page is the visible one. */
+static char s_cap_name[MAX_AIRCRAFT][40];
+static char s_cap_dist[MAX_AIRCRAFT][24];
+static char s_cap_hex[MAX_AIRCRAFT][sizeof ((aircraft_t *)0)->hex];
+static int  s_cap_count;
+
+static radar_select_cb s_select_cb;
+
+/* Defined below place_caption(), which they both need. */
+static void mark_clicked_cb(lv_event_t *e);
+static void caption_clicked_cb(lv_event_t *e);
+
+void screen_radar_set_select_cb(radar_select_cb cb) { s_select_cb = cb; }
+
+void screen_radar_clear_selection(void) { s_caption_hex[0] = '\0'; }
 
 /* One label slot = one name label + one distance label, reused for
  * whichever aircraft index currently ranks nearest / second-nearest. */
@@ -471,6 +506,16 @@ void screen_radar_create(lv_obj_t *parent)
         lv_obj_set_scrollable(m, false);
         lv_obj_add_event_cb(m, mark_draw_cb, LV_EVENT_DRAW_MAIN, &s_mark_state[i]);
         lv_obj_set_hidden(m, true);
+        /* Touchable, with a generous invisible margin: the mark itself is a
+         * ~16 px triangle and a fingertip is not. The extra area overlaps
+         * between neighbouring marks, and LVGL hands the tap to the topmost —
+         * acceptable, because tapping the wrong one of two aircraft sitting on
+         * top of each other costs him one more tap, while a mark he cannot hit
+         * at all costs him the feature. */
+        lv_obj_set_clickable(m, true);
+        lv_obj_set_ext_click_area(m, RADAR_MARK_TOUCH_PAD);
+        lv_obj_add_event_cb(m, mark_clicked_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
         s_marks[i] = m;
     }
 
@@ -480,8 +525,152 @@ void screen_radar_create(lv_obj_t *parent)
         s_labels[i].name = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY,
                                               RADAR_LABEL_NAME_W);
         s_labels[i].dist = make_label(s_cont, &plex_mono_32, THEME_CYAN);
+        if (i == 0) {
+            /* Both halves of the caption are the same button. The band is
+             * 44 px tall, so the ext area only has to make it comfortably
+             * wide, not taller. */
+            lv_obj_set_clickable(s_labels[i].name, true);
+            lv_obj_set_clickable(s_labels[i].dist, true);
+            lv_obj_set_ext_click_area(s_labels[i].name, RADAR_CAPTION_TOUCH_PAD);
+            lv_obj_set_ext_click_area(s_labels[i].dist, RADAR_CAPTION_TOUCH_PAD);
+            lv_obj_add_event_cb(s_labels[i].name, caption_clicked_cb, LV_EVENT_CLICKED, NULL);
+            lv_obj_add_event_cb(s_labels[i].dist, caption_clicked_cb, LV_EVENT_CLICKED, NULL);
+        }
         lv_obj_set_hidden(s_labels[i].name, true);
         lv_obj_set_hidden(s_labels[i].dist, true);
+    }
+}
+
+/* What the caption says for one aircraft: the destination if the route is
+ * known, otherwise what the aircraft IS. One implementation, used both to
+ * fill the per-mark cache and to paint the visible caption, so a tapped
+ * aircraft can never be described differently from the nearest one. */
+static void build_caption(const aircraft_t *a, const route_t *routes, int n_routes,
+                          char *name_out, size_t nsz, char *dist_out, size_t dsz)
+{
+    const route_t *rt = route_find(routes, n_routes, a->flight);
+    const char    *name;
+    if (rt != NULL && rt->resolved) {
+        name = airport_de(rt->dest_icao);
+        if (name == NULL || name[0] == '\0') {
+            name = rt->dest_city;         /* the API's own English name */
+        }
+    } else {
+        /* Plain language, never a raw ICAO code (AGENTS.md §1). */
+        name = actype_display_name(a->type, a->category);
+        if (name == NULL) {
+            name = STR_UNKNOWN_AIRCRAFT;
+        }
+    }
+    snprintf(name_out, nsz, "%s", name);
+
+    size_t used = fmt_distance_km(a->dst_nm, dist_out, dsz);
+    const char *dir = compass_de_abbr(a->dir_deg);
+    if (dir != NULL && used + 1 < dsz) {
+        snprintf(dist_out + used, dsz - used, " %s", dir);
+    }
+}
+
+/* Paints and positions the caption. Split out of screen_radar_update() so a
+ * tap on a mark can repaint through exactly this path — a second copy of the
+ * fit rule would be a second chance to get it wrong, and this one is already
+ * subtle (see D50). */
+static void place_caption(const char *name, const char *dist)
+{
+    lv_label_set_text(s_labels[0].name, name);
+    lv_label_set_text(s_labels[0].dist, dist);
+
+    /* ONE line, or no name at all.
+     *
+     * The caption band is the 44 px between the scope and the page dots, so a
+     * name that wraps does not get taller — it gets cut across the distance
+     * and the dots. "Unbekanntes Flugzeug" did exactly that, rendering as
+     * "Unbekannte / s Flugzeug" over the top of "9,7 km NNO", and D46 made
+     * that string common rather than rare.
+     *
+     * When the pair will not fit on one line the NAME yields, not the
+     * distance — the same priority D48 applies to the hero screen, and for
+     * the same reason: the magenta mark already says WHICH aircraft this is,
+     * so the caption's remaining job is how far and which way. Measured
+     * unwrapped, because a wrapped label reports the width it was given
+     * rather than the width it wants. */
+    lv_point_t want;
+    lv_text_get_size(&want, name, &plex_sans_cond_25, 0, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_NONE);
+    lv_obj_update_layout(s_labels[0].dist);
+    bool name_fits = (want.x + RADAR_CAPTION_GAP + lv_obj_get_width(s_labels[0].dist))
+                     <= (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING);
+
+    lv_obj_set_hidden(s_labels[0].name, !name_fits);
+    lv_obj_set_hidden(s_labels[0].dist, false);
+
+    if (!name_fits) {
+        lv_obj_update_layout(s_labels[0].dist);
+        int32_t w = lv_obj_get_width(s_labels[0].dist);
+        lv_obj_set_pos(s_labels[0].dist, (THEME_SCREEN_WIDTH - w) / 2,
+                       RADAR_CAPTION_Y);
+        return;
+    }
+
+    /* Give the label the width the text actually wants. It was created with a
+     * fixed 132 px and LV_LABEL_LONG_MODE_WRAP, which is about eleven
+     * characters at 25 px — so "Thessaloniki" would have wrapped too, and the
+     * check above would have called it a fit. The cap exists to stop a
+     * caption running off the panel; now that the fit is measured properly,
+     * the cap is the measurement. */
+    lv_obj_set_width(s_labels[0].name, want.x);
+
+    /* One line, centred as a pair, so a long name and a short distance stay
+     * visually joined instead of drifting to opposite edges. */
+    lv_obj_update_layout(s_labels[0].name);
+    lv_obj_update_layout(s_labels[0].dist);
+    int32_t nw = lv_obj_get_width(s_labels[0].name);
+    int32_t dw = lv_obj_get_width(s_labels[0].dist);
+    int32_t nh = lv_obj_get_height(s_labels[0].name);
+    int32_t dh = lv_obj_get_height(s_labels[0].dist);
+    int32_t total = nw + RADAR_CAPTION_GAP + dw;
+    int32_t x = (THEME_SCREEN_WIDTH - total) / 2;
+    if (x < THEME_SIDE_PADDING) x = THEME_SIDE_PADDING;
+    int32_t base = RADAR_CAPTION_Y;
+
+    lv_obj_set_pos(s_labels[0].name, x, base + (dh > nh ? (dh - nh) / 2 : 0));
+    lv_obj_set_pos(s_labels[0].dist, x + nw + RADAR_CAPTION_GAP,
+                   base + (nh > dh ? (nh - dh) / 2 : 0));
+}
+
+
+/* A tap on a mark re-points the caption. It does NOT leave the screen: he is
+ * looking at the scope, and answering "which one is that" by throwing him onto
+ * another page would be the wrong trade. Repaints immediately from the cache
+ * rather than waiting for the next redraw — up to two seconds of nothing
+ * happening reads as a missed tap, and he taps again. */
+static void mark_clicked_cb(lv_event_t *e)
+{
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= s_cap_count || s_cap_hex[i][0] == '\0') {
+        return;
+    }
+    memcpy(s_caption_hex, s_cap_hex[i], sizeof s_caption_hex);
+    place_caption(s_cap_name[i], s_cap_dist[i]);
+}
+
+/* A tap on the caption commits: it asks for the full view of whatever the
+ * caption currently names. The caption is the only thing on this screen with
+ * words on it, which is what makes it the only thing that reads as "press me
+ * for more". */
+static void caption_clicked_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_select_cb == NULL) {
+        return;
+    }
+    /* Whatever the caption is showing: the tapped aircraft if there is one,
+     * otherwise the nearest, which is what index 0 is after the caller's
+     * distance sort. */
+    const char *hex = (s_caption_hex[0] != '\0') ? s_caption_hex
+                    : (s_cap_count > 0 ? s_cap_hex[0] : NULL);
+    if (hex != NULL && hex[0] != '\0') {
+        s_select_cb(hex);
     }
 }
 
@@ -560,6 +749,7 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     for (int i = 0; i < MAX_AIRCRAFT; i++) {
         if (i >= n || !s_calc[i].valid) {
             lv_obj_set_hidden(s_marks[i], true);
+            s_cap_hex[i][0] = '\0';      /* hidden marks are not tappable */
             continue;
         }
         radar_calc_t *c = &s_calc[i];
@@ -571,6 +761,14 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         s_mark_state[i].heading_deg = c->track_deg;
         s_mark_state[i].filled      = c->has_route;
 
+        /* Cache what this mark's caption would say, so a tap can answer at
+         * once. Only for aircraft actually on screen: an index that is hidden
+         * must never be tappable. */
+        build_caption(&ac[i], routes, n_routes,
+                      s_cap_name[i], sizeof s_cap_name[i],
+                      s_cap_dist[i], sizeof s_cap_dist[i]);
+        snprintf(s_cap_hex[i], sizeof s_cap_hex[i], "%s", ac[i].hex);
+
         lv_obj_set_pos(s_marks[i], (int32_t)(c->x - (float)RADAR_MARK_BOX / 2.0f),
                        (int32_t)(c->y - (float)RADAR_MARK_BOX / 2.0f));
         lv_obj_set_hidden(s_marks[i], false);
@@ -579,6 +777,8 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
          * redraw rather than relying on lv_obj_set_pos() alone to catch it. */
         lv_obj_invalidate(s_marks[i]);
     }
+
+    s_cap_count = (n < MAX_AIRCRAFT) ? n : MAX_AIRCRAFT;
 
     /* --- The caption, BELOW the scope rather than inside it. ---
      *
@@ -605,85 +805,30 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         return;
     }
 
-    const aircraft_t *a  = &ac[nearest_idx];
-    const route_t    *rt = route_find(routes, n_routes, a->flight);
-    const char       *name;
-    if (rt != NULL && rt->resolved) {
-        name = airport_de(rt->dest_icao);
-        if (name == NULL || name[0] == '\0') {
-            name = rt->dest_city;         /* the API's own English name */
+    /* Which aircraft gets the caption: the one he tapped, if it is still up
+     * there, otherwise the nearest. */
+    int cap_idx = nearest_idx;
+    if (s_caption_hex[0] != '\0') {
+        cap_idx = -1;
+        for (int i = 0; i < n; i++) {
+            if (s_calc[i].valid && strcmp(ac[i].hex, s_caption_hex) == 0) {
+                cap_idx = i;
+                break;
+            }
         }
-    } else {
-        /* Plain language, never a raw ICAO code (AGENTS.md §1). */
-        name = actype_display_name(a->type, a->category);
-        if (name == NULL) {
-            name = STR_UNKNOWN_AIRCRAFT;
+        if (cap_idx < 0) {
+            /* It left the ring. Fall back rather than captioning nothing, and
+             * forget the selection so it cannot come back if the same hex
+             * reappears an hour later. */
+            s_caption_hex[0] = '\0';
+            cap_idx = nearest_idx;
         }
     }
-    lv_label_set_text(s_labels[0].name, name);
 
-    char dist_buf[32];
-    size_t used = fmt_distance_km(a->dst_nm, dist_buf, sizeof dist_buf);
-    const char *dir = compass_de_abbr(a->dir_deg);
-    if (dir != NULL && used + 1 < sizeof dist_buf) {
-        snprintf(dist_buf + used, sizeof dist_buf - used, " %s", dir);
-    }
-    lv_label_set_text(s_labels[0].dist, dist_buf);
-
-    /* ONE line, or no name at all.
-     *
-     * The caption band is the 44 px between the scope and the page dots, so a
-     * name that wraps does not get taller — it gets cut across the distance
-     * and the dots. "Unbekanntes Flugzeug" did exactly that, rendering as
-     * "Unbekannte / s Flugzeug" over the top of "9,7 km NNO", and D46 made
-     * that string common rather than rare.
-     *
-     * When the pair will not fit on one line the NAME yields, not the
-     * distance — the same priority D48 applies to the hero screen, and for
-     * the same reason: the magenta mark already says WHICH aircraft this is,
-     * so the caption's remaining job is how far and which way. Measured
-     * unwrapped, because a wrapped label reports the width it was given
-     * rather than the width it wants. */
-    lv_point_t want;
-    lv_text_get_size(&want, name, &plex_sans_cond_25, 0, 0, LV_COORD_MAX,
-                     LV_TEXT_FLAG_NONE);
-    lv_obj_update_layout(s_labels[0].dist);
-    bool name_fits = (want.x + RADAR_CAPTION_GAP + lv_obj_get_width(s_labels[0].dist))
-                     <= (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING);
-
-    lv_obj_set_hidden(s_labels[0].name, !name_fits);
-    lv_obj_set_hidden(s_labels[0].dist, false);
-
-    if (!name_fits) {
-        lv_obj_update_layout(s_labels[0].dist);
-        int32_t w = lv_obj_get_width(s_labels[0].dist);
-        lv_obj_set_pos(s_labels[0].dist, (THEME_SCREEN_WIDTH - w) / 2,
-                       RADAR_CAPTION_Y);
-        return;
-    }
-
-    /* Give the label the width the text actually wants. It was created with a
-     * fixed 132 px and LV_LABEL_LONG_MODE_WRAP, which is about eleven
-     * characters at 25 px — so "Thessaloniki" would have wrapped too, and the
-     * check above would have called it a fit. The cap exists to stop a
-     * caption running off the panel; now that the fit is measured properly,
-     * the cap is the measurement. */
-    lv_obj_set_width(s_labels[0].name, want.x);
-
-    /* One line, centred as a pair, so a long name and a short distance stay
-     * visually joined instead of drifting to opposite edges. */
-    lv_obj_update_layout(s_labels[0].name);
-    lv_obj_update_layout(s_labels[0].dist);
-    int32_t nw = lv_obj_get_width(s_labels[0].name);
-    int32_t dw = lv_obj_get_width(s_labels[0].dist);
-    int32_t nh = lv_obj_get_height(s_labels[0].name);
-    int32_t dh = lv_obj_get_height(s_labels[0].dist);
-    int32_t total = nw + RADAR_CAPTION_GAP + dw;
-    int32_t x = (THEME_SCREEN_WIDTH - total) / 2;
-    if (x < THEME_SIDE_PADDING) x = THEME_SIDE_PADDING;
-    int32_t base = RADAR_CAPTION_Y;
-
-    lv_obj_set_pos(s_labels[0].name, x, base + (dh > nh ? (dh - nh) / 2 : 0));
-    lv_obj_set_pos(s_labels[0].dist, x + nw + RADAR_CAPTION_GAP,
-                   base + (nh > dh ? (nh - dh) / 2 : 0));
+    const aircraft_t *a = &ac[cap_idx];
+    char name_buf[sizeof s_cap_name[0]];
+    char dist_buf[sizeof s_cap_dist[0]];
+    build_caption(a, routes, n_routes, name_buf, sizeof name_buf,
+                  dist_buf, sizeof dist_buf);
+    place_caption(name_buf, dist_buf);
 }

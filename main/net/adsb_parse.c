@@ -87,6 +87,14 @@ static int cmp_dst_nm(const void *a, const void *b)
     return 0;
 }
 
+void adsb_sort_by_distance(aircraft_t *ac, int n)
+{
+    if (ac == NULL || n <= 1) {
+        return;
+    }
+    qsort(ac, (size_t)n, sizeof(aircraft_t), cmp_dst_nm);
+}
+
 int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
 {
     if (json == NULL || out == NULL || max <= 0) {

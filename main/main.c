@@ -40,6 +40,8 @@
 #include "net/flight_source.h"
 #include "net/timesync.h"
 #include "net/ota.h"
+#include "net/adsb_parse.h"
+#include "data/extrapolate.h"
 #include "data/settings.h"
 #include "net/http_get.h"
 #include "esp_netif.h"
@@ -84,6 +86,23 @@ static void on_list_select(const aircraft_t *ac)
 {
     if (ac == NULL) return;
     s_selected = *ac;
+    s_has_selection = true;
+    nav_go_to(0, true);
+}
+
+/* The radar hands over an ICAO hex rather than an aircraft_t, because by the
+ * time this runs the array has usually been re-sorted — every fix is carried
+ * forward between polls, which can change who is nearest. The hex is the only
+ * identifier that survives that.
+ *
+ * Nothing needs looking up here: ui_task matches the selection by hex on its
+ * next tick and falls back to the nearest if it has gone. Setting the hex IS
+ * the selection. */
+static void on_radar_select(const char *hex)
+{
+    if (hex == NULL || hex[0] == '\0') return;
+    memset(&s_selected, 0, sizeof s_selected);
+    snprintf(s_selected.hex, sizeof s_selected.hex, "%s", hex);
     s_has_selection = true;
     nav_go_to(0, true);
 }
@@ -312,6 +331,28 @@ static void ui_task(void *arg)
         }
 
         int n = flight_source_snapshot(ac, MAX_AIRCRAFT, rt, MAX_AIRCRAFT);
+
+        /* Carry every fix forward to NOW before anything draws it.
+         *
+         * The source is polled every 12 s, so without this the marks sit
+         * perfectly still and then jump — and the jump is small enough to
+         * miss: 7 px for an airliner on a 55 km scope, 1.6 px for a Cessna.
+         * The panel read as frozen, which is exactly how it was reported.
+         * Done here, once, rather than in each screen, so the radar, the list
+         * and the hero cannot disagree about where an aircraft is.
+         *
+         * Re-sorting afterwards is not optional: the ordering (nearest first)
+         * is structural — screen_list.c treats row 0 as "the nearest" and
+         * main.c reads ac[0] as "the plane overhead" — and moving everything
+         * is exactly what can change who is nearest. */
+        int64_t last_ok_ms = flight_source_last_success_ms();
+        if (last_ok_ms > 0 && n > 1) {
+            float age_s = (float)((esp_timer_get_time() / 1000) - last_ok_ms) / 1000.0f;
+            for (int i = 0; i < n; i++) {
+                aircraft_extrapolate(&ac[i], age_s, &ac[i]);
+            }
+            adsb_sort_by_distance(ac, n);
+        }
         time_t raw = time(NULL);
         struct tm now;
         localtime_r(&raw, &now);
@@ -339,6 +380,21 @@ static void ui_task(void *arg)
             net = NET_NO_DATA;
         } else {
             net = NET_OK;
+        }
+
+        /* Leaving the radar drops whatever mark he had tapped there. A
+         * selection made five minutes ago is not what he means by a glance,
+         * and the caption going back to the nearest aircraft is the same rule
+         * the deck already follows when it auto-returns from an empty sky. */
+        {
+            static int prev_page = -1;
+            int page_now = nav_page();
+            if (page_now != prev_page) {
+                if (prev_page == 2) {
+                    screen_radar_clear_selection();
+                }
+                prev_page = page_now;
+            }
         }
 
         /* A row he tapped stays the subject while it is still up there. Once it
@@ -568,6 +624,7 @@ static void ui_resume(void)
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
     screen_list_set_select_cb(on_list_select);
+    screen_radar_set_select_cb(on_radar_select);
     display_unlock();
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
@@ -710,6 +767,7 @@ void app_main(void)
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
     screen_list_set_select_cb(on_list_select);
+    screen_radar_set_select_cb(on_radar_select);
     display_unlock();
     log_memory_budget("after screen built");
 
