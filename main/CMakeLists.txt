@@ -6,6 +6,7 @@ set(SRCS
     "ui/display.c"
     "debug/dbg_screen.c"
     "debug/dbg_bench.c"
+    "debug/dbg_fontcard.c"
     "debug/dbg_metrics.c"
     "debug/dbg_fixture.c"
     "ui/screen_overhead.c"

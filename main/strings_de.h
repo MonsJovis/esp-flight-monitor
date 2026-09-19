@@ -11,11 +11,11 @@
  * cost a lookup and an ID that can go stale against its string. What M7
  * actually needs is a single page a native speaker can read top to bottom
  * without knowing any C — so that is what this is. `tools/check_strings.py
- * --list` prints it, plus the two lexicons below, as plain text for exactly
+ * --list` prints it, plus the lexicons below, as plain text for exactly
  * that review.
  *
- * TWO DELIBERATE EXCEPTIONS, both indexed tables rather than named constants,
- * both already covered by host tests and both included in the --list dump:
+ * FOUR DELIBERATE EXCEPTIONS, all indexed tables rather than named constants,
+ * all covered by host tests and all included in the --list dump:
  *
  *   main/data/fmt_de.c  — weekdays, months (Austrian: "Jänner", not "Januar"),
  *                         and the three compass tables. Arrays addressed by
@@ -26,6 +26,18 @@
  *                         They sit in the preset table beside a POSIX TZ
  *                         string and a lat/lon; splitting the name out from
  *                         the row it belongs to would invite the two to drift.
+ *   main/data/tbl_airport.c — 556 German city names, keyed on ICAO code. They
+ *                         ARE the route headline (AGENTS.md §1), so they are a
+ *                         language decision and not data; listed under
+ *                         "Städtenamen in der Routenzeile".
+ *   main/data/tbl_actype.c — the `size_class` field, a closed set of 22 German
+ *                         words ("Mittelstreckenjet", "Segelflugzeug"), listed
+ *                         under "Flugzeugklassen". The rest of that table is
+ *                         manufacturer and model names, which are names.
+ *
+ * main/data/tbl_airline.c is NOT an exception in the same sense: an airline's
+ * name is its name in every language, so --list prints a count and a note
+ * rather than 206 entries.
  *
  * RULES FOR EDITING THIS FILE
  *

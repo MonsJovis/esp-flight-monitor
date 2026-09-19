@@ -47,8 +47,32 @@ $(TESTS): %: $(BINDIR)/%
 	@echo "== $@"
 	@$(BINDIR)/$@
 
-$(BINDIR)/%: %.c $(SRCS) | $(BINDIR)
+# The prerequisites above name only .c files, so a change confined to a HEADER
+# used to rebuild nothing and the suite reported green on code it had not
+# compiled. Measured: changing VIEW_HERO_LEN from 48 to 6 in main/ui/
+# view_model.h gave "2510 checks, 0 failed"; touching an unrelated .c then gave
+# 882 failures. Struct fields, buffer lengths, #defines and static inlines all
+# live in headers, so that is a large blind spot for a suite whose whole job is
+# to catch exactly those.
+#
+# The second line writes the real prerequisite list. Note that it is a separate
+# pass and not -MMD in CFLAGS: with one compile-and-link command over many
+# sources, clang points every translation unit's -MMD at the same $(BINDIR)/%.d
+# and the last one to finish overwrites the rest, so all but one source's
+# headers are silently lost. -MM over the same source list emits one
+# recipe-less rule per unit, all with the same target, and make unions their
+# prerequisites — which is what is wanted.
+# Makefile is a prerequisite too: a change to CFLAGS is as much a change to the
+# binary as a change to a source file, and it is what makes an existing build
+# tree pick the dependency files up the first time after this rule landed.
+$(BINDIR)/%: %.c $(SRCS) Makefile | $(BINDIR)
 	@$(CC) $(CFLAGS) -o $@ $< $(SRCS) $(LDFLAGS)
+	@$(CC) $(CFLAGS) -MM -MP -MT $@ $< $(SRCS) > $(BINDIR)/$*.d
+
+# -MP gave each header a recipe-less rule of its own, so deleting or renaming
+# one is "no rule to make target" on the NEXT build instead of a hard error on
+# this one.
+-include $(BINDIR)/*.d
 
 $(BINDIR):
 	@mkdir -p $(BINDIR)

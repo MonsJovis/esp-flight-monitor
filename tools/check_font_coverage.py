@@ -9,12 +9,34 @@ graphic quote pasted in from a document.
 
 The subset is defined in docs/DESIGN.md §3 and implemented in
 tools/build_fonts.sh. This script is the enforcement.
+
+HOW IT READS C, AND WHY IT NO LONGER DOES IT ITSELF. This file used to find
+literals with one regex per line and decode them with its own escape table.
+A review put a "…" through it four different ways in a few minutes:
+
+  * a string broken over two lines with a backslash, because the regex wanted
+    both quotes on one line;
+  * a line containing the character literal '"', because the regex paired that
+    quote with the next one and read the label's text as "the bit in between";
+  * "\\U00002026", because the private escape table knew \\u and not \\U — while
+    check_strings.py's decoder knew both. Two decoders that disagree are a hole
+    by construction, which is why there is now one, imported;
+  * any line that also mentioned ESP_LOG, because the skip was per LINE rather
+    than per CALL, so `ESP_LOGI(TAG, "x"); lv_label_set_text(l, "Flüge …");`
+    skipped both halves.
+
+All four are gone because the lexing and the decoding are now check_strings.py's
+scan_literals() and c_unescape(): one implementation, fixed in one place, used
+by both gates.
 """
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+from check_strings import c_unescape, scan_literals   # noqa: E402
 
 # The ranges are PARSED OUT OF tools/build_fonts.sh rather than copied here.
 # A checker with its own private copy of the subset is a checker that goes stale
@@ -63,66 +85,46 @@ FULL_RANGES = _ranges_for("FULL_RANGES")
 # because there was nothing left in its scan path to check. A gate that reports
 # success after its subject has moved out from under it is worse than no gate,
 # so it now scans the whole component and names what it skips.
-SCAN_DIRS = ["main"]
-STRING_RE = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
-
-# C escape sequences, decoded before the codepoint check. main/strings_de.h
-# deliberately writes every non-ASCII glyph as a hex escape ("\xE2\x80\x94")
-# so that no editor can silently re-encode it and so a grep finds it — which
-# means that without this, the em dash, the arrow, the degree sign and the
-# middle dot all read as plain ASCII backslashes here and NONE of them were
-# ever checked against the subset.
-# Two kinds of line hold text that never reaches a label, and a font subset is
-# about what LVGL has to DRAW, not about what the serial terminal prints:
 #
-#   ESP_LOG*/printf  — developer output. Your terminal has every glyph there is.
-#   LOG-ONLY         — an explicit, greppable promise that a literal on this
-#                      line is built for a log line and is never passed to a
-#                      widget. It has to be written by hand precisely because
-#                      the checker cannot follow a variable from its assignment
-#                      to its use; putting the burden on the author keeps the
-#                      claim visible in the diff instead of buried in a
-#                      heuristic here.
-SKIP_RE = re.compile(r'\b(ESP_LOG[A-Z]*|ESP_EARLY_LOG[A-Z]*|printf|fprintf)\s*\(|LOG-ONLY')
+# Unlike check_strings.py, nothing here is exempt but the generated glyph
+# tables: a missing glyph is missing on a developer screen too, and the city
+# and aircraft tables are precisely where a stray "ā" or "ș" would come from.
+SCAN_DIRS = ["main"]
 
-_ESC_RE = re.compile(r'\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|[0-7]{1,3}|.)')
+# The one hatch, and the reason it needs anchoring.
+#
+# A font subset is about what LVGL has to DRAW. Developer output does not go
+# through LVGL — the serial terminal has every glyph there is — and the
+# arguments of ESP_LOG*/printf are already skipped by scan_literals(). What
+# that cannot see is a literal ASSIGNED to a variable that is only ever logged,
+# so LOG-ONLY exists to let the author say so by hand: the claim then lives in
+# the diff instead of in a heuristic here. main/debug/dbg_fixture.c:49-66 is
+# the real case — four strings carrying "§" (U+00A7), which is genuinely in
+# neither font range and genuinely never drawn.
+#
+# It has to be a COMMENT WHOSE WHOLE BODY IS "LOG-ONLY" and nothing else. As a
+# bare substring it granted itself to anything that merely mentioned it,
+# including the negation of its own claim: `/* NOT LOG-ONLY: this really does
+# reach a label */` was an exemption, and so were `/* see docs/ANALOG-ONLY.md
+# */` and `/* LOG-ONLY but actually drawn */`. Anchoring on the body rather
+# than on the end of the line means a trailing brace does not silently cancel
+# the marker, while every one of those three still fails to earn it.
+#
+# The marker covers the literals that START on its own line — not the file, not
+# the enclosing block, not the next line.
+_LOG_ONLY_RE = re.compile(r"/\*[ \t]*LOG-ONLY[ \t]*\*/|//[ \t]*LOG-ONLY[ \t]*$")
 
-
-def decode_c_string(raw):
-    """A C source literal's text -> the characters it actually denotes.
-
-    Hex and octal escapes are BYTES (that is how "\xE2\x80\x94" spells one
-    UTF-8 em dash), so they are accumulated as bytes and the whole thing is
-    decoded once at the end. Anything that does not decode is returned as
-    latin-1 so the caller still sees something to complain about rather than
-    crashing on it.
-    """
-    out = bytearray()
-    i = 0
-    simple = {"n": b"\n", "t": b"\t", "r": b"\r", "0": b"\0",
-              "\\": b"\\", '"': b'"', "'": b"'"}
-    while i < len(raw):
-        m = _ESC_RE.match(raw, i)
-        if m is None:
-            out += raw[i].encode("utf-8")
-            i += 1
-            continue
-        body = m.group(1)
-        if body[0] in "xX":
-            out.append(int(body[1:], 16))
-        elif body[0] == "u":
-            out += chr(int(body[1:], 16)).encode("utf-8")
-        elif body in simple:
-            out += simple[body]
-        elif body.isdigit():
-            out.append(int(body, 8) & 0xFF)
-        else:
-            out += body.encode("utf-8")
-        i = m.end()
-    try:
-        return out.decode("utf-8")
-    except UnicodeDecodeError:
-        return out.decode("latin-1")
+# One decoder, two gates — asserted, not assumed. Every spelling of U+2026 that
+# a C compiler accepts has to arrive here as U+2026, because the one that did
+# not (\U, eight digits) is how a horizontal ellipsis got past this check.
+_ELLIPSIS_SPELLINGS = (r"…", r"\U00002026", r"\xE2\x80\xA6",
+                       r"\342\200\246", "…")
+for _spelling in _ELLIPSIS_SPELLINGS:
+    if c_unescape(_spelling) != "…":
+        sys.exit("tools/check_strings.py's c_unescape() decodes %r to %r, not "
+                 "U+2026. The two gates share that decoder precisely so they "
+                 "cannot disagree about an escape; fix it there."
+                 % (_spelling, c_unescape(_spelling)))
 
 
 def covered(cp, ranges):
@@ -132,39 +134,43 @@ def covered(cp, ranges):
 def main():
     problems = []
     for d in SCAN_DIRS:
-        for path in sorted((ROOT / d).rglob("*.c")) + sorted((ROOT / d).rglob("*.h")):
+        root = ROOT / d
+        for path in sorted(set(root.rglob("*.c")) | set(root.rglob("*.h"))):
             # Generated font tables are data, not prose.
             if "ui/fonts/" in path.as_posix():
                 continue
-            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                stripped = line.lstrip()
-                if stripped.startswith("*") or stripped.startswith("//"):
-                    continue          # comments may say whatever they like
-                if SKIP_RE.search(line):
+            text = path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            for lineno, raw in scan_literals(text):
+                src = lines[lineno - 1] if 0 < lineno <= len(lines) else ""
+                if _LOG_ONLY_RE.search(src):
                     continue
-                for m in STRING_RE.finditer(line):
-                    for ch in decode_c_string(m.group(1)):
-                        cp = ord(ch)
-                        if cp < 0x80:
-                            continue
-                        if not covered(cp, FULL_RANGES):
-                            problems.append(
-                                f"{path.relative_to(ROOT)}:{lineno}: U+{cp:04X} "
-                                f"{ch!r} is in NO generated face — it will render "
-                                f"as nothing"
-                            )
-                        elif not covered(cp, HERO_RANGES):
-                            problems.append(
-                                f"{path.relative_to(ROOT)}:{lineno}: U+{cp:04X} "
-                                f"{ch!r} is missing from the 100/76/56 px hero "
-                                f"faces — fine in body text, blank if it reaches "
-                                f"a hero"
-                            )
+                for ch in c_unescape(raw):
+                    cp = ord(ch)
+                    if cp < 0x80:
+                        continue
+                    if not covered(cp, FULL_RANGES):
+                        problems.append(
+                            f"{path.relative_to(ROOT)}:{lineno}: U+{cp:04X} "
+                            f"{ch!r} is in NO generated face — it will render "
+                            f"as nothing"
+                        )
+                    elif not covered(cp, HERO_RANGES):
+                        problems.append(
+                            f"{path.relative_to(ROOT)}:{lineno}: U+{cp:04X} "
+                            f"{ch!r} is missing from the 100/76/56 px hero "
+                            f"faces — fine in body text, blank if it reaches "
+                            f"a hero"
+                        )
 
     if problems:
         print("font coverage: %d problem(s)\n" % len(problems))
         for p in problems:
             print("  " + p)
+        print("\nEither add the range in tools/build_fonts.sh and regenerate, "
+              "or spell the text with a glyph the subset has. If the literal "
+              "genuinely never reaches a widget, put an exact /* LOG-ONLY */ "
+              "comment — those nine characters and nothing else — on its line.")
         return 1
     print("font coverage: every non-ASCII character in UI strings has a glyph")
     return 0
