@@ -1,0 +1,88 @@
+/* screen_settings.h — DESIGN.md §5.6 "Einstellungen".
+ *
+ * He is shown this screen once and, ideally, never again — reached by a
+ * long-press on the chrome bar (DESIGN.md §6), never by swipe. That framing
+ * drives every choice in screen_settings.c:
+ *
+ *   - Location is three tappable cards (Gloggnitz / Pattaya / Eigener Ort),
+ *     never a coordinate form. AGENTS.md §6: "switching location should be
+ *     one tap, not a coordinate entry form." "Eigener Ort" shows its stored
+ *     coordinates read-only; there is a TODO where that card is built
+ *     marking coordinate entry as intentionally unimplemented.
+ *   - Every tappable row is >= 56 px tall, every label he has to read is
+ *     >= 24 px (DESIGN.md §3's Near tier, ~40 cm), and the active location
+ *     card carries a word ("Aktiv") as well as its magenta fill — DO-257A
+ *     §2.1.6, never colour alone.
+ *   - The screen scrolls (content is taller than 480 px); the first section
+ *     is fully visible without scrolling since he may not realise it does.
+ *
+ * Like screen_overhead, this is a single-instance screen: file-scope
+ * statics, built once by screen_settings_create(), refreshed by
+ * screen_settings_update(). Three callbacks hand persistence, WiFi
+ * navigation and exit navigation to the integrator — this file knows
+ * nothing about NVS, the swipe deck, or the WiFi screen.
+ */
+#pragma once
+#include "lvgl.h"
+#include "settings.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Builds the widget tree ONCE, as a full-bleed (480x480) scrollable child of
+ * `parent`. Call exactly once per process lifetime — it does not check for
+ * or clean up a previous tree, matching every other single-instance screen
+ * in this codebase (see screen_overhead.h).
+ *
+ * The tree starts in a valid but default-looking state (settings_defaults());
+ * call screen_settings_update() at least once before the first frame is
+ * flushed so the real, persisted settings show instead.
+ *
+ * Caller holds display_lock() (display.h) for the duration of this call.
+ */
+void screen_settings_create(lv_obj_t *parent);
+
+/* Cheap per-call update: reflects every field of `s` onto the already-built
+ * widget tree — which location card is active (fill + border + the "Aktiv"
+ * word), the radius and brightness sliders and their numeric read-outs, the
+ * auto-dim switch and its window text, and the read-only coordinates shown
+ * on the "Eigener Ort" card. Never creates or destroys a widget, so it is
+ * safe to call whenever the integrator's copy of `settings_t` changes —
+ * after loading from NVS, and again after a settings_changed_cb round-trip.
+ *
+ * Caller MUST hold display_lock() (display.h) for the entire call — this
+ * function makes LVGL calls directly and takes no lock of its own.
+ */
+void screen_settings_update(const settings_t *s);
+
+/* Fired once per completed user change: a location card tap, the auto-dim
+ * switch toggling, or a slider drag ENDING — deliberately not once per pixel
+ * dragged. AGENTS.md §7's flash-tearing bug is provoked by NVS commits, and
+ * "persist on this callback" is the obvious integration, so this file does
+ * not invite a write storm during a slider drag; see the slider event
+ * handlers in screen_settings.c.
+ *
+ * `s` points at this screen's own working copy of the settings and is only
+ * valid for the duration of the call — copy it if it needs to outlive the
+ * call. The integrator is expected to sanitise (settings_sanitise()),
+ * persist (settings_save()) and apply the result, then typically call
+ * screen_settings_update() back with the authoritative value.
+ */
+typedef void (*settings_changed_cb)(const settings_t *s);
+void screen_settings_set_cb(settings_changed_cb cb);
+
+/* Fired when the WLAN row is tapped. Wire this to DESIGN.md §5.7's WiFi
+ * screen — this file has no knowledge that screen exists. */
+typedef void (*settings_wifi_cb)(void);
+void screen_settings_set_wifi_cb(settings_wifi_cb cb);
+
+/* Fired when "Zurück" is tapped. This screen is reached by long-press and is
+ * not in the swipe deck (DESIGN.md §6), so leaving it is entirely this
+ * callback's job — wire it back to whatever screen was showing before. */
+typedef void (*settings_exit_cb)(void);
+void screen_settings_set_exit_cb(settings_exit_cb cb);
+
+#ifdef __cplusplus
+}
+#endif

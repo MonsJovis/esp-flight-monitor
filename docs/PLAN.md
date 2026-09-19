@@ -341,7 +341,7 @@ this is the sweep that catches what escaped.
 | Flash + PSRAM cost of the full font set | **482,256 B (471 KiB)** uncompressed, 10 faces; 100 px face alone 151 KiB | M1 |
 | Magenta-on-black verdict | legible and clearly distinct beside white and cyan at ≥56 px — see M1 note | M1 |
 | Longest destination name that fits at 100 px | **"Innsbruck", 430 px of 440**; 63/74 fit at 100, 9 at 76, 2 at 56, **0 fail** | M1 |
-| Tearing severity on NVS write | **no measurable effect on render cadence** (3 µs on a 49.7 ms worst-case frame gap, 1.0× idle). Scan-out not measurable in software — see M4 note | M4 |
+| Tearing severity on NVS write | **none.** 3 µs on a 49.7 ms worst-case frame gap (1.0× idle), and **no tearing visible on the panel** under sustained NVS writes | M4 |
 | Typical poll payload at 30 nm | 7,628 B / 13 aircraft (measured 2026-09-18) | measured |
 | Route resolution rate, real sample | **6 of 13** — 6/6 airline callsigns, 0/7 GA (measured 2026-09-18) | measured |
 

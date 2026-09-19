@@ -444,7 +444,7 @@ The fast path cannot run away, because the cache means any callsign is asked at 
 per flight, and the `asked` flag is set on any completed attempt — success or failure — so a
 failing POST drops to the slow interval instead of looping.
 
-## D29 — The tearing bug does not reproduce here, and the prescribed mitigation is harmful
+## D29 — The tearing bug does not reproduce here — CONFIRMED by eye
 
 **Measured on the unit**, animating a 100 px face at full-screen invalidate while committing
 20 × 2 KB NVS blobs:
@@ -470,7 +470,15 @@ framebuffer out of PSRAM, and with `bb_mode = 0` the panel reads PSRAM directly 
 leaves *no software trace*. It cannot be measured from inside the firmware; it has to be
 looked at. `t` on the debug console therefore ends by sweeping hard-edged white bars down
 the panel for ten seconds with NVS hammering underneath, which is what a tear shows up on.
-**Still to be confirmed by eye.**
+
+**Watched on 2026-09-19: no tearing.** So the question espressif/esp-bsp#570 raises is
+closed for this build, from both directions — no measurable effect on render cadence, and
+nothing visible on the glass under sustained flash writes.
+
+**Consequence:** AGENTS.md §7's instruction to pause LVGL around NVS writes is removed from
+practice. It was written before the framebuffer count was measured (D12), and two
+framebuffers are the most likely reason the hazard went away. Nothing in the firmware holds
+the display lock across a commit.
 
 ## D30 — Location is one tap, and everything else follows from it
 

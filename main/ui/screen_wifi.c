@@ -1,0 +1,662 @@
+/* screen_wifi.c — see screen_wifi.h for the contract.
+ *
+ * DESIGN.md §5.7 / §3 NEAR tier (~40 cm, in hand or leaned into): every
+ * label he needs to act on is >=24 px (plex_sans_cond_25), not the
+ * 12-17 px the mockups used. This is also the one screen that is allowed
+ * to interrupt him (DESIGN.md §6) and the reason on-device provisioning was
+ * affordable over a captive portal at all (AGENTS.md §8) — see screen_wifi.h.
+ *
+ * Two full-bleed (480x480) sub-screens share `parent`, only one visible at
+ * a time:
+ *   s_main — title, status line, the scrollable network list, Suchen/Zurück.
+ *   s_pw   — the password step: which network, a password field with a
+ *            show/hide toggle, Verbinden/Abbrechen, and the keyboard.
+ * Both are built once in screen_wifi_create() (screen_overhead.c's
+ * create-once/update-many pattern). The ONE thing that is NOT create-once
+ * is the network list itself: it is a fixed-size POOL of rows
+ * (SCREEN_WIFI_MAX_ROWS), shown/hidden/re-texted by screen_wifi_set_networks(),
+ * because the row count changes scan to scan and a pool means no widget is
+ * ever created or destroyed on the display task after start-up.
+ */
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "screen_wifi.h"
+#include "theme.h"
+#include "fonts/fonts.h"
+
+/* ============================================================================
+ * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
+ * in this file lives here. Audit THIS block, not the rest of the file, when
+ * checking for stray hard-coded text (screen_overhead.c's convention).
+ *
+ * NOTE on "..." below: DESIGN.md §3's lv_font_conv subsetting ranges for
+ * the Plex faces cover ASCII, the umlauts, °, ·, → and — (screen_overhead.c
+ * uses the arrow). They do NOT cover U+2026, the single "…" glyph. Using a
+ * real ellipsis character here would hit exactly the "renders as nothing,
+ * silently, with no error logged anywhere" trap AGENTS.md §7 calls out for
+ * missing glyphs — so every "..." below is three ASCII periods on purpose.
+ * ============================================================================
+ */
+#define CHROME_TITLE                  "WLAN"
+
+#define CHROME_STATUS_SCANNING        "Suche Netzwerke..."
+#define CHROME_STATUS_CONNECTED_PFX   "Verbunden mit "              /* + ssid */
+#define CHROME_STATUS_CONNECTED_GEN   "Verbunden"                   /* connected==true but no ssid given (defensive) */
+#define CHROME_STATUS_FAILED_PFX      "Verbindung fehlgeschlagen: " /* + ssid */
+#define CHROME_STATUS_IDLE            "Nicht verbunden"             /* see screen_wifi.h: the 4th, unnamed combination */
+#define CHROME_STATUS_CONNECTING_PFX  "Verbindung zu "              /* + ssid + _SFX; local optimistic status, see set_status_connecting() */
+#define CHROME_STATUS_CONNECTING_SFX  " wird hergestellt..."
+
+#define CHROME_TAG_SAVED              "gespeichert"      /* DO-257A: colour is never the only carrier, so the word ships beside the green tick */
+#define CHROME_LIST_EMPTY             "Keine Netzwerke gefunden"
+
+#define CHROME_BTN_RESCAN             "Suchen"
+#define CHROME_BTN_EXIT               "Zurück"
+
+#define CHROME_PW_NETWORK_PFX         "Verbindung mit "  /* + ssid — "so he can see what he is connecting to" */
+#define CHROME_PW_PLACEHOLDER         "Passwort"
+#define CHROME_PW_SHOW                "Anzeigen"         /* shown while the password is hidden — names the action the tap performs */
+#define CHROME_PW_HIDE                "Verbergen"        /* shown while the password is visible */
+#define CHROME_PW_CONNECT             "Verbinden"
+#define CHROME_PW_CANCEL              "Abbrechen"
+
+/* ============================================================================
+ * Layout constants — px, on the 8 px base unit (THEME_BASE_UNIT), matching
+ * screen_overhead.c's convention.
+ * ============================================================================
+ */
+#define PAD        THEME_SIDE_PADDING                            /* 20 */
+#define CONTENT_W  (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING) /* 440 */
+#define GAP_SM     8
+#define GAP_MD     16
+
+/* Every tappable row/button on this NEAR-tier screen is >=56 px tall (task
+ * brief); 64 = 8 * THEME_BASE_UNIT gives a comfortable margin above that
+ * floor for an elderly user rather than sitting exactly on it. */
+#define ROW_H        64
+#define BTN_H        64
+#define ROW_INSET    16   /* left/right inset for a row's own label(s) */
+#define PW_TOGGLE_W  150  /* wide enough for "Verbergen", the longer of the two toggle words, at 25 px */
+
+/* Pool size for the network list. wifi_scan()'s own `max` is the
+ * integrator's call (main/net/wifi.h); this just needs to be at least as
+ * large as a realistic scan result. Anything beyond this is silently
+ * clamped in screen_wifi_set_networks() — the list still scrolls for
+ * everything under the cap. */
+#define SCREEN_WIFI_MAX_ROWS 24
+
+/* Standard WPA2-PSK ASCII passphrase ceiling. wifi.h does not itself state
+ * a password length limit (that lives in the NVS field size on the
+ * integrator's side, and wifi_creds_set() already reports
+ * ESP_ERR_INVALID_ARG if it is exceeded) — this is just a sane stop so the
+ * on-screen keyboard does not let him type forever into a field that can
+ * never be accepted. */
+#define PW_MAX_PASS_LEN 63
+
+/* ============================================================================
+ * Widget tree — built once by screen_wifi_create(), single instance (one
+ * WLAN screen per device), so file-scope statics rather than a heap context
+ * (matches screen_overhead.c, main/debug/dbg_screen.c).
+ * ============================================================================
+ */
+
+/* --- s_main: title, status, list, Suchen/Zurück --- */
+static lv_obj_t *s_main;
+static lv_obj_t *s_lbl_title;
+static lv_obj_t *s_lbl_status;
+static lv_obj_t *s_list;
+static lv_obj_t *s_lbl_empty;
+static lv_obj_t *s_btn_rescan;
+static lv_obj_t *s_btn_exit;
+
+/* One entry per pool slot. `ssid[0] == '\0'` marks an unused slot. */
+typedef struct {
+    lv_obj_t *row;
+    lv_obj_t *lbl_ssid;
+    lv_obj_t *lbl_tick;   /* LV_SYMBOL_OK, LVGL default font (see create_row()) */
+    lv_obj_t *lbl_saved;  /* CHROME_TAG_SAVED */
+    char      ssid[SCREEN_WIFI_SSID_LEN];
+    bool      saved;
+} wifi_row_t;
+
+static wifi_row_t s_rows[SCREEN_WIFI_MAX_ROWS];
+/* Combined width of one row's tick + gap + CHROME_TAG_SAVED label, in px.
+ * Computed once from row 0 in create_row() — the text never changes, so
+ * every row's badge is the same size. Used to size the SSID label so long
+ * names don't run under the badge on a saved row. */
+static int32_t s_badge_w;
+
+/* --- s_pw: which network, password field, toggle, Verbinden/Abbrechen, keyboard --- */
+static lv_obj_t *s_pw;
+static lv_obj_t *s_pw_lbl_network;
+static lv_obj_t *s_pw_ta;
+static lv_obj_t *s_pw_toggle_lbl;
+static lv_obj_t *s_pw_kb;
+static char      s_pw_ssid[SCREEN_WIFI_SSID_LEN];
+
+static wifi_join_cb   s_join_cb;
+static wifi_rescan_cb s_rescan_cb;
+static wifi_exit_cb   s_exit_cb;
+
+/* ============================================================================
+ * Forward declarations — the row/status/password-step callbacks reference
+ * each other (e.g. tapping a saved row and tapping Verbinden both end up
+ * setting the same "connecting" status), so this avoids having to sort the
+ * whole file into one strict define-before-use order.
+ * ============================================================================
+ */
+static void apply_status_text(const char *text, lv_color_t color);
+static void set_status_connecting(const char *ssid);
+static void open_password_step(const char *ssid);
+static void close_password_step(void);
+static void do_connect(void);
+static void do_cancel(void);
+static void row_event_cb(lv_event_t *e);
+
+/* ============================================================================
+ * Small helpers
+ * ============================================================================
+ */
+
+/* A label with fixed font + colour, empty text — position and text are set
+ * per-caller (screen_overhead.c's helper of the same name and shape). */
+static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, color, 0);
+    lv_label_set_text(l, "");
+    return l;
+}
+
+/* A tappable button, sized explicitly (every button on this screen is
+ * >=56 px tall per the task brief), with a centred 25 px label — the
+ * near-tier floor applies to every tappable label, not just the list rows. */
+static lv_obj_t *make_button(lv_obj_t *parent, int32_t w, int32_t h, const char *text,
+                             lv_color_t bg, lv_color_t border, lv_color_t text_color)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_set_style_bg_color(btn, bg, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(btn, border, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_radius(btn, THEME_BASE_UNIT, 0);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_obj_set_style_text_font(lbl, &plex_sans_cond_25, 0);
+    lv_obj_set_style_text_color(lbl, text_color, 0);
+    lv_label_set_text(lbl, text);
+    lv_obj_center(lbl);
+    return btn;
+}
+
+static void safe_copy_ssid(char dst[SCREEN_WIFI_SSID_LEN], const char *src)
+{
+    strncpy(dst, src, SCREEN_WIFI_SSID_LEN - 1);
+    dst[SCREEN_WIFI_SSID_LEN - 1] = '\0';
+}
+
+/* ============================================================================
+ * Status line
+ * ============================================================================
+ */
+static void apply_status_text(const char *text, lv_color_t color)
+{
+    lv_label_set_text(s_lbl_status, text);
+    lv_obj_set_style_text_color(s_lbl_status, color, 0);
+}
+
+/* Local, optimistic status shown the instant he taps a saved row or
+ * Verbinden — before the integrator's own screen_wifi_set_status() call for
+ * the actual outcome has had time to arrive. Without this the status line
+ * would sit on stale text (or "Nicht verbunden") for however long the
+ * connect attempt takes, which reads as "did that tap even register?" to
+ * this user (AGENTS.md §1: a sentence beats a stale or blank one). A later
+ * screen_wifi_set_status() call always overwrites this. */
+static void set_status_connecting(const char *ssid)
+{
+    char buf[64];
+    snprintf(buf, sizeof buf, "%s%s%s", CHROME_STATUS_CONNECTING_PFX, ssid, CHROME_STATUS_CONNECTING_SFX);
+    apply_status_text(buf, THEME_TEXT_LABEL);
+}
+
+void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scanning)
+{
+    char buf[64];
+
+    /* `scanning` wins over everything else: a rescan while still
+     * technically associated to the old network must not show two
+     * contradictory messages at once (screen_wifi.h). */
+    if (scanning) {
+        apply_status_text(CHROME_STATUS_SCANNING, THEME_TEXT_LABEL);
+        return;
+    }
+    if (connected) {
+        if (ssid_or_null && ssid_or_null[0] != '\0') {
+            snprintf(buf, sizeof buf, "%s%s", CHROME_STATUS_CONNECTED_PFX, ssid_or_null);
+            apply_status_text(buf, THEME_GREEN);
+        } else {
+            apply_status_text(CHROME_STATUS_CONNECTED_GEN, THEME_GREEN);
+        }
+        return;
+    }
+    if (ssid_or_null && ssid_or_null[0] != '\0') {
+        snprintf(buf, sizeof buf, "%s%s", CHROME_STATUS_FAILED_PFX, ssid_or_null);
+        apply_status_text(buf, THEME_AMBER);
+        return;
+    }
+    apply_status_text(CHROME_STATUS_IDLE, THEME_TEXT_LABEL);
+}
+
+/* ============================================================================
+ * Network list — fixed pool, shown/hidden/re-texted per screen_wifi_set_networks()
+ * ============================================================================
+ */
+
+static void row_event_cb(lv_event_t *e)
+{
+    wifi_row_t *row = (wifi_row_t *)lv_event_get_user_data(e);
+    if (!row || row->ssid[0] == '\0') {
+        return;
+    }
+    if (row->saved) {
+        /* Behaviour #1 in the task brief: joins immediately, NO keyboard.
+         * We never had the password — wifi_creds_list() deliberately never
+         * returns one (wifi.h) — so NULL is the documented signal to the
+         * join callback: "(re)connect `ssid` with whatever is already
+         * stored for it", e.g. via wifi_reconnect_now() (see screen_wifi.h). */
+        set_status_connecting(row->ssid);
+        if (s_join_cb) {
+            s_join_cb(row->ssid, NULL);
+        }
+    } else {
+        open_password_step(row->ssid);
+    }
+}
+
+/* Builds pool slot `idx` once. Row content (ssid/saved) is set later by
+ * update_row(); this only creates widgets and fixes their static geometry. */
+static void create_row(lv_obj_t *parent, int idx)
+{
+    wifi_row_t *row = &s_rows[idx];
+
+    row->row = lv_button_create(parent);
+    lv_obj_set_size(row->row, CONTENT_W, ROW_H);
+    lv_obj_set_style_radius(row->row, THEME_BASE_UNIT, 0);
+    lv_obj_set_hidden(row->row, true); /* pool starts empty; screen_wifi_set_networks() reveals what's in range */
+    lv_obj_add_event_cb(row->row, row_event_cb, LV_EVENT_CLICKED, row);
+
+    row->lbl_ssid = make_label(row->row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    lv_label_set_long_mode(row->lbl_ssid, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_align(row->lbl_ssid, LV_ALIGN_LEFT_MID, ROW_INSET, 0);
+
+    /* The tick deliberately does NOT get a Plex font. DESIGN.md §3's
+     * lv_font_conv subsetting list has no entry for LV_SYMBOL_OK's
+     * private-use-area codepoint, so applying a Plex face here would render
+     * nothing at all — the exact "no error logged anywhere" glyph trap
+     * AGENTS.md §7 warns about, just for a checkmark instead of an umlaut.
+     * Left at the LVGL default font (Montserrat 14, built with the symbol
+     * range), which does have it — see sdkconfig's
+     * CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14. */
+    row->lbl_tick = lv_label_create(row->row);
+    lv_label_set_text(row->lbl_tick, LV_SYMBOL_OK);
+    lv_obj_set_style_text_color(row->lbl_tick, THEME_GREEN, 0);
+
+    row->lbl_saved = make_label(row->row, &plex_sans_cond_25, THEME_GREEN);
+    lv_label_set_text(row->lbl_saved, CHROME_TAG_SAVED);
+
+    /* Position the badge once: its text is constant, so its size is
+     * constant, so this does not need to re-run on every list rebuild. */
+    lv_obj_update_layout(row->lbl_saved);
+    lv_obj_align(row->lbl_saved, LV_ALIGN_RIGHT_MID, -ROW_INSET, 0);
+    lv_obj_update_layout(row->lbl_tick);
+    int32_t saved_w = lv_obj_get_width(row->lbl_saved);
+    int32_t tick_w  = lv_obj_get_width(row->lbl_tick);
+    lv_obj_align(row->lbl_tick, LV_ALIGN_RIGHT_MID, -ROW_INSET - saved_w - GAP_SM, 0);
+    if (idx == 0) {
+        s_badge_w = tick_w + GAP_SM + saved_w;
+    }
+
+    lv_obj_set_hidden(row->lbl_tick, true);
+    lv_obj_set_hidden(row->lbl_saved, true);
+}
+
+/* Fills pool slot `idx` with one scan result and shows it. Saved rows get
+ * the surface-green "card" treatment theme.h already names for exactly this
+ * (DESIGN.md §5.7); unsaved rows stay a plain divided list row instead of
+ * looking like their own button, matching how §5.4's list uses dividers
+ * between rows rather than a card per row. */
+static void update_row(int idx, const char *ssid, bool saved)
+{
+    wifi_row_t *row = &s_rows[idx];
+    safe_copy_ssid(row->ssid, ssid);
+    row->saved = saved;
+
+    int32_t ssid_w = saved ? (CONTENT_W - 2 * ROW_INSET - s_badge_w - GAP_MD)
+                           : (CONTENT_W - 2 * ROW_INSET);
+    lv_obj_set_width(row->lbl_ssid, ssid_w);
+    lv_label_set_text(row->lbl_ssid, row->ssid);
+
+    lv_obj_set_hidden(row->lbl_tick, !saved);
+    lv_obj_set_hidden(row->lbl_saved, !saved);
+
+    if (saved) {
+        lv_obj_set_style_bg_opa(row->row, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(row->row, THEME_SURFACE_GREEN, 0);
+        lv_obj_set_style_border_width(row->row, 1, 0);
+        lv_obj_set_style_border_side(row->row, LV_BORDER_SIDE_FULL, 0);
+        lv_obj_set_style_border_color(row->row, THEME_BORDER_GREEN, 0);
+    } else {
+        lv_obj_set_style_bg_opa(row->row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(row->row, 1, 0);
+        lv_obj_set_style_border_side(row->row, LV_BORDER_SIDE_BOTTOM, 0);
+        lv_obj_set_style_border_color(row->row, THEME_DIVIDER, 0);
+    }
+
+    lv_obj_set_hidden(row->row, false);
+}
+
+void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
+                              const char saved[][SCREEN_WIFI_SSID_LEN], int n_saved)
+{
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > SCREEN_WIFI_MAX_ROWS) {
+        n = SCREEN_WIFI_MAX_ROWS; /* pool cap — see its #define */
+    }
+    if (n_saved < 0) {
+        n_saved = 0;
+    }
+
+    for (int i = 0; i < n; i++) {
+        bool is_saved = false;
+        for (int j = 0; j < n_saved; j++) {
+            if (saved[j][0] != '\0' && strncmp(ssids[i], saved[j], SCREEN_WIFI_SSID_LEN) == 0) {
+                is_saved = true;
+                break;
+            }
+        }
+        update_row(i, ssids[i], is_saved);
+    }
+    for (int i = n; i < SCREEN_WIFI_MAX_ROWS; i++) {
+        lv_obj_set_hidden(s_rows[i].row, true);
+        s_rows[i].ssid[0] = '\0';
+    }
+
+    /* AGENTS.md §1: never a blank panel. An empty scan result is not a
+     * hypothetical here — see DESIGN.md §5.3's own empty-state precedent. */
+    lv_obj_set_hidden(s_lbl_empty, n != 0);
+}
+
+/* ============================================================================
+ * Password step
+ * ============================================================================
+ */
+
+static void update_toggle_label(void)
+{
+    bool hidden = lv_textarea_get_password_mode(s_pw_ta);
+    lv_label_set_text(s_pw_toggle_lbl, hidden ? CHROME_PW_SHOW : CHROME_PW_HIDE);
+}
+
+static void pw_toggle_event_cb(lv_event_t *e)
+{
+    (void)e;
+    bool hidden = lv_textarea_get_password_mode(s_pw_ta);
+    lv_textarea_set_password_mode(s_pw_ta, !hidden);
+    update_toggle_label();
+}
+
+static void open_password_step(const char *ssid)
+{
+    safe_copy_ssid(s_pw_ssid, ssid);
+
+    char line[16 + SCREEN_WIFI_SSID_LEN];
+    snprintf(line, sizeof line, "%s%s", CHROME_PW_NETWORK_PFX, s_pw_ssid);
+    lv_label_set_text(s_pw_lbl_network, line);
+
+    lv_textarea_set_text(s_pw_ta, "");
+    lv_textarea_set_password_mode(s_pw_ta, true); /* always re-hide for a fresh network (task brief) */
+    update_toggle_label();
+
+    lv_keyboard_set_textarea(s_pw_kb, s_pw_ta);
+    lv_keyboard_set_mode(s_pw_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+
+    lv_obj_set_hidden(s_main, true);
+    lv_obj_set_hidden(s_pw, false);
+}
+
+static void close_password_step(void)
+{
+    /* Never leave a typed password sitting in the widget after we're done
+     * with it (AGENTS.md §10 in spirit — this isn't NVS or a log line, but
+     * there's no reason for it to linger either). */
+    lv_textarea_set_text(s_pw_ta, "");
+    lv_obj_set_hidden(s_pw, true);
+    lv_obj_set_hidden(s_main, false);
+}
+
+static void do_connect(void)
+{
+    const char *pass = lv_textarea_get_text(s_pw_ta); /* read once, before close_password_step() clears it */
+    char ssid_copy[SCREEN_WIFI_SSID_LEN];
+    safe_copy_ssid(ssid_copy, s_pw_ssid);
+
+    /* Never stored or logged here — wifi_creds_set() is the integrator's
+     * call, invoked from inside this callback (screen_wifi.h). */
+    if (s_join_cb) {
+        s_join_cb(ssid_copy, pass);
+    }
+
+    close_password_step();
+    set_status_connecting(ssid_copy);
+}
+
+static void do_cancel(void)
+{
+    close_password_step();
+}
+
+static void pw_connect_clicked_cb(lv_event_t *e) { (void)e; do_connect(); }
+static void pw_cancel_clicked_cb(lv_event_t *e)  { (void)e; do_cancel(); }
+
+/* lv_keyboard's own "OK"/checkmark key sends LV_EVENT_READY to its assigned
+ * text area, and — because s_pw_ta is one_line — so does its "Enter"/return
+ * key (lv_keyboard.c). Wiring both of those to do_connect(), and the
+ * keyboard's "close" glyph (LV_EVENT_CANCEL) to do_cancel(), means the
+ * on-screen keyboard behaves the way every other on-screen keyboard he has
+ * ever used behaves, on top of the explicit Verbinden/Abbrechen buttons the
+ * task brief asks for. */
+static void pw_ta_ready_cb(lv_event_t *e)  { (void)e; do_connect(); }
+static void pw_ta_cancel_cb(lv_event_t *e) { (void)e; do_cancel(); }
+
+/* ============================================================================
+ * Suchen / exit
+ * ============================================================================
+ */
+static void rescan_clicked_cb(lv_event_t *e)
+{
+    (void)e;
+    /* Immediate local feedback so the tap never looks like it didn't
+     * register while the integrator's scan (which this screen never runs
+     * itself — it blocks for seconds) is still in flight. */
+    screen_wifi_set_status(NULL, false, true);
+    if (s_rescan_cb) {
+        s_rescan_cb();
+    }
+}
+
+static void exit_clicked_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_exit_cb) {
+        s_exit_cb();
+    }
+}
+
+/* ============================================================================
+ * Public API
+ * ============================================================================
+ */
+
+void screen_wifi_create(lv_obj_t *parent)
+{
+    /* ---------- s_main ---------- */
+    s_main = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_main);
+    lv_obj_set_size(s_main, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(s_main, 0, 0);
+    lv_obj_set_style_bg_color(s_main, THEME_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_main, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(s_main, 0, 0);
+    lv_obj_set_style_border_width(s_main, 0, 0);
+    lv_obj_set_scrollable(s_main, false);
+
+    s_lbl_title = make_label(s_main, &plex_sans_cond_34, THEME_TEXT_PRIMARY);
+    lv_label_set_text(s_lbl_title, CHROME_TITLE);
+    lv_obj_set_pos(s_lbl_title, PAD, PAD);
+    lv_obj_update_layout(s_lbl_title);
+    int32_t y = PAD + lv_obj_get_height(s_lbl_title) + GAP_SM;
+
+    s_lbl_status = make_label(s_main, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    apply_status_text(CHROME_STATUS_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
+    lv_obj_set_pos(s_lbl_status, PAD, y);
+    lv_obj_update_layout(s_lbl_status);
+    y += lv_obj_get_height(s_lbl_status) + GAP_MD;
+
+    int32_t list_top = y;
+
+    /* Bottom bar: Suchen + Zurück, side by side, both >=56 px tall. */
+    int32_t btn_w = (CONTENT_W - GAP_MD) / 2;
+    int32_t btn_y = THEME_SCREEN_HEIGHT - PAD - BTN_H;
+
+    s_btn_rescan = make_button(s_main, btn_w, BTN_H, CHROME_BTN_RESCAN,
+                               THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(s_btn_rescan, PAD, btn_y);
+    lv_obj_add_event_cb(s_btn_rescan, rescan_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    s_btn_exit = make_button(s_main, btn_w, BTN_H, CHROME_BTN_EXIT,
+                             THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(s_btn_exit, PAD + btn_w + GAP_MD, btn_y);
+    lv_obj_add_event_cb(s_btn_exit, exit_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    int32_t list_bottom = btn_y - GAP_MD;
+
+    /* Scrollable network list: vertical only, momentum on (task brief). */
+    s_list = lv_obj_create(s_main);
+    lv_obj_remove_style_all(s_list);
+    lv_obj_set_pos(s_list, PAD, list_top);
+    lv_obj_set_size(s_list, CONTENT_W, list_bottom - list_top);
+    lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_row(s_list, GAP_SM, 0);
+    lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_scrollable(s_list, true);
+    lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
+    lv_obj_set_scroll_momentum(s_list, true);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
+
+    /* A hidden pool row does not take flex layout space, so the first
+     * visible row always lands at the top of the list — "first row fully
+     * visible without scrolling" (task brief) needs no extra handling. */
+    s_lbl_empty = make_label(s_list, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    lv_label_set_text(s_lbl_empty, CHROME_LIST_EMPTY);
+    lv_obj_set_width(s_lbl_empty, CONTENT_W);
+
+    for (int i = 0; i < SCREEN_WIFI_MAX_ROWS; i++) {
+        create_row(s_list, i);
+    }
+
+    /* ---------- s_pw ---------- */
+    s_pw = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_pw);
+    lv_obj_set_size(s_pw, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(s_pw, 0, 0);
+    lv_obj_set_style_bg_color(s_pw, THEME_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_pw, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(s_pw, 0, 0);
+    lv_obj_set_style_border_width(s_pw, 0, 0);
+    lv_obj_set_scrollable(s_pw, false);
+    lv_obj_set_hidden(s_pw, true);
+
+    /* Which network — wrapped rather than a fixed one-line height, since a
+     * 32-char SSID plus the German prefix can run past 440 px at 25 px; the
+     * band below is positioned from its REAL rendered height, the same
+     * "measure, don't assume" approach screen_overhead.c uses for its hero. */
+    s_pw_lbl_network = make_label(s_pw, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    lv_obj_set_width(s_pw_lbl_network, CONTENT_W);
+    lv_label_set_long_mode(s_pw_lbl_network, LV_LABEL_LONG_MODE_WRAP);
+    lv_label_set_text(s_pw_lbl_network, CHROME_PW_NETWORK_PFX); /* placeholder for this layout pass; open_password_step() overwrites it per network */
+    lv_obj_set_pos(s_pw_lbl_network, PAD, PAD);
+    lv_obj_update_layout(s_pw_lbl_network);
+    int32_t py = PAD + lv_obj_get_height(s_pw_lbl_network) + GAP_MD;
+
+    /* Password field + show/hide toggle, side by side so neither has to
+     * cover the other, both >=56 px tall. */
+    int32_t toggle_w = PW_TOGGLE_W;
+    int32_t ta_w     = CONTENT_W - toggle_w - GAP_MD;
+
+    s_pw_ta = lv_textarea_create(s_pw);
+    lv_obj_set_size(s_pw_ta, ta_w, BTN_H);
+    lv_obj_set_pos(s_pw_ta, PAD, py);
+    lv_textarea_set_one_line(s_pw_ta, true);
+    lv_textarea_set_password_mode(s_pw_ta, true);
+    lv_textarea_set_placeholder_text(s_pw_ta, CHROME_PW_PLACEHOLDER);
+    lv_textarea_set_max_length(s_pw_ta, PW_MAX_PASS_LEN);
+    lv_obj_set_style_text_font(s_pw_ta, &plex_sans_cond_25, 0);
+    lv_obj_add_event_cb(s_pw_ta, pw_ta_ready_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(s_pw_ta, pw_ta_cancel_cb, LV_EVENT_CANCEL, NULL);
+
+    lv_obj_t *toggle_btn = make_button(s_pw, toggle_w, BTN_H, CHROME_PW_SHOW,
+                                       THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(toggle_btn, PAD + ta_w + GAP_MD, py);
+    lv_obj_add_event_cb(toggle_btn, pw_toggle_event_cb, LV_EVENT_CLICKED, NULL);
+    s_pw_toggle_lbl = lv_obj_get_child(toggle_btn, 0);
+
+    py += BTN_H + GAP_MD;
+
+    /* Verbinden / Abbrechen. Verbinden reuses the surface-green/border-green
+     * pairing theme.h already names for "the good path" (§5.7's saved-card
+     * tokens); Abbrechen stays neutral. */
+    int32_t pw_btn_w = (CONTENT_W - GAP_MD) / 2;
+
+    lv_obj_t *btn_connect = make_button(s_pw, pw_btn_w, BTN_H, CHROME_PW_CONNECT,
+                                        THEME_SURFACE_GREEN, THEME_BORDER_GREEN, THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_connect, PAD, py);
+    lv_obj_add_event_cb(btn_connect, pw_connect_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *btn_cancel = make_button(s_pw, pw_btn_w, BTN_H, CHROME_PW_CANCEL,
+                                       THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_cancel, PAD + pw_btn_w + GAP_MD, py);
+    lv_obj_add_event_cb(btn_cancel, pw_cancel_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    py += BTN_H + GAP_MD;
+
+    /* Keyboard: full screen width (0, not PAD) for the largest possible
+     * touch targets, filling everything below the buttons so it never has
+     * to overlap the text area above it (task brief). */
+    s_pw_kb = lv_keyboard_create(s_pw);
+    lv_obj_set_pos(s_pw_kb, 0, py);
+    lv_obj_set_size(s_pw_kb, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT - py);
+    lv_keyboard_set_mode(s_pw_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+}
+
+void screen_wifi_set_join_cb(wifi_join_cb cb)
+{
+    s_join_cb = cb;
+}
+
+void screen_wifi_set_rescan_cb(wifi_rescan_cb cb)
+{
+    s_rescan_cb = cb;
+}
+
+void screen_wifi_set_exit_cb(wifi_exit_cb cb)
+{
+    s_exit_cb = cb;
+}

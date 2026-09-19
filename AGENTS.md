@@ -210,10 +210,15 @@ not read a manual. Design for that:
 ## 7. Gotchas that will cost you a day
 
 **Firmware / display**
-- **Flash writes tear the display.** Known open bug on this exact silicon+panel combo
-  (espressif/esp-bsp#570): flash and PSRAM share SPI1, so an NVS commit starves the RGB
-  bounce-buffer refill. Keep `CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y` and
-  `CONFIG_SPIRAM_RODATA=y` on, and pause LVGL around NVS writes.
+- **Flash writes tear the display — MEASURED, and they do not.** espressif/esp-bsp#570 is
+  real on this silicon+panel combo, but it does not reproduce in this configuration.
+  Measured: an NVS commit costs **3 µs** against a 49.7 ms worst-case frame gap, and
+  sustained commits under a high-contrast moving pattern produce **no visible tearing**.
+  Two framebuffers (AGENTS.md §8, PLAN.md M1) are the likely reason.
+  **Do NOT pause LVGL around NVS writes.** Holding the display lock across a commit burst
+  stalls rendering for ~2.85 s to save 3 µs — the mitigation is far worse than the disease.
+  Keep `CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y` and `CONFIG_SPIRAM_RODATA=y` on. Full numbers
+  in docs/DECISIONS.md D29.
 - **Stay at 80 MHz PSRAM.** 120 MHz is experimental and temperature-sensitive — a real
   risk for an always-on panel behind glass.
 - **WiFi bursts compete for PSRAM bandwidth** and cause visible drift. This is the #1
