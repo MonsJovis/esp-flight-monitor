@@ -31,24 +31,43 @@ static int64_t  s_last_touch_ms;
 
 static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 
+/* Width of dot `i` for the currently selected page. Computed, never measured:
+ * lv_obj_get_width() returns the width from the LAST layout pass, and
+ * lv_obj_set_width() only marks the object dirty — so reading a dot back
+ * immediately after widening it yields the OLD 8 px. That is not theory: the
+ * device shipped with the measured version and drew the second dot 16 px
+ * (DOT_SIZE * 3 - DOT_SIZE) too far left, half-swallowed by the active pill,
+ * so a three-page deck looked like a two-page one with a smear on it. Found
+ * by reading the panel's own framebuffer back (tools/grab_screen.py) during
+ * the M7 sweep — no host test can see it, because the bug is in LVGL's
+ * layout timing and not in the arithmetic.
+ *
+ * An lv_obj_update_layout() between the two loops would also work. This is
+ * better: it removes the dependency on layout timing instead of satisfying
+ * it, and the widths are two constants we already know. */
+static int32_t dot_width(int i)
+{
+    return (i == s_page_idx) ? DOT_SIZE * 3 : DOT_SIZE;
+}
+
 static void paint_dots(void)
 {
     for (int i = 0; i < s_n_pages; i++) {
         /* The active dot is brighter AND wider — never colour alone
          * (DO-257A §2.1.6), even for something this small. */
         bool on = (i == s_page_idx);
-        lv_obj_set_width(s_dot[i], on ? DOT_SIZE * 3 : DOT_SIZE);
+        lv_obj_set_width(s_dot[i], dot_width(i));
         lv_obj_set_style_bg_color(s_dot[i], on ? THEME_CYAN : THEME_BORDER_IDLE, 0);
     }
     /* Re-centre: the row's width changes when the active dot widens. */
     int32_t total = 0;
     for (int i = 0; i < s_n_pages; i++) {
-        total += lv_obj_get_width(s_dot[i]) + (i ? DOT_GAP : 0);
+        total += dot_width(i) + (i ? DOT_GAP : 0);
     }
     int32_t x = (THEME_SCREEN_WIDTH - total) / 2;
     for (int i = 0; i < s_n_pages; i++) {
         lv_obj_set_pos(s_dot[i], x, DOT_Y);
-        x += lv_obj_get_width(s_dot[i]) + DOT_GAP;
+        x += dot_width(i) + DOT_GAP;
     }
 }
 

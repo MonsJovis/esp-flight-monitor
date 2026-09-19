@@ -83,6 +83,7 @@
 #include "fmt_de.h"
 #include "tables.h"
 #include "route_parse.h"
+#include "strings_de.h"
 
 /* ============================================================================
  * FIXED GERMAN STRINGS — audited block, one hard-coded copy in this file:
@@ -96,7 +97,6 @@
  * out by name as the classic bug.
  * ============================================================================
  */
-static const char *const RADAR_CARDINALS[4] = { "N", "O", "S", "W" };
 
 /* ============================================================================
  * Layout constants, px. Centred on the panel; sized so the whole scope
@@ -136,9 +136,6 @@ static const char *const RADAR_CARDINALS[4] = { "N", "O", "S", "W" };
 /* See this file's top comment for why exactly two. */
 /* The scope reaches y=404 (centre 240 + cardinal radius 164); the page
  * indicator sits at y=464. The caption lives in the gap between them. */
-/* The only prose on this screen beyond the cardinals. */
-#define CHROME_UNKNOWN    "Unbekanntes Flugzeug"
-
 #define RADAR_CAPTION_Y   416
 #define RADAR_CAPTION_GAP 12
 
@@ -428,7 +425,9 @@ void screen_radar_create(lv_obj_t *parent)
      * (AGENTS.md §1, §10). --- */
     for (int i = 0; i < 4; i++) {
         s_lbl_cardinal[i] = make_label(s_cont, &plex_sans_cond_25, THEME_TEXT_LABEL);
-        lv_label_set_text(s_lbl_cardinal[i], RADAR_CARDINALS[i]);
+        /* compass_de_abbr(), not a private { "N", "O", "S", "W" } table:
+         * one implementation of the O-for-Ost rule for the whole device. */
+        lv_label_set_text(s_lbl_cardinal[i], compass_de_abbr((float)(i * 90)));
         float x, y;
         bearing_to_xy((float)(i * 90), (float)RADAR_CARDINAL_R, &x, &y);
         place_centered_xy(s_lbl_cardinal[i], (int32_t)x, (int32_t)y);
@@ -618,7 +617,7 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         /* Plain language, never a raw ICAO code (AGENTS.md §1). */
         name = actype_display_name(a->type, a->category);
         if (name == NULL) {
-            name = CHROME_UNKNOWN;
+            name = STR_UNKNOWN_AIRCRAFT;
         }
     }
     lv_label_set_text(s_labels[0].name, name);

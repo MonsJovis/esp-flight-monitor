@@ -47,7 +47,11 @@ typedef struct {
     /* Data band — values already carry their units */
     char altitude[24];            /* "9.100 m", "am Boden", "—"                   */
     char distance[24];            /* "12,4 km"                                    */
-    char direction_word[24];      /* "Nordosten"                                  */
+    /* The ADVERB, not the noun: "nordöstlich", so the data band reads
+     * "16,8 km nordöstlich" rather than the stranded "16,8 km Nordosten"
+     * it said until PLAN.md M7. compass_de_word() still exists and is still
+     * tested; nothing on the panel uses it. */
+    char direction_word[24];      /* "nordöstlich"                                */
     char direction_abbr[8];       /* "NO" — German uses O for Ost, never E        */
     float bearing_deg;            /* for the compass tape; 0..360                 */
 

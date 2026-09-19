@@ -14,6 +14,7 @@
 
 #include "fmt_de.h"
 #include "tables.h"
+#include "strings_de.h"
 
 /* ---- small local helper ------------------------------------------------
  *
@@ -54,7 +55,7 @@ static void fill_chrome(view_model_t *out, const struct tm *now, int traffic_cou
         fmt_time_de(now, out->clock, sizeof out->clock);
         fmt_date_de(now, out->date_line, sizeof out->date_line);
     } else {
-        copy_trunc(out->clock, sizeof out->clock, "--:--");
+        copy_trunc(out->clock, sizeof out->clock, STR_CLOCK_UNSET);
         copy_trunc(out->date_line, sizeof out->date_line, "");
     }
     out->traffic_count = traffic_count;
@@ -80,21 +81,10 @@ static void resolve_city(const char *icao, const char *api_city, char *out, size
         return;
     }
     /* Both the table and the API came up empty — still never a bare code. */
-    copy_trunc(out, outsz, "unbekannt");
+    copy_trunc(out, outsz, STR_UNKNOWN_VALUE);
 }
 
 /* ---- VIEW_NO_ROUTE hero: plain-language aircraft type -------------------- */
-
-/* True when the table entry admits it could not identify the aircraft. */
-static bool is_placeholder_type(const ac_type_t *t)
-{
-    if (t == NULL || t->manufacturer == NULL) {
-        return true;
-    }
-    return t->manufacturer[0] == '\0' ||
-           strcmp(t->manufacturer, "unbekannt") == 0 ||
-           strcmp(t->manufacturer, "-") == 0;
-}
 
 static void hero_from_type(const ac_type_t *t, const char *icao_type,
                            const char *icao_category, char *out, size_t outsz)
@@ -125,8 +115,8 @@ static void hero_from_type(const ac_type_t *t, const char *icao_type,
     const char *fallback = actype_full_or_code(icao_type);
     /* actype_full_or_code() is documented to never return NULL or "", but its
      * last resort is "?" — never acceptable as a hero. */
-    if (fallback == NULL || fallback[0] == '\0' || strcmp(fallback, "?") == 0) {
-        copy_trunc(out, outsz, "Unbekanntes Flugzeug");
+    if (fallback == NULL || fallback[0] == '\0' || strcmp(fallback, ACTYPE_NO_TYPE) == 0) {
+        copy_trunc(out, outsz, STR_UNKNOWN_AIRCRAFT);
         return;
     }
     copy_trunc(out, outsz, fallback);
@@ -141,23 +131,23 @@ static void fill_reason(const ac_type_t *t, char *out, size_t outsz)
 
     switch (cat) {
     case AC_CAT_PRIVATE:
-        s = "Eine Route gibt es nur bei Linienflügen.";
+        s = STR_REASON_GA;
         break;
     case AC_CAT_HELICOPTER:
-        s = "Hubschrauber fliegen meist ohne festen Flugplan.";
+        s = STR_REASON_HELI;
         break;
     case AC_CAT_MILITARY:
-        s = "Militärflüge scheinen in keinem öffentlichen Flugplan auf.";
+        s = STR_REASON_MIL;
         break;
     case AC_CAT_AIRLINER:
         /* Still a scheduled flight — the plan exists, it just is not
          * available to us right now. Saying it "does not exist" would be
          * wrong and would teach him to distrust the panel (rule 3). */
-        s = "Der Flugplan ist im Moment nicht verfügbar.";
+        s = STR_REASON_UNAVAILABLE;
         break;
     case AC_CAT_UNKNOWN:
     default:
-        s = "Zu diesem Flugzeug liegt keine Routeninformation vor.";
+        s = STR_REASON_NONE;
         break;
     }
     copy_trunc(out, outsz, s);
@@ -174,7 +164,7 @@ static void fill_aircraft_common(const aircraft_t *ac, const ac_type_t *t, view_
      * An empty supporting line simply disappears; a question mark looks broken. */
     {
         const char *tf = actype_full_or_code(ac->type);
-        if (tf == NULL || strcmp(tf, "?") == 0) {
+        if (tf == NULL || strcmp(tf, ACTYPE_NO_TYPE) == 0) {
             const char *cls = ac_category_de(ac->category);
             tf = (cls != NULL) ? cls : "";
         }
@@ -190,13 +180,13 @@ static void fill_aircraft_common(const aircraft_t *ac, const ac_type_t *t, view_
          * a nonsense negative distance ("-1,9 km"). Same em-dash convention
          * fmt_altitude_m() already uses for ALT_UNKNOWN. A bearing without a
          * distance is not meaningful either, so leave it blank too. */
-        copy_trunc(out->distance, sizeof out->distance, "\xE2\x80\x94"); /* U+2014 EM DASH */
+        copy_trunc(out->distance, sizeof out->distance, STR_EM_DASH);
         out->direction_word[0] = '\0';
         out->direction_abbr[0] = '\0';
         out->bearing_deg = ac->dir_deg;
     } else {
         fmt_distance_km(ac->dst_nm, out->distance, sizeof out->distance);
-        copy_trunc(out->direction_word, sizeof out->direction_word, compass_de_word(ac->dir_deg));
+        copy_trunc(out->direction_word, sizeof out->direction_word, compass_de_adv(ac->dir_deg));
         copy_trunc(out->direction_abbr, sizeof out->direction_abbr, compass_de_abbr(ac->dir_deg));
         out->bearing_deg = ac->dir_deg;
     }
@@ -259,7 +249,7 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
             /* Still looking. Do NOT assert there is no flight plan — say what is
              * actually happening, and let the settled answer replace it. */
             copy_trunc(out->reason, sizeof out->reason,
-                       "Die Route wird noch gesucht.");
+                       STR_REASON_SEARCHING);
         } else {
             fill_reason(t, out->reason, sizeof out->reason);
         }
@@ -290,9 +280,9 @@ void view_build_empty(const struct tm *now, const aircraft_t *last_seen, bool on
      * hero carries it because on this screen the hero IS the clock slot, and
      * an honest "Kein Netz" is worth more to him than a wrong time. */
     if (!clock_is_set(now)) {
-        copy_trunc(out->hero, sizeof out->hero, "Kein Netz");
+        copy_trunc(out->hero, sizeof out->hero, STR_NO_NETWORK_HERO);
         copy_trunc(out->date_line, sizeof out->date_line,
-                   "Ich suche ein bekanntes WLAN.");
+                   STR_NO_NETWORK_SUB);
         out->has_origin = false;
         return;
     }

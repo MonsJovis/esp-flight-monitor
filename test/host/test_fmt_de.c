@@ -19,6 +19,10 @@ static const char *const WORD8[8] = {
     "Norden", "Nordosten", "Osten", "Südosten",
     "Süden", "Südwesten", "Westen", "Nordwesten",
 };
+static const char *const ADV8[8] = {
+    "nördlich", "nordöstlich", "östlich", "südöstlich",
+    "südlich", "südwestlich", "westlich", "nordwestlich",
+};
 
 int main(void)
 {
@@ -168,6 +172,54 @@ int main(void)
         CHECK_STR(compass_de_word(center), WORD8[k]);
         CHECK_STR(compass_de_word(low), WORD8[k]);
         CHECK_STR(compass_de_word(high), WORD8[(k + 1) % 8]);
+    }
+
+    GROUP("compass_de_adv — spot checks");
+    CHECK_STR(compass_de_adv(0.0f), "nördlich");
+    CHECK_STR(compass_de_adv(45.0f), "nordöstlich");
+    CHECK_STR(compass_de_adv(90.0f), "östlich");
+    CHECK_STR(compass_de_adv(135.0f), "südöstlich");
+    CHECK_STR(compass_de_adv(180.0f), "südlich");
+    CHECK_STR(compass_de_adv(225.0f), "südwestlich");
+    CHECK_STR(compass_de_adv(270.0f), "westlich");
+    CHECK_STR(compass_de_adv(315.0f), "nordwestlich");
+
+    /* Umlauts byte-for-byte: a mangled ö renders as nothing at all on
+     * this panel, so "nordöstlich" would silently become "nordstlich". */
+    CHECK_STR(compass_de_adv(45.0f), "nord\xC3\xB6stlich");
+    CHECK_STR(compass_de_adv(135.0f), "s\xC3\xBC" "d\xC3\xB6stlich");
+
+    GROUP("compass_de_adv — normalisation");
+    CHECK_STR(compass_de_adv(-22.5f), "nördlich");    /* negative, == 337.5 */
+    CHECK_STR(compass_de_adv(-45.0f), "nordwestlich");  /* negative, == 315 */
+    CHECK_STR(compass_de_adv(360.0f), "nördlich");    /* wraps to 0 */
+    CHECK_STR(compass_de_adv(725.0f), "nördlich");    /* >360, wraps to 5 */
+    CHECK_STR(compass_de_adv(405.0f), "nordöstlich"); /* >360, wraps to 45 */
+
+    GROUP("compass_de_adv — every 8-point boundary");
+    for (int k = 0; k < 8; k++) {
+        float center = (float)k * 45.0f;
+        float low    = center - 22.5f;
+        float high   = center + 22.5f;
+
+        CHECK_STR(compass_de_adv(center), ADV8[k]);
+        CHECK_STR(compass_de_adv(low), ADV8[k]);
+        CHECK_STR(compass_de_adv(high), ADV8[(k + 1) % 8]);
+    }
+
+    GROUP("compass_de_adv — an adverb, never the noun table");
+    for (int k = 0; k < 8; k++) {
+        /* The likeliest silent regression here is the noun table getting
+         * copy-pasted into the adverb slot — which puts "16,8 km Nordosten"
+         * back on the panel. Two cheap invariants catch it for all eight. */
+        float deg = (float)k * 45.0f;
+        const char *adv  = compass_de_adv(deg);
+        const char *noun = compass_de_word(deg);
+
+        CHECK(strcmp(adv, noun) != 0);
+
+        size_t len = strlen(adv);
+        CHECK(len > 4 && strcmp(adv + len - 4, "lich") == 0);
     }
 
     GROUP("weekday_de / month_de");

@@ -56,6 +56,13 @@ const ac_type_t *actype(const char *icao_type);
  * rather than a blank hero line. */
 const char *actype_full_or_code(const char *icao_type);
 
+/* What the two functions above return when they have nothing at all. It is a
+ * SENTINEL, not display text, which is why it lives here and not in
+ * main/strings_de.h with everything he reads — if this ever reaches the
+ * panel, that is the bug, and view_build.c tests for it precisely so it
+ * cannot. Named here so the test is not a bare strcmp against "?". */
+#define ACTYPE_NO_TYPE "?"
+
 /* ---- Test-only introspection ------------------------------------------
  *
  * These accessors expose the raw sorted arrays so test/host/test_tables.c

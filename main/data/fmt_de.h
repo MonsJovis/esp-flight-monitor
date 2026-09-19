@@ -58,6 +58,11 @@ const char *compass_de_abbr(float deg);
  * normalisation rules as compass_de_abbr. */
 const char *compass_de_word(float deg);
 
+/* 8-point adverb ("nördlich", "nordöstlich", ... "nordwestlich"), the form
+ * that reads naturally after a distance: "16,8 km nordöstlich". Same
+ * normalisation rules as compass_de_abbr. */
+const char *compass_de_adv(float deg);
+
 /* ---- 5. German date and time ------------------------------------------ */
 
 /* tm_wday: 0 = Sunday, per struct tm. */

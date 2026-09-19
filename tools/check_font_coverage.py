@@ -57,8 +57,72 @@ def _ranges_for(var):
 HERO_RANGES = _ranges_for("CORE_RANGES")
 FULL_RANGES = _ranges_for("FULL_RANGES")
 
-SCAN_DIRS = ["main/ui", "main/data"]
+# "main", not ["main/ui", "main/data"]. The narrow list was a silent hole: when
+# PLAN.md M7 gathered every user-facing string into main/strings_de.h — one
+# directory level up from both scanned dirs — this checker went on passing
+# because there was nothing left in its scan path to check. A gate that reports
+# success after its subject has moved out from under it is worse than no gate,
+# so it now scans the whole component and names what it skips.
+SCAN_DIRS = ["main"]
 STRING_RE = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+
+# C escape sequences, decoded before the codepoint check. main/strings_de.h
+# deliberately writes every non-ASCII glyph as a hex escape ("\xE2\x80\x94")
+# so that no editor can silently re-encode it and so a grep finds it — which
+# means that without this, the em dash, the arrow, the degree sign and the
+# middle dot all read as plain ASCII backslashes here and NONE of them were
+# ever checked against the subset.
+# Two kinds of line hold text that never reaches a label, and a font subset is
+# about what LVGL has to DRAW, not about what the serial terminal prints:
+#
+#   ESP_LOG*/printf  — developer output. Your terminal has every glyph there is.
+#   LOG-ONLY         — an explicit, greppable promise that a literal on this
+#                      line is built for a log line and is never passed to a
+#                      widget. It has to be written by hand precisely because
+#                      the checker cannot follow a variable from its assignment
+#                      to its use; putting the burden on the author keeps the
+#                      claim visible in the diff instead of buried in a
+#                      heuristic here.
+SKIP_RE = re.compile(r'\b(ESP_LOG[A-Z]*|ESP_EARLY_LOG[A-Z]*|printf|fprintf)\s*\(|LOG-ONLY')
+
+_ESC_RE = re.compile(r'\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{4}|[0-7]{1,3}|.)')
+
+
+def decode_c_string(raw):
+    """A C source literal's text -> the characters it actually denotes.
+
+    Hex and octal escapes are BYTES (that is how "\xE2\x80\x94" spells one
+    UTF-8 em dash), so they are accumulated as bytes and the whole thing is
+    decoded once at the end. Anything that does not decode is returned as
+    latin-1 so the caller still sees something to complain about rather than
+    crashing on it.
+    """
+    out = bytearray()
+    i = 0
+    simple = {"n": b"\n", "t": b"\t", "r": b"\r", "0": b"\0",
+              "\\": b"\\", '"': b'"', "'": b"'"}
+    while i < len(raw):
+        m = _ESC_RE.match(raw, i)
+        if m is None:
+            out += raw[i].encode("utf-8")
+            i += 1
+            continue
+        body = m.group(1)
+        if body[0] in "xX":
+            out.append(int(body[1:], 16))
+        elif body[0] == "u":
+            out += chr(int(body[1:], 16)).encode("utf-8")
+        elif body in simple:
+            out += simple[body]
+        elif body.isdigit():
+            out.append(int(body, 8) & 0xFF)
+        else:
+            out += body.encode("utf-8")
+        i = m.end()
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        return out.decode("latin-1")
 
 
 def covered(cp, ranges):
@@ -76,8 +140,10 @@ def main():
                 stripped = line.lstrip()
                 if stripped.startswith("*") or stripped.startswith("//"):
                     continue          # comments may say whatever they like
+                if SKIP_RE.search(line):
+                    continue
                 for m in STRING_RE.finditer(line):
-                    for ch in m.group(1):
+                    for ch in decode_c_string(m.group(1)):
                         cp = ord(ch)
                         if cp < 0x80:
                             continue

@@ -2,14 +2,22 @@
  * gate. The numbers this logs go into the table at the bottom of docs/PLAN.md.
  *
  * Debug console (over USB serial):
- *   s  screenshot the live framebuffer
+ *   s  screenshot the live framebuffer    0  give the screen back to the UI task
+ *   g  swipe to the next deck page        e  open Einstellungen
+ *   k  open WLAN                          o  cycle the location preset
+ *   d  scroll the current screen to its end
  *   f  draw the font card — the M1 "German renders at 100 px" gate
- *   b  run the render benchmark suite
+ *   b  run the render benchmark suite     t  tearing bench
  *   m  measure every place name against the hero shrink ladder
  *   w  provision WiFi (typed in over serial, stored in NVS — never in the repo)
  *   n  network status and a scan of what is in range
+ *   p  probe the link (DNS, then a raw GET by IP)
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
  *   3  §5.3 Himmel frei                    4  longest destination (shrink ladder)
+ *
+ * g/e/k exist so every screen can be reached from the build host and read
+ * back as a PNG (tools/grab_screen.py). A screen that can only be reached by
+ * tapping is a screen nobody checks.
  */
 #include <stdio.h>
 #include <string.h>
@@ -598,6 +606,38 @@ static void cycle_location(void)
     apply_settings();
 }
 
+/* Scroll whatever is scrollable on the current screen to its end.
+ *
+ * Einstellungen is taller than 480 px, so its foot — including the data
+ * attribution line the ODbL requires — cannot be photographed from the build
+ * host without this. Generic rather than a screen_settings_* call: it finds
+ * the scrollable by flag, so it keeps working for any screen that grows past
+ * one panel height, and it adds no debug-only API to a product header. */
+static void scroll_to_end_rec(lv_obj_t *obj)
+{
+    /* Recursive because the scrollable column is not a child of the screen:
+     * nav_open_overlay() puts a full-screen overlay root in between, so a
+     * one-level scan finds nothing and silently does nothing — which is
+     * exactly what the first version of this did. */
+    if (lv_obj_is_scrollable(obj)) {
+        int32_t remaining = lv_obj_get_scroll_bottom(obj);
+        if (remaining > 0) {
+            lv_obj_scroll_by(obj, 0, -remaining, LV_ANIM_OFF);
+        }
+    }
+    uint32_t n = lv_obj_get_child_count(obj);
+    for (uint32_t i = 0; i < n; i++) {
+        scroll_to_end_rec(lv_obj_get_child(obj, i));
+    }
+}
+
+static void scroll_to_end(void)
+{
+    display_lock(0);
+    scroll_to_end_rec(lv_screen_active());
+    display_unlock();
+}
+
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '4') {
@@ -621,6 +661,7 @@ static void on_cmd(char c)
     else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % 3, true); display_unlock(); }
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
+    else if (c == 'd') scroll_to_end();
     else if (c == 'f') { ui_suspend(); font_card(); }
 }
 

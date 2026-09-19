@@ -32,50 +32,14 @@
 #include "data/fmt_de.h"
 #include "data/tables.h"
 #include "net/route_parse.h"
+#include "strings_de.h"
 
-/* ============================================================================
- * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
- * in this file lives here. Everything else that reaches a row is a string
- * produced by main/data/fmt_de.h / main/data/tables.h (AGENTS.md §10). Audit
- * THIS block, not the rest of the file, when checking for stray hard-coded
- * text (screen_overhead.c's convention).
- * ============================================================================
+/* Every German literal this file shows lives in main/strings_de.h, together
+ * with the reasoning for each one; tools/check_strings.py fails the build if
+ * one reappears here. Everything else that reaches a row is produced by
+ * main/data/fmt_de.h / main/data/tables.h (AGENTS.md §10) — this file formats
+ * nothing itself.
  */
-
-/* Chrome header: count only. The task brief allows "count and time", but
- * this screen's API (screen_list.h) is handed no clock — screen_overhead.c's
- * `view_model_t.clock` is not in scope here, and inventing a time this
- * function was never given would be exactly the kind of thing that teaches
- * him the panel is wrong (AGENTS.md §7 clock_is_set() precedent). So: count
- * only, plex_mono_13, never the answer to a question (task brief). */
-#define CHROME_HEADER_ONE      "1 Flugzeug in Reichweite"
-#define CHROME_HEADER_MANY_FMT "%d Flugzeuge in Reichweite"
-
-/* Nearest-row marker (DO-257A §2.1.6: never colour alone). Deliberately the
- * same word DESIGN.md §5.1 "Über dir jetzt" uses for this exact aircraft —
- * it is the same nearest target on both screens, so it gets the same word
- * and the same green ("engaged / normal", theme.h) rather than inventing a
- * second vocabulary for one concept. */
-#define CHROME_TAG_NEAREST "ÜBER DIR"
-
-/* "+7 weitere" — task brief's own example. A count, not a cramped fifth row. */
-#define CHROME_OVERFLOW_FMT "+%d weitere"
-
-/* AGENTS.md §1: never a blank panel. This is this screen's own version of
- * that rule — distinct from, and simpler than, DESIGN.md §5.3's full
- * "Himmel frei" treatment (clock, date, last-seen aircraft), because this is
- * page 2 of the swipe deck: §5.3 already owns "the sky is empty" as a whole
- * screen state, and duplicating its clock/date here would just be a second,
- * competing answer to the same question. This line only has to say there is
- * nothing to list. */
-#define CHROME_EMPTY_SKY "Der Himmel ist frei."
-
-/* Last-resort fallback — reached only when the route lookup, the aircraft
- * type AND the emitter category all have nothing at all (matches
- * view_build.c's own choice of wording for the same never-blank guarantee,
- * so the two screens do not invent two different sentences for the same
- * "we have nothing at all" case). */
-#define CHROME_UNKNOWN_AIRCRAFT   "Unbekanntes Flugzeug"
 
 /* ============================================================================
  * Layout constants — px, on the 8 px base unit (THEME_BASE_UNIT), matching
@@ -122,7 +86,7 @@
 static lv_obj_t *s_cont;
 static lv_obj_t *s_lbl_header;   /* chrome: count only, plex_mono_13 */
 static lv_obj_t *s_lbl_overflow; /* "+N weitere", shown when n > LIST_VISIBLE_ROWS */
-static lv_obj_t *s_lbl_empty;    /* CHROME_EMPTY_SKY, the only content when n == 0 */
+static lv_obj_t *s_lbl_empty;    /* STR_EMPTY_SKY, the only content when n == 0 */
 
 /* Row 0 is structurally the only row that can ever be "the nearest aircraft"
  * — the caller hands aircraft in already-sorted (nearest-first) order
@@ -230,7 +194,7 @@ static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, in
      * the code itself, so the category fallback below was never reached.
      * Plain language over codes (AGENTS.md §1). */
     const char *name = actype_display_name(ac->type, ac->category);
-    safe_copy(out, outsz, (name != NULL) ? name : CHROME_UNKNOWN_AIRCRAFT);
+    safe_copy(out, outsz, (name != NULL) ? name : STR_UNKNOWN_AIRCRAFT);
 }
 
 /* "12,4 km NO" — distance converted and rendered by fmt_distance_km(), the
@@ -243,7 +207,7 @@ static void resolve_secondary_text(const aircraft_t *ac, char *out, size_t outsz
         /* Same rule fmt_altitude_m()/fill_aircraft_common() already use:
          * never feed the sentinel to the formatter, and a bearing without a
          * distance is not meaningful to show either. */
-        safe_copy(out, outsz, "\xE2\x80\x94"); /* U+2014 EM DASH */
+        safe_copy(out, outsz, STR_EM_DASH);
         return;
     }
     char dist[24];
@@ -335,7 +299,7 @@ static void create_row(lv_obj_t *parent, int idx, int32_t y, int32_t row_h, int3
 
     if (idx == 0) {
         s_lbl_nearest_tag = make_label(r->row, &plex_sans_cond_25, THEME_GREEN);
-        lv_label_set_text(s_lbl_nearest_tag, CHROME_TAG_NEAREST);
+        lv_label_set_text(s_lbl_nearest_tag, STR_TAG_NEAREST);
         lv_obj_update_layout(s_lbl_nearest_tag);
         int32_t tag_w = lv_obj_get_width(s_lbl_nearest_tag);
         lv_obj_set_pos(s_lbl_nearest_tag, CONTENT_W - ROW_INSET - tag_w, ROW_PAD_V);
@@ -406,7 +370,7 @@ void screen_list_create(lv_obj_t *parent)
     lv_obj_set_width(s_lbl_empty, CONTENT_W);
     lv_label_set_long_mode(s_lbl_empty, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_align(s_lbl_empty, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(s_lbl_empty, CHROME_EMPTY_SKY);
+    lv_label_set_text(s_lbl_empty, STR_EMPTY_SKY);
     lv_obj_update_layout(s_lbl_empty);
     lv_obj_align(s_lbl_empty, LV_ALIGN_CENTER, 0, 0);
 }
@@ -436,9 +400,9 @@ void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int 
     /* --- Chrome count --- */
     char header_buf[HEADER_BUF_LEN];
     if (n == 1) {
-        safe_copy(header_buf, sizeof header_buf, CHROME_HEADER_ONE);
+        safe_copy(header_buf, sizeof header_buf, STR_HEADER_ONE);
     } else {
-        snprintf(header_buf, sizeof header_buf, CHROME_HEADER_MANY_FMT, n);
+        snprintf(header_buf, sizeof header_buf, FMT_HEADER_MANY, n);
     }
     lv_label_set_text(s_lbl_header, header_buf);
 
@@ -470,7 +434,7 @@ void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int 
     set_hidden(s_lbl_overflow, !show_overflow);
     if (show_overflow) {
         char overflow_buf[OVERFLOW_BUF_LEN];
-        snprintf(overflow_buf, sizeof overflow_buf, CHROME_OVERFLOW_FMT, overflow_n);
+        snprintf(overflow_buf, sizeof overflow_buf, FMT_OVERFLOW, overflow_n);
         lv_label_set_text(s_lbl_overflow, overflow_buf);
     }
 }

@@ -46,7 +46,7 @@ void dbg_fixture_show(int n)
 
     if (n == 3) {
         view_build_empty(&now, &ac[0], true, &vm);
-        what = "§5.3 Himmel frei";
+        what = "§5.3 Himmel frei";            /* LOG-ONLY */
     } else {
         /* Pick a real aircraft matching the state we want to look at, rather
          * than inventing one — the point is to render what actually flew. */
@@ -54,8 +54,8 @@ void dbg_fixture_show(int n)
         for (int i = 0; i < nac; i++) {
             const route_t *r = route_find(rt, nrt, ac[i].flight);
             bool routed = (r != NULL && r->resolved && r->plausible);
-            if (n == 1 && routed) { pick = i; what = "§5.1 Über dir jetzt"; break; }
-            if (n == 2 && !routed) { pick = i; what = "§5.2 Ohne Route"; break; }
+            if (n == 1 && routed) { pick = i; what = "§5.1 Über dir jetzt"; break; } /* LOG-ONLY */
+            if (n == 2 && !routed) { pick = i; what = "§5.2 Ohne Route"; break; }    /* LOG-ONLY */
             if (n == 4 && routed) {
                 /* Longest destination, to exercise the hero shrink ladder. */
                 const route_t *best = route_find(rt, nrt, ac[pick].flight);
@@ -63,7 +63,7 @@ void dbg_fixture_show(int n)
                     strlen(r->dest_city) > strlen(best->dest_city)) {
                     pick = i;
                 }
-                what = "§5.1 longest destination";
+                what = "§5.1 longest destination"; /* LOG-ONLY */
             }
         }
         view_build(&ac[pick], route_find(rt, nrt, ac[pick].flight),

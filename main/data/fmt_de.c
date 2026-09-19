@@ -1,10 +1,18 @@
 /* German words-and-numbers formatting for the panel (docs/PLAN.md M2.5).
  *
- * This is the one translation unit that owns every user-facing German
- * string in this module (AGENTS.md §10): the compass names, the weekday
- * and month tables, and the unit suffixes.
+ * The German LEXICON lives here: the three compass tables, the weekday and
+ * month tables. They are arrays addressed by index, which is why they are
+ * not in main/strings_de.h with everything else he reads — naming sixteen
+ * compass points as sixteen macros and then rebuilding an array out of them
+ * would be strictly worse than the array. tools/check_strings.py parses them
+ * out of this file so `--list` still shows a reviewer the whole vocabulary.
+ *
+ * Everything else user-facing that this file used to spell inline — the unit
+ * words, "am Boden", the date order — IS in main/strings_de.h, because each
+ * of those is one string and there is no array to keep it honest.
  */
 #include "fmt_de.h"
+#include "strings_de.h"
 #include "flight_types.h"   /* ALT_GROUND, ALT_UNKNOWN */
 
 #include <math.h>
@@ -115,20 +123,20 @@ size_t fmt_distance_km(float nm, char *out, size_t n)
     fmt_dec1_de(nm_to_km(nm), num, sizeof num);
 
     char full[48];
-    snprintf(full, sizeof full, "%s km", num);
+    snprintf(full, sizeof full, FMT_KM, num);
     return safe_copy(out, n, full);
 }
 
 size_t fmt_altitude_m(int32_t alt_ft, char *out, size_t n)
 {
-    if (alt_ft == ALT_GROUND)   return safe_copy(out, n, "am Boden");
-    if (alt_ft == ALT_UNKNOWN)  return safe_copy(out, n, "\xE2\x80\x94"); /* U+2014 EM DASH */
+    if (alt_ft == ALT_GROUND)   return safe_copy(out, n, STR_ON_GROUND);
+    if (alt_ft == ALT_UNKNOWN)  return safe_copy(out, n, STR_EM_DASH);
 
     char num[32];
     fmt_int_de(ft_to_m(alt_ft), num, sizeof num);
 
     char full[48];
-    snprintf(full, sizeof full, "%s m", num);
+    snprintf(full, sizeof full, FMT_METRES, num);
     return safe_copy(out, n, full);
 }
 
@@ -143,6 +151,15 @@ static const char *const COMPASS_ABBR[16] = {
 static const char *const COMPASS_WORD[8] = {
     "Norden", "Nordosten", "Osten", "Südosten",
     "Süden", "Südwesten", "Westen", "Nordwesten",
+};
+
+/* The adverbial form of the same eight points, same index order. A bare noun
+ * stranded after a number ("16,8 km Nordosten") reads as machine translation;
+ * "16,8 km nordöstlich" is what is actually said (docs/PLAN.md M7). Lower
+ * case throughout — it is an adverb mid-sentence, never sentence-initial here. */
+static const char *const COMPASS_ADV[8] = {
+    "nördlich", "nordöstlich", "östlich", "südöstlich",
+    "südlich", "südwestlich", "westlich", "nordwestlich",
 };
 
 /* Normalises any float (negative, >360, ...) into [0, 360). */
@@ -164,14 +181,27 @@ const char *compass_de_abbr(float deg)
     return COMPASS_ABBR[idx];
 }
 
-const char *compass_de_word(float deg)
+/* Index into an 8-point table. Same convention as compass_de_abbr, 45 wide
+ * sectors: N is [337.5,360) u [0,22.5). Deliberately one copy — two tables
+ * indexed by two separately-written rounding rules is exactly the kind of
+ * drift this project has already been bitten by. */
+static int compass_idx8(float deg)
 {
     double d = normalize_deg(deg);
-    /* Same convention, 45 wide sectors: N is [337.5,360) u [0,22.5). */
     int idx = (int)floor((d + 22.5) / 45.0);
     idx %= 8;
     if (idx < 0) idx += 8;
-    return COMPASS_WORD[idx];
+    return idx;
+}
+
+const char *compass_de_word(float deg)
+{
+    return COMPASS_WORD[compass_idx8(deg)];
+}
+
+const char *compass_de_adv(float deg)
+{
+    return COMPASS_ADV[compass_idx8(deg)];
 }
 
 /* ---- 5. German date and time --------------------------------------------- */
@@ -205,7 +235,7 @@ const char *month_de(int tm_mon)
 size_t fmt_date_de(const struct tm *t, char *out, size_t n)
 {
     char full[64];
-    snprintf(full, sizeof full, "%s, %d. %s %d",
+    snprintf(full, sizeof full, FMT_DATE_DE,
               weekday_de(t->tm_wday), t->tm_mday, month_de(t->tm_mon),
               t->tm_year + 1900);
     return safe_copy(out, n, full);

@@ -293,15 +293,37 @@ local time without anyone touching a setting.
 **Goal:** it reads like it was made for him, not translated. The tables landed in M2.5;
 this is the sweep that catches what escaped.
 
-- [ ] German compass bearings ("nordöstlich"), units and date formats applied *everywhere*,
-      not just on §5.1
-- [ ] All user-facing strings in one translation unit — audit that nothing leaked into a
-      widget constructor
-- [ ] Data attribution line in the UI (adsb.lol is ODbL)
+- [x] German compass bearings ("nordöstlich"), units and date formats applied *everywhere*,
+      not just on §5.1 — `compass_de_adv()`, D37. The panel read "16,8 km Nordosten"; it now
+      reads "9,4 km nördlich". The abbreviation ("NO") stays on Liste, Radar and the compass
+      tape, where it is right.
+- [x] All user-facing strings in one translation unit — `main/strings_de.h`, D38, with
+      `tools/check_strings.py` as the audit rather than a convention. It found `"%d°"` living
+      in `widget_compass.c`.
+- [x] Data attribution line in the UI (adsb.lol is ODbL) — at the foot of Einstellungen:
+      **Flugdaten adsb.lol (ODbL) · Routen adsb.im**. Verified on the panel.
 - [ ] **Read every screen aloud with someone Austrian.** Translated-sounding German is
       worse than English — it reads as a cheap product.
+      → `python3 tools/check_strings.py --list` prints all 110 strings grouped by screen for
+      exactly this. Two already fixed on a first pass (D42); two flagged as judgement and
+      deliberately left: "Nachtabsenkung" and "in Reichweite".
 
 **Done when:** no English leaks into a normal session.
+
+**Status:** three of four done. The fourth needs a native Austrian speaker and is the one
+item in this plan a tool cannot close.
+
+Two defects the sweep turned up that had nothing to do with language, and one that was
+caused by the sweep:
+
+- **The font gate had stopped checking anything** (D39). Gathering the strings into
+  `main/strings_de.h` moved them one directory above the checker's scan path, and the
+  checker read hex escapes as ASCII backslashes besides. Both holes silent, both in the
+  one tool whose job is to catch silence.
+- **The deck indicator drew two of its three dots on top of each other** (D40) — LVGL
+  layout timing, invisible to every host test, found by enlarging 30 px of a framebuffer
+  capture.
+- `is_placeholder_type()` in `view_build.c` had been dead since D36. Removed.
 
 ---
 

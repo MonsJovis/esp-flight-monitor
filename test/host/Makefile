@@ -25,8 +25,8 @@ CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 
-.PHONY: all clean fontcheck $(TESTS)
-all: fontcheck $(TESTS)
+.PHONY: all clean fontcheck stringcheck $(TESTS)
+all: fontcheck stringcheck $(TESTS)
 
 # A glyph missing from the subset renders as NOTHING in LVGL — no error, no
 # placeholder. That is not something to discover on the panel, so it is checked
@@ -34,6 +34,13 @@ all: fontcheck $(TESTS)
 fontcheck:
 	@echo "== font coverage"
 	@python3 $(ROOT)/tools/check_font_coverage.py
+
+# A German sentence written straight into a widget constructor never reaches
+# the native speaker doing the M7 reading-aloud pass, and so never gets
+# corrected. `--list` prints the whole lexicon for that pass.
+stringcheck:
+	@echo "== user-facing strings"
+	@python3 $(ROOT)/tools/check_strings.py
 
 $(TESTS): %: $(BINDIR)/%
 	@echo "== $@"

@@ -3,6 +3,7 @@
 #include "widget_compass.h"
 #include "theme.h"
 #include "fonts/fonts.h"
+#include "strings_de.h"
 
 /* Internal geometry, in px, all inside the widget's own (0,0)-(width,HEIGHT)
  * box. Kept together so create() and set_bearing() can't drift apart. */
@@ -138,7 +139,7 @@ void widget_compass_set_bearing(lv_obj_t *compass, float bearing_deg, const char
     if (deg >= 360) {
         deg = 0;
     }
-    snprintf(deg_buf, sizeof deg_buf, "%d°", deg);
+    snprintf(deg_buf, sizeof deg_buf, FMT_DEGREES, deg);
     lv_label_set_text(s_lbl_deg, deg_buf);
 
     /* The abbreviation and the degree figure are two label objects, but they

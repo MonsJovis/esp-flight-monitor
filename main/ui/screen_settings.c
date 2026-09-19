@@ -18,55 +18,13 @@
  * rest of the device uses — this file must not reinvent either. */
 #include "fmt_de.h"
 #include "fonts/fonts.h"
+#include "strings_de.h"
 
-/* ============================================================================
- * FIXED UI CHROME STRINGS — the only German (or other user-facing) literals
- * in this file. Location names are NOT here: they come from location_name()
- * (settings.h) so this file never hardcodes "Gloggnitz" or "Pattaya". Audit
- * THIS block, not the rest of the file, when checking for stray hard-coded
- * text (AGENTS.md §10).
- * ============================================================================
+/* Every German literal this screen shows lives in main/strings_de.h, together
+ * with the reasoning for each one; tools/check_strings.py fails the build if
+ * one reappears here. Location names are not literals anywhere: they come
+ * from location_name() (settings.h), so no screen hardcodes "Gloggnitz".
  */
-#define HEADING_ORT             "Ort"
-#define HEADING_UMKREIS         "Umkreis"
-#define HEADING_HELLIGKEIT      "Helligkeit"
-#define HEADING_NACHTABSENKUNG  "Nachtabsenkung"
-
-/* The word that rides along with the active location card's magenta fill —
- * DO-257A §2.1.6, never colour alone. */
-#define STR_ACTIVE_TAG          "Aktiv"
-
-#define STR_WLAN                "WLAN"
-#define STR_BACK                "Zurück"
-
-/* U+2192 "→" — a generic "this row goes somewhere" affordance, not the
- * magenta route glyph screen_overhead.c uses; coloured THEME_TEXT_LABEL
- * here, deliberately not magenta, so the two meanings never look alike. */
-#define STR_ROW_ARROW           "\xE2\x86\x92"
-
-/* Units beside the two slider read-outs. Aviation convention, not a
- * translation gap: this product's own visual language is avionics symbology
- * (DESIGN.md, direction B "Cockpit"), and NM is the standard range unit in
- * that idiom in German-speaking aviation too — unlike the km the rest of the
- * panel speaks for distances actually flown. See this file's report note on
- * why this screen does not convert nm -> km itself. */
-/* km, not NM. DESIGN.md is explicit that the panel speaks km everywhere, and
- * "30 NM" means nothing to the man this is built for — he has no reason to know
- * what a nautical mile is. The API speaks NM; that is the API's business. */
-#define UNIT_KM                 "km"
-#define UNIT_PERCENT            "%"
-
-/* "22:00 — 07:00". U+2014 "—" (EM DASH), matching the codepoint DESIGN.md §3
- * lists for the font subset (en dash, U+2013, is NOT subsetted and would
- * render blank). Hours only: settings_t has no minutes field. */
-#define FMT_DIM_WINDOW          "%02d:00 \xE2\x80\x94 %02d:00"
-
-/* Read-only "Eigener Ort" coordinates. U+00B0 "°" (also subsetted). Decimal
- * POINT, not comma: this is a raw lat/lon pair, not a translated number, and
- * matching main/data/fmt_de.c's German-comma formatting would mean
- * reimplementing its rounding logic in a UI file for a rarely-seen advanced
- * field — not worth it. See this file's report note. */
-#define FMT_CUSTOM_COORDS       "%.4f\xC2\xB0, %.4f\xC2\xB0"
 
 /* ============================================================================
  * Layout constants — px, on the 8 px base unit (THEME_BASE_UNIT).
@@ -343,6 +301,11 @@ void screen_settings_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(s_cont, THEME_GROUND, 0);
     lv_obj_set_style_bg_opa(s_cont, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(s_cont, 0, 0);
+    /* Bottom padding only, and only because the scroll extent is measured
+     * from the last child's edge: without it the attribution line at the
+     * foot ends 2 px from the panel edge, which reads as text that got cut
+     * off rather than text that ended. */
+    lv_obj_set_style_pad_bottom(s_cont, GAP_SECTION, 0);
     lv_obj_set_style_border_width(s_cont, 0, 0);
     lv_obj_set_scrollable(s_cont, true);
     /* SCROLLING: vertical only, with momentum — the content below is taller
@@ -363,7 +326,7 @@ void screen_settings_create(lv_obj_t *parent)
 
     /* ================= 1. Ort ================= */
     lv_obj_t *h_ort = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
-    lv_label_set_text(h_ort, HEADING_ORT);
+    lv_label_set_text(h_ort, STR_HEADING_ORT);
     lv_obj_set_pos(h_ort, PAD, y);
     y += heading_lh + GAP_LABEL;
 
@@ -417,14 +380,14 @@ void screen_settings_create(lv_obj_t *parent)
 
     /* ================= 2. Umkreis ================= */
     lv_obj_t *h_umkreis = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
-    lv_label_set_text(h_umkreis, HEADING_UMKREIS);
+    lv_label_set_text(h_umkreis, STR_HEADING_UMKREIS);
     lv_obj_set_pos(h_umkreis, PAD, y);
     y += heading_lh + GAP_LABEL;
 
     s_radius_value = make_label(s_cont, &plex_mono_32, THEME_CYAN);
     lv_obj_set_pos(s_radius_value, PAD, y);
     s_radius_unit = make_label(s_cont, &plex_sans_cond_22, THEME_TEXT_TERTIARY);
-    lv_label_set_text(s_radius_unit, UNIT_KM);
+    lv_label_set_text(s_radius_unit, STR_UNIT_KM);
     lv_obj_set_pos(s_radius_unit, PAD, y); /* placed for real in screen_settings_update() */
     y += value_lh + GAP_LABEL;
 
@@ -437,14 +400,14 @@ void screen_settings_create(lv_obj_t *parent)
 
     /* ================= 3. Helligkeit ================= */
     lv_obj_t *h_hell = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
-    lv_label_set_text(h_hell, HEADING_HELLIGKEIT);
+    lv_label_set_text(h_hell, STR_HEADING_HELLIGKEIT);
     lv_obj_set_pos(h_hell, PAD, y);
     y += heading_lh + GAP_LABEL;
 
     s_bright_value = make_label(s_cont, &plex_mono_32, THEME_CYAN);
     lv_obj_set_pos(s_bright_value, PAD, y);
     s_bright_unit = make_label(s_cont, &plex_sans_cond_22, THEME_TEXT_TERTIARY);
-    lv_label_set_text(s_bright_unit, UNIT_PERCENT);
+    lv_label_set_text(s_bright_unit, STR_UNIT_PERCENT);
     lv_obj_set_pos(s_bright_unit, PAD, y);
     y += value_lh + GAP_LABEL;
 
@@ -457,7 +420,7 @@ void screen_settings_create(lv_obj_t *parent)
 
     /* ================= 4. Nachtabsenkung ================= */
     lv_obj_t *h_dim = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
-    lv_label_set_text(h_dim, HEADING_NACHTABSENKUNG);
+    lv_label_set_text(h_dim, STR_HEADING_NACHTABSENKUNG);
     lv_obj_set_pos(h_dim, PAD, y);
     y += heading_lh + GAP_LABEL;
 
@@ -516,6 +479,26 @@ void screen_settings_create(lv_obj_t *parent)
     lv_obj_set_pos(back_label, (CONTENT_W - back_w) / 2, (TOUCH_ROW_H - body_lh) / 2);
 
     lv_obj_add_event_cb(back_row, back_row_event_cb, LV_EVENT_CLICKED, NULL);
+
+    y += TOUCH_ROW_H + GAP_SECTION;
+
+    /* ================= 7. Datenquellen =================
+     * A licence obligation, not a credit line we chose to show: adsb.lol's
+     * position data is ODbL 1.0 and adsb.im supplies the routes (AGENTS.md,
+     * "Data licences"). It goes at the foot of the one screen he reaches
+     * deliberately rather than onto a screen he looks at daily, which is
+     * where a map product puts its attribution and for the same reason —
+     * it has to be findable, not prominent.
+     *
+     * Chrome tier: plex_mono_12 in THEME_TEXT_LABEL. This is the one place
+     * on the device that deliberately ignores DESIGN.md's 24 px readability
+     * floor, because that floor exists for text he has to READ at 70 cm and
+     * this is text that has to be PRESENT. The fuller ODbL notice, which
+     * cannot be set legibly at 480 px wide, is in README.md. */
+    lv_obj_t *attrib = make_label(s_cont, &plex_mono_12, THEME_TEXT_LABEL);
+    lv_label_set_text(attrib, STR_ATTRIBUTION);
+    lv_obj_update_layout(attrib);
+    lv_obj_set_pos(attrib, PAD + (CONTENT_W - lv_obj_get_width(attrib)) / 2, y);
 }
 
 void screen_settings_update(const settings_t *s)

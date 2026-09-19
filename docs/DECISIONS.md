@@ -598,3 +598,117 @@ the two drifted — the bug was the duplication, not either copy.
 Six types the live feed produced were also added: AT75, AT76, B734, DIMO, PA18, PC6T (209
 total). A test now asserts the helper never returns the code it was given, for every one of
 them.
+
+## D37 — The adverb, not the noun: "16,8 km nordöstlich"
+
+**Decision:** `compass_de_adv()` in `fmt_de.c`, and `view_model_t.direction_word` now carries
+the adverb. `compass_de_word()` ("Nordosten") is still exported and still tested; nothing on
+the panel uses it.
+
+**Why:** the data band read **"16,8 km Nordosten"** — a bare noun stranded after a number.
+It is not a sentence anyone says, and it is exactly the flavour of German that tells a reader
+the thing was translated by a machine. PLAN.md M7 named the fix in its own checklist:
+`"nordöstlich"`. Three screens draw a direction and the abbreviation ("NO") is still right for
+the two dense ones (Liste, Radar) and for the compass tape; only the one place that sets a
+direction next to a distance in running text needed the adverb.
+
+The test asserts the adverb is *not equal to* the noun for all eight bearings. Without that,
+a one-word edit in `view_build.c` would put the stranded noun back with every other test
+still green.
+
+## D38 — One file he could read, if he read C
+
+**Decision:** every user-facing string lives in `main/strings_de.h`. `tools/check_strings.py`
+fails the host suite if a literal a human would read appears in `main/ui/*.c` or
+`main/data/view_build.c` without being defined there. `--list` prints the whole lexicon as
+plain text.
+
+**Why:** PLAN.md M7 asks for "one translation unit — audit that nothing leaked into a widget
+constructor", and the previous arrangement (a documented `CHROME_*` block at the top of each
+screen) was good discipline but six places to check, enforced by nothing. The audit is the
+point; the move is just what makes the audit expressible.
+
+**What the rule actually is.** After comments, `#include` lines and `ESP_LOG*` calls are
+stripped, every remaining literal must be empty, or structural (no letters and nothing above
+ASCII 126 once printf conversions are removed — so `"%s %s"` and `"%02d:00"` stay inline
+where they belong), or defined in the header. Non-ASCII counts as user-facing whatever else
+it is: that clause is what caught `"%d°"` sitting in `widget_compass.c`.
+
+**Two deliberate exceptions**, both indexed tables, both still in the `--list` dump because a
+reviewer needs them: the compass/weekday/month tables in `fmt_de.c`, and the location preset
+names in `settings.c`. Naming sixteen compass points as sixteen macros and rebuilding an
+array out of them would be strictly worse than the array.
+
+**The test keeps a second copy on purpose.** `test_view.c` restates the five German reason
+sentences verbatim rather than including the header. A test that asserts
+`STR_REASON_NONE == STR_REASON_NONE` asserts nothing. Changing what the device says to him
+costs two edits in two files, and the failing test in between is the feature.
+
+## D39 — Consolidating the strings walked them out from under the font gate
+
+**Decision:** `check_font_coverage.py` scans `main` whole, not `["main/ui", "main/data"]`, and
+decodes C escapes before checking codepoints.
+
+**Why:** this is the sharpest finding of the milestone, and it was self-inflicted by the
+milestone. `main/strings_de.h` sits one directory above both scanned paths, so the moment
+every German string moved into it, the font gate went on reporting success with nothing left
+in its scan path to check. Worse, the header deliberately writes non-ASCII as hex escapes
+(`"\xE2\x80\x94"`) so no editor can re-encode it — and the checker compared *source
+spellings*, so it read those as plain ASCII backslashes. Two independent holes, both silent,
+both in the one tool whose entire job is to catch silence: LVGL draws a missing glyph as
+nothing at all.
+
+Verified by probe rather than by reading: injecting `"\xE2\x80\xA6"` (U+2026, not in the
+subset) into the header now fails the gate with `main/strings_de.h:222: U+2026 '…' is in NO
+generated face`. Before the fix that probe passed.
+
+Widening the scan also turned up four `§` literals in `dbg_fixture.c` that only ever reach
+`ESP_LOGW`. Rather than grow every font by a glyph nothing draws, the checker now skips
+log calls and honours an explicit `/* LOG-ONLY */` marker — written by hand, because the
+checker cannot follow a variable from its assignment to its use, and a promise that has to be
+typed out stays visible in the diff.
+
+## D40 — Three dots, one of them half-swallowed
+
+**Decision:** `nav.c` computes dot widths instead of measuring them.
+
+**Why:** `lv_obj_set_width()` only marks an object dirty; `lv_obj_get_width()` returns the
+width from the last layout pass. `paint_dots()` widened the active dot and then measured it
+in the same breath, got the old 8 px back, and laid the second dot 16 px too far left —
+underneath the active pill. A three-page deck looked like a two-page one with a smear on it,
+and it had been shipping that way since the deck was built.
+
+No host test can see this; it is LVGL layout timing, not arithmetic. It was found by reading
+the panel's own framebuffer back as a PNG and enlarging 30 px of it. An
+`lv_obj_update_layout()` between the two loops would also work — computing is better, because
+it removes the dependency on layout timing rather than satisfying it.
+
+## D41 — Every screen has to be reachable from the build host
+
+**Decision:** debug console keys `g` (next deck page), `e` (Einstellungen), `k` (WLAN) and
+`d` (scroll the current screen to its end).
+
+**Why:** a screen that can only be reached by tapping the glass is a screen nobody checks.
+Einstellungen is taller than 480 px, so the data attribution line at its foot — the one the
+ODbL actually requires — could not be photographed at all until `d` existed. `scroll_to_end`
+walks the tree recursively: the scrollable column is not a child of the screen, because
+`nav_open_overlay()` puts an overlay root in between, and the first version scanned one level
+and silently did nothing.
+
+## D42 — Two sentences that failed a read-aloud
+
+**Decision:** "Zu diesem Flugzeug liegt keine Routeninformation vor." became "Zu diesem Flug
+ist keine Route bekannt.", and "Verbindung zu X wird hergestellt..." became
+"Verbinde mit X...".
+
+**Why:** the first is Amtsdeutsch — the register of a form he has to fill in, and he is
+standing in his garden. The second put two voices on one screen: the line above it already
+says "Suche Netzwerke...", and the device talks to him in the first person everywhere else
+("Ich suche ein bekanntes WLAN"), so the passive construction was the odd one out.
+
+M7's last checklist item — **read every screen aloud with someone Austrian** — is the one
+thing here that cannot be done by a tool or by me. `python3 tools/check_strings.py --list`
+prints all 110 strings grouped by screen for exactly that pass. Two the list raises and I
+have deliberately left alone, because they are judgement and not error: **"Nachtabsenkung"**
+(precise, and a word he plausibly knows from his heating, but technical) and **"in
+Reichweite"** (correct and self-contained, but "in der Nähe" is what a person would say).

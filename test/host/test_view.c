@@ -24,14 +24,20 @@
 #include "view_model.h"
 
 /* ---- the exact German sentences view_build.c chooses by category -------
- * Kept here as named constants, matching view_build.c verbatim, so every
- * assertion below reads as "does it say the right thing" rather than a
- * pile of inline literals. */
+ * Kept here as named constants, matching main/strings_de.h verbatim, so
+ * every assertion below reads as "does it say the right thing" rather than
+ * a pile of inline literals.
+ *
+ * These are a deliberate SECOND COPY, not an include of strings_de.h. A test
+ * that asserts STR_REASON_NONE == STR_REASON_NONE asserts nothing: it would
+ * pass whatever anyone typed into the header. Changing what the device says
+ * to him is supposed to cost two edits in two files, and the failing test in
+ * between is the point. */
 static const char *const REASON_PRIVATE    = "Eine Route gibt es nur bei Linienflügen.";
 static const char *const REASON_HELICOPTER = "Hubschrauber fliegen meist ohne festen Flugplan.";
 static const char *const REASON_MILITARY   = "Militärflüge scheinen in keinem öffentlichen Flugplan auf.";
 static const char *const REASON_AIRLINER   = "Der Flugplan ist im Moment nicht verfügbar.";
-static const char *const REASON_UNKNOWN    = "Zu diesem Flugzeug liegt keine Routeninformation vor.";
+static const char *const REASON_UNKNOWN    = "Zu diesem Flug ist keine Route bekannt.";
 
 /* ---- shared fixture-loading helpers -------------------------------------- */
 
@@ -78,8 +84,17 @@ static void check_numeric_fields(const aircraft_t *ac, const view_model_t *vm)
         char exp_dist[32];
         fmt_distance_km(ac->dst_nm, exp_dist, sizeof exp_dist);
         CHECK_STR(vm->distance, exp_dist);
-        CHECK_STR(vm->direction_word, compass_de_word(ac->dir_deg));
+        /* The ADVERB ("nordöstlich"), so the band reads "16,8 km
+         * nordöstlich". PLAN.md M7. The second check is the anti-regression
+         * one: compass_de_word() is still exported and still tested, and a
+         * one-word edit here would put the stranded noun back on the panel
+         * without any other test noticing. */
+        CHECK_STR(vm->direction_word, compass_de_adv(ac->dir_deg));
+        CHECK(strcmp(vm->direction_word, compass_de_word(ac->dir_deg)) != 0);
         CHECK_STR(vm->direction_abbr, compass_de_abbr(ac->dir_deg));
+        /* "O" for Ost, never "E" — AGENTS.md §1 and §10 name this as the
+         * classic bug. No German 16-point abbreviation contains an E. */
+        CHECK(strchr(vm->direction_abbr, 'E') == NULL);
     }
     CHECK_NEAR(vm->bearing_deg, ac->dir_deg, 0.001);
 }
@@ -670,6 +685,16 @@ static void test_synthetic_military_reason(void)
 
 static const char *const GIVEAWAY_WORDS[] = {
     "Vienna", "Munich", "Prague", "Airport", "unknown", "null", "None",
+    /* M7 additions. The first group is more English that a table or an API
+     * could push through untranslated; the second is not English at all but
+     * belongs in the same gate, because each one reaches the panel the same
+     * way — as text he reads that means the device is broken. */
+    "undefined", "Unknown", "Error", "Failed", "Loading", "N/A",
+    "NaN", "(null)", "nil", "TODO", "FIXME",
+    /* An unsubstituted conversion specification in an output field means a
+     * format string reached the screen instead of its result. Nothing in
+     * German, or in any airport/airline/type name, contains "%s" or "%d". */
+    "%s", "%d",
 };
 #define N_GIVEAWAY (sizeof(GIVEAWAY_WORDS) / sizeof(GIVEAWAY_WORDS[0]))
 

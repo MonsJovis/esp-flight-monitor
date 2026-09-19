@@ -25,6 +25,7 @@
 #include "screen_wifi.h"
 #include "theme.h"
 #include "fonts/fonts.h"
+#include "strings_de.h"
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
@@ -39,28 +40,6 @@
  * missing glyphs — so every "..." below is three ASCII periods on purpose.
  * ============================================================================
  */
-#define CHROME_TITLE                  "WLAN"
-
-#define CHROME_STATUS_SCANNING        "Suche Netzwerke..."
-#define CHROME_STATUS_CONNECTED_PFX   "Verbunden mit "              /* + ssid */
-#define CHROME_STATUS_CONNECTED_GEN   "Verbunden"                   /* connected==true but no ssid given (defensive) */
-#define CHROME_STATUS_FAILED_PFX      "Verbindung fehlgeschlagen: " /* + ssid */
-#define CHROME_STATUS_IDLE            "Nicht verbunden"             /* see screen_wifi.h: the 4th, unnamed combination */
-#define CHROME_STATUS_CONNECTING_PFX  "Verbindung zu "              /* + ssid + _SFX; local optimistic status, see set_status_connecting() */
-#define CHROME_STATUS_CONNECTING_SFX  " wird hergestellt..."
-
-#define CHROME_TAG_SAVED              "gespeichert"      /* DO-257A: colour is never the only carrier, so the word ships beside the green tick */
-#define CHROME_LIST_EMPTY             "Keine Netzwerke gefunden"
-
-#define CHROME_BTN_RESCAN             "Suchen"
-#define CHROME_BTN_EXIT               "Zurück"
-
-#define CHROME_PW_NETWORK_PFX         "Verbindung mit "  /* + ssid — "so he can see what he is connecting to" */
-#define CHROME_PW_PLACEHOLDER         "Passwort"
-#define CHROME_PW_SHOW                "Anzeigen"         /* shown while the password is hidden — names the action the tap performs */
-#define CHROME_PW_HIDE                "Verbergen"        /* shown while the password is visible */
-#define CHROME_PW_CONNECT             "Verbinden"
-#define CHROME_PW_CANCEL              "Abbrechen"
 
 /* ============================================================================
  * Layout constants — px, on the 8 px base unit (THEME_BASE_UNIT), matching
@@ -116,13 +95,13 @@ typedef struct {
     lv_obj_t *row;
     lv_obj_t *lbl_ssid;
     lv_obj_t *lbl_tick;   /* LV_SYMBOL_OK, LVGL default font (see create_row()) */
-    lv_obj_t *lbl_saved;  /* CHROME_TAG_SAVED */
+    lv_obj_t *lbl_saved;  /* STR_WIFI_SAVED */
     char      ssid[SCREEN_WIFI_SSID_LEN];
     bool      saved;
 } wifi_row_t;
 
 static wifi_row_t s_rows[SCREEN_WIFI_MAX_ROWS];
-/* Combined width of one row's tick + gap + CHROME_TAG_SAVED label, in px.
+/* Combined width of one row's tick + gap + STR_WIFI_SAVED label, in px.
  * Computed once from row 0 in create_row() — the text never changes, so
  * every row's badge is the same size. Used to size the SSID label so long
  * names don't run under the badge on a saved row. */
@@ -220,7 +199,7 @@ static void apply_status_text(const char *text, lv_color_t color)
 static void set_status_connecting(const char *ssid)
 {
     char buf[64];
-    snprintf(buf, sizeof buf, "%s%s%s", CHROME_STATUS_CONNECTING_PFX, ssid, CHROME_STATUS_CONNECTING_SFX);
+    snprintf(buf, sizeof buf, "%s%s%s", STR_WIFI_CONNECTING_PFX, ssid, STR_WIFI_CONNECTING_SFX);
     apply_status_text(buf, THEME_TEXT_LABEL);
 }
 
@@ -232,24 +211,24 @@ void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scann
      * technically associated to the old network must not show two
      * contradictory messages at once (screen_wifi.h). */
     if (scanning) {
-        apply_status_text(CHROME_STATUS_SCANNING, THEME_TEXT_LABEL);
+        apply_status_text(STR_WIFI_SCANNING, THEME_TEXT_LABEL);
         return;
     }
     if (connected) {
         if (ssid_or_null && ssid_or_null[0] != '\0') {
-            snprintf(buf, sizeof buf, "%s%s", CHROME_STATUS_CONNECTED_PFX, ssid_or_null);
+            snprintf(buf, sizeof buf, "%s%s", STR_WIFI_CONNECTED_PFX, ssid_or_null);
             apply_status_text(buf, THEME_GREEN);
         } else {
-            apply_status_text(CHROME_STATUS_CONNECTED_GEN, THEME_GREEN);
+            apply_status_text(STR_WIFI_CONNECTED_GEN, THEME_GREEN);
         }
         return;
     }
     if (ssid_or_null && ssid_or_null[0] != '\0') {
-        snprintf(buf, sizeof buf, "%s%s", CHROME_STATUS_FAILED_PFX, ssid_or_null);
+        snprintf(buf, sizeof buf, "%s%s", STR_WIFI_FAILED_PFX, ssid_or_null);
         apply_status_text(buf, THEME_AMBER);
         return;
     }
-    apply_status_text(CHROME_STATUS_IDLE, THEME_TEXT_LABEL);
+    apply_status_text(STR_WIFI_IDLE, THEME_TEXT_LABEL);
 }
 
 /* ============================================================================
@@ -307,7 +286,7 @@ static void create_row(lv_obj_t *parent, int idx)
     lv_obj_set_style_text_color(row->lbl_tick, THEME_GREEN, 0);
 
     row->lbl_saved = make_label(row->row, &plex_sans_cond_25, THEME_GREEN);
-    lv_label_set_text(row->lbl_saved, CHROME_TAG_SAVED);
+    lv_label_set_text(row->lbl_saved, STR_WIFI_SAVED);
 
     /* Position the badge once: its text is constant, so its size is
      * constant, so this does not need to re-run on every list rebuild. */
@@ -401,7 +380,7 @@ void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
 static void update_toggle_label(void)
 {
     bool hidden = lv_textarea_get_password_mode(s_pw_ta);
-    lv_label_set_text(s_pw_toggle_lbl, hidden ? CHROME_PW_SHOW : CHROME_PW_HIDE);
+    lv_label_set_text(s_pw_toggle_lbl, hidden ? STR_WIFI_PW_SHOW : STR_WIFI_PW_HIDE);
 }
 
 static void pw_toggle_event_cb(lv_event_t *e)
@@ -417,7 +396,7 @@ static void open_password_step(const char *ssid)
     safe_copy_ssid(s_pw_ssid, ssid);
 
     char line[16 + SCREEN_WIFI_SSID_LEN];
-    snprintf(line, sizeof line, "%s%s", CHROME_PW_NETWORK_PFX, s_pw_ssid);
+    snprintf(line, sizeof line, "%s%s", STR_WIFI_PW_NETWORK_PFX, s_pw_ssid);
     lv_label_set_text(s_pw_lbl_network, line);
 
     lv_textarea_set_text(s_pw_ta, "");
@@ -518,13 +497,13 @@ void screen_wifi_create(lv_obj_t *parent)
     lv_obj_set_scrollable(s_main, false);
 
     s_lbl_title = make_label(s_main, &plex_sans_cond_34, THEME_TEXT_PRIMARY);
-    lv_label_set_text(s_lbl_title, CHROME_TITLE);
+    lv_label_set_text(s_lbl_title, STR_WLAN);
     lv_obj_set_pos(s_lbl_title, PAD, PAD);
     lv_obj_update_layout(s_lbl_title);
     int32_t y = PAD + lv_obj_get_height(s_lbl_title) + GAP_SM;
 
     s_lbl_status = make_label(s_main, &plex_sans_cond_25, THEME_TEXT_LABEL);
-    apply_status_text(CHROME_STATUS_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
+    apply_status_text(STR_WIFI_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
     lv_obj_set_pos(s_lbl_status, PAD, y);
     lv_obj_update_layout(s_lbl_status);
     y += lv_obj_get_height(s_lbl_status) + GAP_MD;
@@ -535,12 +514,12 @@ void screen_wifi_create(lv_obj_t *parent)
     int32_t btn_w = (CONTENT_W - GAP_MD) / 2;
     int32_t btn_y = THEME_SCREEN_HEIGHT - PAD - BTN_H;
 
-    s_btn_rescan = make_button(s_main, btn_w, BTN_H, CHROME_BTN_RESCAN,
+    s_btn_rescan = make_button(s_main, btn_w, BTN_H, STR_WIFI_BTN_RESCAN,
                                THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
     lv_obj_set_pos(s_btn_rescan, PAD, btn_y);
     lv_obj_add_event_cb(s_btn_rescan, rescan_clicked_cb, LV_EVENT_CLICKED, NULL);
 
-    s_btn_exit = make_button(s_main, btn_w, BTN_H, CHROME_BTN_EXIT,
+    s_btn_exit = make_button(s_main, btn_w, BTN_H, STR_BACK,
                              THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
     lv_obj_set_pos(s_btn_exit, PAD + btn_w + GAP_MD, btn_y);
     lv_obj_add_event_cb(s_btn_exit, exit_clicked_cb, LV_EVENT_CLICKED, NULL);
@@ -565,7 +544,7 @@ void screen_wifi_create(lv_obj_t *parent)
      * visible row always lands at the top of the list — "first row fully
      * visible without scrolling" (task brief) needs no extra handling. */
     s_lbl_empty = make_label(s_list, &plex_sans_cond_25, THEME_TEXT_LABEL);
-    lv_label_set_text(s_lbl_empty, CHROME_LIST_EMPTY);
+    lv_label_set_text(s_lbl_empty, STR_WIFI_LIST_EMPTY);
     lv_obj_set_width(s_lbl_empty, CONTENT_W);
 
     for (int i = 0; i < SCREEN_WIFI_MAX_ROWS; i++) {
@@ -591,7 +570,7 @@ void screen_wifi_create(lv_obj_t *parent)
     s_pw_lbl_network = make_label(s_pw, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     lv_obj_set_width(s_pw_lbl_network, CONTENT_W);
     lv_label_set_long_mode(s_pw_lbl_network, LV_LABEL_LONG_MODE_WRAP);
-    lv_label_set_text(s_pw_lbl_network, CHROME_PW_NETWORK_PFX); /* placeholder for this layout pass; open_password_step() overwrites it per network */
+    lv_label_set_text(s_pw_lbl_network, STR_WIFI_PW_NETWORK_PFX); /* placeholder for this layout pass; open_password_step() overwrites it per network */
     lv_obj_set_pos(s_pw_lbl_network, PAD, PAD);
     lv_obj_update_layout(s_pw_lbl_network);
     int32_t py = PAD + lv_obj_get_height(s_pw_lbl_network) + GAP_MD;
@@ -606,13 +585,13 @@ void screen_wifi_create(lv_obj_t *parent)
     lv_obj_set_pos(s_pw_ta, PAD, py);
     lv_textarea_set_one_line(s_pw_ta, true);
     lv_textarea_set_password_mode(s_pw_ta, true);
-    lv_textarea_set_placeholder_text(s_pw_ta, CHROME_PW_PLACEHOLDER);
+    lv_textarea_set_placeholder_text(s_pw_ta, STR_WIFI_PW_PLACEHOLDER);
     lv_textarea_set_max_length(s_pw_ta, PW_MAX_PASS_LEN);
     lv_obj_set_style_text_font(s_pw_ta, &plex_sans_cond_25, 0);
     lv_obj_add_event_cb(s_pw_ta, pw_ta_ready_cb, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(s_pw_ta, pw_ta_cancel_cb, LV_EVENT_CANCEL, NULL);
 
-    lv_obj_t *toggle_btn = make_button(s_pw, toggle_w, BTN_H, CHROME_PW_SHOW,
+    lv_obj_t *toggle_btn = make_button(s_pw, toggle_w, BTN_H, STR_WIFI_PW_SHOW,
                                        THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
     lv_obj_set_pos(toggle_btn, PAD + ta_w + GAP_MD, py);
     lv_obj_add_event_cb(toggle_btn, pw_toggle_event_cb, LV_EVENT_CLICKED, NULL);
@@ -625,12 +604,12 @@ void screen_wifi_create(lv_obj_t *parent)
      * tokens); Abbrechen stays neutral. */
     int32_t pw_btn_w = (CONTENT_W - GAP_MD) / 2;
 
-    lv_obj_t *btn_connect = make_button(s_pw, pw_btn_w, BTN_H, CHROME_PW_CONNECT,
+    lv_obj_t *btn_connect = make_button(s_pw, pw_btn_w, BTN_H, STR_WIFI_PW_CONNECT,
                                         THEME_SURFACE_GREEN, THEME_BORDER_GREEN, THEME_TEXT_PRIMARY);
     lv_obj_set_pos(btn_connect, PAD, py);
     lv_obj_add_event_cb(btn_connect, pw_connect_clicked_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *btn_cancel = make_button(s_pw, pw_btn_w, BTN_H, CHROME_PW_CANCEL,
+    lv_obj_t *btn_cancel = make_button(s_pw, pw_btn_w, BTN_H, STR_WIFI_PW_CANCEL,
                                        THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);
     lv_obj_set_pos(btn_cancel, PAD + pw_btn_w + GAP_MD, py);
     lv_obj_add_event_cb(btn_cancel, pw_cancel_clicked_cb, LV_EVENT_CLICKED, NULL);

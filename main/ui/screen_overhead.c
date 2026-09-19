@@ -14,33 +14,21 @@
 #include "theme.h"
 #include "fonts/fonts.h"
 #include "widget_compass.h"
+#include "strings_de.h"
+#include "data/fmt_de.h"
 
-/* ============================================================================
- * FIXED UI CHROME STRINGS — the only German (or non-data) literals in this
- * file. Everything else that reaches the screen is a string already sitting
- * in view_model_t, put there in German, with correct units, by
- * main/data/view_build.c (view_model.h, AGENTS.md §10). Audit THIS block,
- * not the rest of the file, when checking for stray hard-coded text.
- * ============================================================================
+/* Every German literal this screen shows lives in main/strings_de.h, together
+ * with the reasoning for each one; tools/check_strings.py fails the build if
+ * one reappears here. Everything else that reaches the screen is a string
+ * already sitting in view_model_t, put there in German, with correct units,
+ * by main/data/view_build.c (view_model.h, AGENTS.md §10).
+ *
+ * The compass tape's eight cardinal marks are NOT a literal here either. They
+ * come from compass_de_abbr() at the eight 45-degree bearings, so the "O for
+ * Ost, never E" rule (AGENTS.md §1, §10) has exactly one implementation on
+ * this device instead of one per screen that draws a compass. That is the
+ * DECISIONS.md D36 lesson applied before it can bite a second time.
  */
-#define CHROME_NO_FLIGHT_PLAN "KEIN FLUGPLAN"   /* §5.2 amber caution tag, beside the reason sentence */
-/* Shown instead while the routeset lookup is still outstanding. Claiming
- * "KEIN FLUGPLAN" during those seconds is a lie the device then corrects a few
- * seconds later, and a panel that corrects itself is one he stops believing. */
-#define CHROME_ROUTE_SEARCHING "ROUTE WIRD GESUCHT"
-#define CHROME_NO_NETWORK     "KEIN NETZ"       /* chrome caution, shown only when vm->online is false */
-#define CHROME_LAST_SEEN      "ZULETZT GESEHEN" /* §5.3 caption above the last known aircraft's data */
-#define CHROME_ROUTE_ARROW    "\xE2\x86\x92"    /* U+2192 "→" — not a word, the route glyph (magenta) */
-
-/* The compass tape's 8 fixed cardinal marks, 45° apart starting at north.
- * "O" for Ost, never "E" — AGENTS.md §1 and §10. These are structural chrome
- * (they never change, for any aircraft, ever), so they belong in this same
- * audited block even though widget_compass.c is a different file; that
- * widget takes no German literals of its own, see widget_compass.h.
- */
-static const char *const CHROME_CARDINALS[WIDGET_COMPASS_NUM_CARDINALS] = {
-    "N", "NO", "O", "SO", "S", "SW", "W", "NW",
-};
 
 /* ============================================================================
  * Layout constants — px, on the 8 px base unit (THEME_BASE_UNIT).
@@ -80,7 +68,7 @@ static lv_obj_t *s_cont;
 
 /* Chrome band */
 static lv_obj_t *s_lbl_clock;
-static lv_obj_t *s_lbl_offline; /* CHROME_NO_NETWORK, shown only when !vm->online */
+static lv_obj_t *s_lbl_offline; /* STR_NO_NETWORK_TAG, shown only when !vm->online */
 
 /* Compass tape band */
 static lv_obj_t *s_compass;
@@ -96,7 +84,7 @@ static lv_obj_t *s_lbl_hero;
 /* Supporting band */
 static lv_obj_t *s_lbl_reason;             /* §5.2 only */
 static lv_obj_t *s_lbl_date;               /* §5.3 only */
-static lv_obj_t *s_lbl_last_seen_caption;  /* §5.3 only, CHROME_LAST_SEEN */
+static lv_obj_t *s_lbl_last_seen_caption;  /* §5.3 only, STR_LAST_SEEN */
 static lv_obj_t *s_lbl_airline;            /* §5.1/§5.2, reused as "last seen" airline in §5.3 */
 static lv_obj_t *s_lbl_type_full;          /* §5.1/§5.2, reused as "last seen" type in §5.3 */
 
@@ -179,21 +167,32 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_pos(s_lbl_clock, PAD, Y_CHROME);
 
     s_lbl_offline = make_label(s_cont, &plex_mono_13, THEME_AMBER);
-    lv_label_set_text(s_lbl_offline, CHROME_NO_NETWORK);
+    lv_label_set_text(s_lbl_offline, STR_NO_NETWORK_TAG);
     lv_obj_update_layout(s_lbl_offline);
     lv_obj_set_pos(s_lbl_offline, PAD + CONTENT_W - lv_obj_get_width(s_lbl_offline), Y_CHROME);
     lv_obj_set_hidden(s_lbl_offline, true); /* shown only when !vm->online */
 
     /* --- Compass tape band --- */
-    s_compass = widget_compass_create(s_cont, CONTENT_W, CHROME_CARDINALS);
+    /* Built here, not stored as a file-scope table, because compass_de_abbr()
+     * is a function call and this is the one place the eight marks are
+     * needed. widget_compass_create() copies the text into its own labels. */
+    const char *cardinals[WIDGET_COMPASS_NUM_CARDINALS];
+    for (int i = 0; i < WIDGET_COMPASS_NUM_CARDINALS; i++) {
+        cardinals[i] = compass_de_abbr((float)i * (360.0f / WIDGET_COMPASS_NUM_CARDINALS));
+    }
+    /* The cast adds const at the second level, which C will not do
+     * implicitly even though it is safe (C11 6.5.16.1); the callee only
+     * reads. */
+    s_compass = widget_compass_create(s_cont, CONTENT_W,
+                                      (const char *const *)cardinals);
     lv_obj_set_pos(s_compass, PAD, Y_COMPASS);
 
     /* --- Top row: origin + route arrow, or the no-route tag --- */
     s_lbl_origin = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_PRIMARY);
     s_lbl_arrow  = make_label(s_cont, &plex_sans_cond_34, THEME_MAGENTA);
-    lv_label_set_text(s_lbl_arrow, CHROME_ROUTE_ARROW);
+    lv_label_set_text(s_lbl_arrow, STR_ROUTE_ARROW);
     s_lbl_no_route_tag = make_label(s_cont, &plex_sans_cond_34, THEME_AMBER);
-    lv_label_set_text(s_lbl_no_route_tag, CHROME_NO_FLIGHT_PLAN); /* replaced per-update */
+    lv_label_set_text(s_lbl_no_route_tag, STR_NO_FLIGHT_PLAN); /* replaced per-update */
     lv_obj_set_hidden(s_lbl_origin, true);
     lv_obj_set_hidden(s_lbl_arrow, true);
     lv_obj_set_hidden(s_lbl_no_route_tag, true);
@@ -205,7 +204,7 @@ void screen_overhead_create(lv_obj_t *parent)
     s_lbl_reason = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
     s_lbl_date   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     s_lbl_last_seen_caption = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
-    lv_label_set_text(s_lbl_last_seen_caption, CHROME_LAST_SEEN);
+    lv_label_set_text(s_lbl_last_seen_caption, STR_LAST_SEEN);
     s_lbl_airline   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     s_lbl_type_full = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
     lv_obj_set_hidden(s_lbl_reason, true);
@@ -275,8 +274,8 @@ void screen_overhead_update(const view_model_t *vm)
     }
     if (show_no_route) {
         lv_label_set_text(s_lbl_no_route_tag,
-                          vm->route_searching ? CHROME_ROUTE_SEARCHING
-                                              : CHROME_NO_FLIGHT_PLAN);
+                          vm->route_searching ? STR_ROUTE_SEARCHING
+                                              : STR_NO_FLIGHT_PLAN);
         lv_obj_set_pos(s_lbl_no_route_tag, PAD, Y_TOPROW);
     }
 
@@ -355,7 +354,7 @@ void screen_overhead_update(const view_model_t *vm)
     }
 
     /* The "airline" slot: vm->airline in §5.1/§5.2. In §5.3 it is
-     * relabelled by CHROME_LAST_SEEN above and reused for vm->hero instead
+     * relabelled by STR_LAST_SEEN above and reused for vm->hero instead
      * -- view_build_empty() runs the last-seen aircraft's type through the
      * same hero_from_type() helper VIEW_NO_ROUTE's true hero uses, which is
      * a better, never-"?" string than type_full alone, so it is the right
