@@ -6,9 +6,10 @@ A 4-inch panel that answers one question, in German, without being touched:
 
 ![Über dir jetzt](docs/screens/1-ueber-dir.png)
 
-Real traffic over Gloggnitz, Lower Austria. A British Airways A321neo at 10.371 m,
-10,7 km to the south, on its way from Rhodes to London. Nobody touched anything —
-this is what the panel shows by itself.
+Real traffic over Gloggnitz, Lower Austria: an Austrian Airlines flight out of Vienna,
+4.793 m up, 16,4 km to the north-east, on its way to Bologna. Nobody touched anything —
+this is what the panel shows by itself, and it is the panel's own framebuffer read back
+over USB, not a mockup.
 
 ## Why it exists
 
@@ -32,7 +33,7 @@ time zone, clock and all.
 | | | |
 |---|---|---|
 | ![Über dir jetzt](docs/screens/1-ueber-dir.png) | ![Liste](docs/screens/2-liste.png) | ![Radar](docs/screens/3-radar.png) |
-| **Über dir jetzt** — the nearest aircraft, and where it is going. The one screen that matters. | **Liste** — everything in range, nearest first. | **Radar** — where they are and which way they point, north up. |
+| **Über dir jetzt** — the nearest aircraft, and where it is going. The one screen that matters. | **Liste** — everything in range, nearest first. Cyan when the route is known, amber when it is not. | **Radar** — where they are and which way they point, north up. Magenta is the nearest. |
 
 Swipe between them; it returns to the first screen by itself after 30 seconds of an empty
 sky. Aircraft with no filed route are not a failure case — seven of the thirteen in our

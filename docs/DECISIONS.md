@@ -909,3 +909,36 @@ fixed 132 px width and `LV_LABEL_LONG_MODE_WRAP` — about eleven characters at 
 would have wrapped too, and a naive fit check would have called it a fit. The width is now
 measured unwrapped and then applied to the label, so the cap *is* the measurement rather
 than a second, tighter limit hiding underneath it.
+
+## D51 — The aircraft table, and one word walked back
+
+**Decision:** `tbl_actype.c` grows from 209 to 403 rows, weighted towards general aviation.
+`BALL` is "Ballon", not "Heißluftballon".
+
+**Why the growth:** the table was built for airliners, and the traffic he actually *hears* —
+low and slow over the house — is not airliners. A live capture had **SF25**, a Scheibe Falke
+motorglider on an Austrian registration, reading as "Unbekanntes Flugzeug" twice in one
+list. It now reads **"Scheibe SF-25 Falke"**, with "Eine Route gibt es nur bei Linienflügen."
+underneath, which is the whole §5.2 argument working as designed.
+
+**Why "Ballon":** Doc 8643's `BALL` is the *generic* balloon designator, so the warmer word
+would confidently mislabel a gas balloon. It is a small lie for a small gain in warmth, and
+this device's entire claim on him is that it does not lie. "Ballon" also matches
+`ac_category_de()`'s word for emitter category B2 — one thing, one way (D36).
+
+**Two calls left as the table has them**, both defensible and both worth a second opinion
+from someone who knows the field:
+
+- **Warbirds are `AC_CAT_PRIVATE`, not military.** A Spitfire, a Ju 52 or a T-6 flying today
+  is privately operated, so "Eine Route gibt es nur bei Linienflügen." is the *true*
+  sentence for it. Categorising by what the airframe was built for rather than by what it is
+  doing would produce a sentence about public flight plans that does not apply.
+- **Five class designators** (GLID, BALL, GYRO, SHIP, ULAC) repeat the same German word in
+  all four text fields. That is deliberate: `manufacturer` cannot be `"-"`, because
+  `actype_is_placeholder()` reads that as "unidentified" and would demote a glider squawking
+  A1 to "Leichtflugzeug".
+
+Thirteen designators from the brief were left out because they could not be confirmed
+(ARCP, HU1, SZD5, TWIN, PK20, K126, SIRA and others). That is the right trade: a wrong
+designator shows him the wrong aircraft with total confidence, which is worse than
+"Unbekanntes Flugzeug" — and the device now logs every miss, so the gaps name themselves.
