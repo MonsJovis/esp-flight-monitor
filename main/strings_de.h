@@ -116,9 +116,6 @@
  * uses for this exact aircraft, so the two screens name one thing one way. */
 #define STR_TAG_NEAREST        "ÜBER DIR"
 
-/* A count, not a cramped fifth row. */
-#define FMT_OVERFLOW           "+%d weitere"
-
 #define STR_EMPTY_SKY          "Der Himmel ist frei."
 
 /* ---- Einstellungen ---------------------------------------------------- */

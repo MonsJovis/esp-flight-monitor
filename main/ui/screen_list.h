@@ -5,16 +5,23 @@
  * ⚠️ DESIGN.md §3's warning is why this file exists in this shape: "as drawn,
  * §5.4 is below even the near floor — list secondary lines at 12 px ... the
  * room exists, since the list shows five rows in 300 px and could show four."
- * This implementation makes that trade explicitly: FOUR fixed rows, no
- * scrolling, every line of body text >=24 px (the near-tier floor, ~40 cm
- * viewing distance). A fifth-and-beyond aircraft is summarised as a single
- * "+N weitere" count line instead of a fifth cramped row.
+ * The row height that follows from it is not negotiable: every line of body
+ * text is >=24 px (the near-tier floor, ~40 cm viewing distance), which means
+ * roughly four rows fit the panel at a time.
+ *
+ * It does NOT follow that only four aircraft are reachable. The list SCROLLS
+ * vertically through everything in range, up to MAX_AIRCRAFT (flight_types.h)
+ * — full-size rows and all of the traffic, rather than a choice between the
+ * two. The count header stays pinned above the scrolling column, so the
+ * number of aircraft is on screen wherever he has scrolled to.
  *
  * Like screen_overhead.c and screen_wifi.c, the widget tree (chrome line,
- * the 4-row pool, the overflow line, the empty-sky sentence) is built ONCE
- * and only ever shown/hidden/re-texted afterwards — no widget is created or
- * destroyed after screen_list_create() returns, so calling
- * screen_list_update() on every poll never grows the object tree.
+ * the row pool, the empty-sky sentence) is built ONCE and only ever moved,
+ * shown/hidden and re-texted afterwards — no widget is created or destroyed
+ * after screen_list_create() returns, so neither a poll nor a scroll grows
+ * the object tree. The pool is sized to the VIEWPORT, not to MAX_AIRCRAFT,
+ * and recycled as he scrolls: LVGL's heap here is a fixed 64 KiB pool and a
+ * row per aircraft does not fit in it. screen_list.c has the measurements.
  */
 #pragma once
 #include "lvgl.h"
@@ -45,11 +52,18 @@ void screen_list_create(lv_obj_t *parent);
  *                 re-sort). `ac[0]`, if it exists, is rendered as the
  *                 nearest row and gets the "ÜBER DIR" marker + THEME_SURFACE_SEL
  *                 fill (never colour alone — DO-257A §2.1.6).
- *                 Only the first 4 entries are ever shown as rows; anything
- *                 beyond that is folded into the "+N weitere" count line
- *                 instead of a fifth row. `n <= 0` renders the empty-sky
- *                 sentence instead of an empty list (AGENTS.md §1: never a
- *                 blank panel).
+ *                 Every entry gets a row of its own, reachable by scrolling;
+ *                 `n` is capped at MAX_AIRCRAFT, which is the pool depth and
+ *                 also the most the data model can produce. `n <= 0` renders
+ *                 the empty-sky sentence instead of an empty list
+ *                 (AGENTS.md §1: never a blank panel), and the column is
+ *                 hidden outright so there is nothing to scroll.
+ *
+ *                 The scroll position is preserved across calls — ordinary
+ *                 churn must not jerk the list out from under him mid-read —
+ *                 and rewound to the top only when he leaves the page or
+ *                 when most of the aircraft he was looking at have left the
+ *                 area. screen_list.c documents both rules where they live.
  * `routes`/`n_routes` - resolved routes to look up each visible aircraft's
  *                 destination in (via route_find(), main/net/route_parse.h).
  *                 A row whose callsign has no usable route (route_find()

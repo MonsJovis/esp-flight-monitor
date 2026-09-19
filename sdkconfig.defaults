@@ -150,3 +150,18 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
 CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y
+
+# ---- LVGL allocator (docs/DECISIONS.md D58) -------------------------------
+# LVGL's default is a FIXED 64 KiB static pool, and when it runs out it does
+# not degrade — lv_obj_add_style() takes NULL back from the allocator and
+# dereferences it. Opening the WLAN screen panicked the device with
+# LoadProhibited at EXCVADDR 0x00000008, every time, on the one path he needs
+# to join a new network. That screen builds its full-screen lv_keyboard
+# eagerly, so it was never going to fit beside the deck.
+#
+# Growing the pool is not available: it is static internal DRAM, and this
+# board runs with ~23 KB of internal heap free in steady state, so the 32 KiB
+# the pool would need does not exist. Routing LVGL through the system
+# allocator does work — small objects still land in internal RAM, and the
+# allocator spills to the 4.6 MB of free PSRAM when it cannot.
+CONFIG_LV_USE_CLIB_MALLOC=y

@@ -119,6 +119,7 @@ _NON_UI_CALLS = frozenset({
     "ESP_ERROR_CHECK",
     "printf", "fprintf", "vprintf", "vfprintf", "puts", "fputs", "perror",
     "log_memory_budget",          # main.c: formats one ESP_LOGI line
+    "lvgl_mem_report",            # main.c: formats one ESP_LOGW line
     "dbg_bench_run",              # main/debug: a developer benchmark screen
 
     # Byte comparison and search. The argument is a value being matched, not a

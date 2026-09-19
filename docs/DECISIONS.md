@@ -1181,3 +1181,47 @@ term meaning the opposite of what it labelled. Those are wrong in a way he could
 by. "Flugzeuge" for a helicopter is imprecise in a way he would use himself. Correctness is
 not negotiable; register is his call, and this is the third time it has gone against my
 instinct.
+
+## D58 — The WLAN screen crashed the device, twice over
+
+Opening WLAN panicked the panel with `LoadProhibited`, `EXCVADDR 0x00000008`, **every
+time** — on the one path he needs to join a new network, while sitting in a holiday
+apartment whose WiFi had just stopped working. Two independent bugs, one hiding the other.
+
+**One: LVGL's heap is a fixed 64 KiB static pool, and it does not fail gracefully.**
+`CONFIG_LV_USE_STDLIB_MALLOC=0` gives LVGL a static array; when it is exhausted
+`lv_obj_add_style()` takes NULL back from the allocator and dereferences it at offset 8 —
+which is exactly the fault address. Measured on the device: the deck uses 45% of the pool,
+Einstellungen 60-64%, and `screen_wifi_create()` builds its full-screen `lv_keyboard`
+**eagerly**, which does not fit in what is left. It never could.
+
+Growing the pool was not available. It is static internal DRAM, and this board ran with
+~23 KB of internal heap free in steady state, so the 32 KiB the pool needed did not exist.
+`CONFIG_LV_USE_CLIB_MALLOC=y` routes LVGL through the system allocator instead: small
+objects still land in internal RAM, and it spills into the 4.6 MB of free PSRAM when they
+cannot. **Internal free heap went the other way — 23 KB to 55 KB — because the 64 KiB
+static pool went back to the heap it had been carved out of.**
+
+**Two: the WiFi scan task writes into a screen that may no longer exist.** With the
+allocation fixed, the screen opened — and then 12 of 40 rapid navigations still panicked.
+`wifi_scan_task` finishes three to five seconds after the screen opens and calls
+`screen_wifi_set_networks()`; if the overlay was closed in between, every pointer in
+`screen_wifi.c` is dangling. That is precisely what he does when he opens WLAN, reads
+"Suche Netzwerke...", and taps Zurück without waiting.
+
+The guard is a liveness flag **cleared by LVGL itself** through `LV_EVENT_DELETE` on the
+screen's root, not by anything remembering to call a teardown function. Set last in
+`create()`, because until every widget exists there is nothing safe to write into. After:
+**0 of 40.**
+
+**Why neither was found before.** The WLAN screen had been opened exactly once on the
+device, straight from the deck, at a moment when the pool happened to have room — and the
+screenshot looked perfect. The use-after-free needs the scan to outlive the screen, which
+slow deliberate tapping never produces. Both were found by stress-navigating, which is
+worth doing on every screen that allocates or that anything writes to asynchronously.
+
+**A note on the fixed pool as a design.** A static pool is chosen for determinism, and
+determinism is the right instinct for this device. But it only pays if exhaustion is
+handled, and LVGL's is not — it is a NULL dereference in a library function, with a
+backtrace pointing at whichever widget happened to be unlucky. Determinism that ends in a
+panic is not determinism.

@@ -713,6 +713,23 @@ static void update_console(void)
     }
 }
 
+/* LVGL's heap, which is NOT the system heap: CONFIG_LV_USE_STDLIB_MALLOC=0
+ * means it is a fixed static pool of CONFIG_LV_MEM_SIZE bytes, and when it
+ * runs out LVGL does not crash — it logs and silently fails to build a
+ * widget. A screen that is missing a button looks like a layout bug. Worth a
+ * key of its own, because the only alternative is guessing. */
+static void lvgl_mem_report(const char *when)
+{
+    display_lock(0);
+    lv_mem_monitor_t m;
+    lv_mem_monitor(&m);
+    display_unlock();
+    ESP_LOGW(TAG, "LVGL heap %-22s used %6u / %6u B (%2u%%)  free %6u  largest %6u  frag %u%%",
+             when, (unsigned)(m.total_size - m.free_size), (unsigned)m.total_size,
+             (unsigned)m.used_pct, (unsigned)m.free_size,
+             (unsigned)m.free_biggest_size, (unsigned)m.frag_pct);
+}
+
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '4') {
@@ -738,6 +755,7 @@ static void on_cmd(char c)
     else if (c == 'k') open_wifi();
     else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
+    else if (c == 'v') lvgl_mem_report("on demand");
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
 }
 

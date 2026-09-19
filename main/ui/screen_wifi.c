@@ -113,6 +113,31 @@ static lv_obj_t *s_pw_lbl_network;
 static lv_obj_t *s_pw_ta;
 static lv_obj_t *s_pw_toggle_lbl;
 static lv_obj_t *s_pw_kb;
+
+/* True only while this screen's widgets exist.
+ *
+ * The WiFi scan runs on its own task and calls screen_wifi_set_networks()
+ * whenever it finishes — typically three to five seconds after the screen
+ * opened. If the overlay was closed in the meantime, every pointer in this
+ * file is dangling, and the scan task writes through all of them. That is
+ * exactly what he does when he opens WLAN, reads "Suche Netzwerke...", and
+ * taps Zurück without waiting: LoadProhibited in lv_obj_set_width(), from
+ * wifi_scan_task, and the device reboots.
+ *
+ * Cleared by LVGL itself: nav_close_overlay() deletes the overlay, LVGL
+ * deletes the children, and LV_EVENT_DELETE on s_main tells us. Nothing else
+ * has to remember to call anything, which is the only version of this that
+ * stays true. */
+static bool s_alive;
+
+static void on_main_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_alive = false;
+    s_main  = NULL;
+    s_pw    = NULL;
+}
+
 static char      s_pw_ssid[SCREEN_WIFI_SSID_LEN];
 
 static wifi_join_cb   s_join_cb;
@@ -205,6 +230,11 @@ static void set_status_connecting(const char *ssid)
 
 void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scanning)
 {
+    /* The screen may have been closed since whoever is calling last looked —
+     * the scan task in particular finishes seconds later. */
+    if (!s_alive) {
+        return;
+    }
     char buf[64];
 
     /* `scanning` wins over everything else: a rescan while still
@@ -342,6 +372,11 @@ static void update_row(int idx, const char *ssid, bool saved)
 void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
                               const char saved[][SCREEN_WIFI_SSID_LEN], int n_saved)
 {
+    /* The screen may have been closed since whoever is calling last looked —
+     * the scan task in particular finishes seconds later. */
+    if (!s_alive) {
+        return;
+    }
     if (n < 0) {
         n = 0;
     }
@@ -487,6 +522,7 @@ void screen_wifi_create(lv_obj_t *parent)
 {
     /* ---------- s_main ---------- */
     s_main = lv_obj_create(parent);
+    lv_obj_add_event_cb(s_main, on_main_deleted, LV_EVENT_DELETE, NULL);
     lv_obj_remove_style_all(s_main);
     lv_obj_set_size(s_main, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
     lv_obj_set_pos(s_main, 0, 0);
@@ -623,6 +659,10 @@ void screen_wifi_create(lv_obj_t *parent)
     lv_obj_set_pos(s_pw_kb, 0, py);
     lv_obj_set_size(s_pw_kb, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT - py);
     lv_keyboard_set_mode(s_pw_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+
+    /* Last, deliberately: until every widget exists there is nothing safe
+     * for the scan task to write into. */
+    s_alive = true;
 }
 
 void screen_wifi_set_join_cb(wifi_join_cb cb)
