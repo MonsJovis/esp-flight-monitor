@@ -94,7 +94,24 @@ static int name_is_or_starts_with_code(const char *code, const char *name)
  * really emits these; what this file owns is the other half of the contract --
  * that each ROW carries the category which lands on the right sentence. A
  * glider filed as AC_CAT_AIRLINER compiles, sorts and looks fine in review, and
- * then tells him "Eine Route gibt es nur bei Linienflügen." about a sailplane. */
+ * then tells him "Eine Route gibt es nur bei Linienflügen." about a sailplane.
+ *
+ * READ THIS BEFORE EDITING IT. This is a HAND-WRITTEN MIRROR and it can drift.
+ * Nothing links it to fill_reason(): if that switch changes its category ->
+ * sentence mapping and this one does not, every assertion below keeps passing
+ * while its failure message names the wrong sentence. The drift is in the
+ * DIAGNOSTIC, not in the coverage -- the end-to-end mapping is proved by
+ * test_view.c, which keeps its own deliberate second copy of the five German
+ * sentences (see the header of test/host/test_view.c for why a second copy and
+ * not an include).
+ *
+ * So if the sentences or the mapping change, three places move together:
+ *   1. main/strings_de.h            -- the sentence itself
+ *   2. main/data/view_build.c       -- fill_reason(), which category says what
+ *   3. test/host/test_view.c        -- the second copy of the sentences, which
+ *                                      is what actually fails and tells you
+ *   ... and then this switch, so the rows below keep being checked against the
+ *   mapping that really ships. Keep it a mirror; do not grow logic in it. */
 static const char *reason_for_category(ac_category_t cat)
 {
     switch (cat) {
@@ -234,10 +251,15 @@ int main(void)
             } else {
                 printf("      actype(\"%s\") returned NULL\n", fixture_types[i]);
             }
-            /* actype_full_or_code must always produce something displayable. */
+            /* actype_full_or_code must always produce something displayable.
+             * Same shape as everywhere else in this file: the deref only
+             * happens once the null check has actually held, because CHECK
+             * does not stop the run. */
             const char *full = actype_full_or_code(fixture_types[i]);
             CHECK(full != NULL);
-            CHECK(full[0] != '\0');
+            if (full != NULL) {
+                CHECK(full[0] != '\0');
+            }
         }
     }
 
@@ -708,8 +730,15 @@ int main(void)
         }
 
         /* A category mismatch here is worse than a wrong size_class string --
-         * it drives DESIGN.md §5.2's explanation of *why* a route is absent. */
-        CHECK(airliner->category != ga->category);
+         * it drives DESIGN.md §5.2's explanation of *why* a route is absent.
+         *
+         * Inside the guard, not after it: CHECK records and CONTINUES, so a
+         * dereference outside the null check runs precisely on the run where
+         * the lookup returned NULL. The test would then segfault instead of
+         * failing, and a crashing suite reports nothing at all. */
+        if (airliner != NULL && ga != NULL) {
+            CHECK(airliner->category != ga->category);
+        }
     }
 
     GROUP("German exonyms vs. deliberately-unchanged local names");
@@ -729,8 +758,17 @@ int main(void)
         CHECK_STR(airport_de("LZIB"), "Bratislava");
         CHECK_STR(airport_de("LRCL"), "Klausenburg");
         /* No name may contain a parenthetical alternative -- the hero shows
-         * exactly one name. */
-        CHECK(strchr(airport_de("LRCL"), '(') == NULL);
+         * exactly one name. Via a local with a null guard: airport_de()
+         * returns NULL for a key it does not know, CHECK_STR above records
+         * that and carries on, and strchr(NULL, ...) is a segfault rather
+         * than a test result. */
+        {
+            const char *lrcl = airport_de("LRCL");
+            CHECK(lrcl != NULL);
+            if (lrcl != NULL) {
+                CHECK(strchr(lrcl, '(') == NULL);
+            }
+        }
         /* No invented German exonym for these -- Austrian usage keeps the
          * local spelling (AGENTS.md §1, the design note in the task brief). */
         CHECK_STR(airport_de("EHAM"), "Amsterdam");

@@ -254,19 +254,37 @@ static void test_dst_unknown_end_to_end(void)
 /* ---- real fixture: VIEW_OVERHEAD ------------------------------------------ */
 
 /* Keeps the models built here around so the final "no English leaks" test
- * can scan all of them without re-parsing. */
-#define N_SCAN_MODELS 8
+ * can scan all of them without re-parsing.
+ *
+ * This array was 8 long while 17 models were handed to it, and the nine that
+ * did not fit were DROPPED IN SILENCE. The gate below still printed a
+ * confident number of checks, having never looked at half its evidence --
+ * which is worse than no gate at all, because a gate that reports a number is
+ * believed. Two things stop that coming back: room to spare, and running out
+ * being a loud failure instead of a quiet return. */
+#define N_SCAN_MODELS 64
+
+/* How many models the gate must find waiting for it. Asserted EXACTLY, not as
+ * "> 0": a collector that truncates, or that stops being called from half the
+ * tests, is invisible to "> 0". Adding a remember_for_scan() call means
+ * bumping this by hand, on purpose -- that is the whole point of it. */
+#define N_SCAN_EXPECTED 17
+
 static view_model_t g_scan_models[N_SCAN_MODELS];
 static const char  *g_scan_labels[N_SCAN_MODELS];
 static int          g_scan_count = 0;
 
 static void remember_for_scan(const char *label, const view_model_t *vm)
 {
-    if (g_scan_count < N_SCAN_MODELS) {
-        g_scan_labels[g_scan_count] = label;
-        g_scan_models[g_scan_count] = *vm;
-        g_scan_count++;
+    if (g_scan_count >= N_SCAN_MODELS) {
+        FAIL_("remember_for_scan: full at %d models -- \"%s\" and everything "
+              "after it would never reach the English gate. Raise N_SCAN_MODELS.",
+              N_SCAN_MODELS, label);
+        return;
     }
+    g_scan_labels[g_scan_count] = label;
+    g_scan_models[g_scan_count] = *vm;
+    g_scan_count++;
 }
 
 static void test_overhead_dlh1jn_munich_via_klausenburg(void)
@@ -695,7 +713,14 @@ static void test_net_state_round_trip(void)
     static const net_state_t states[] = { NET_OK, NET_NO_WIFI, NET_NO_DATA };
 
     for (size_t i = 0; i < sizeof states / sizeof states[0]; i++) {
-        time_t now = 1789000000;
+        /* A struct tm, not a time_t. These three sites passed &(time_t) to a
+         * const struct tm * parameter for as long as they existed: a
+         * -Wincompatible-pointer-types warning, and view_build then read
+         * tm_hour, tm_mday and the rest out of the stack bytes after an
+         * 8-byte long. The clock and date_line of nine of the seventeen
+         * models the English gate scans were built from that garbage -- which
+         * only stopped mattering the moment the gate stopped dropping them. */
+        struct tm now = make_now();
 
         aircraft_t ac;
         memset(&ac, 0, sizeof ac);
@@ -753,7 +778,7 @@ static void test_hero_is_never_a_bare_code(void)
         ac.dst_nm = 2.5f;
         ac.dir_deg = 270.0f;
 
-        time_t now = 1789000000;
+        struct tm now = make_now();
         view_model_t vm;
         view_build(&ac, NULL, &now, 1, NET_OK, &vm);
 
@@ -783,7 +808,7 @@ static void test_hero_is_never_a_bare_code(void)
         snprintf(ac.type, sizeof ac.type, "A20N");
         ac.alt_ft = 31000;
         ac.dst_nm = 9.0f;
-        time_t now = 1789000000;
+        struct tm now = make_now();
         view_model_t vm;
         view_build(&ac, NULL, &now, 1, NET_OK, &vm);
         CHECK(strcmp(vm.hero, "Unbekanntes Flugzeug") != 0);
@@ -794,20 +819,76 @@ static void test_hero_is_never_a_bare_code(void)
 
 /* ---- the gate: no English may leak into any output field ----------------- */
 
-static const char *const GIVEAWAY_WORDS[] = {
-    "Vienna", "Munich", "Prague", "Airport", "unknown", "null", "None",
-    /* M7 additions. The first group is more English that a table or an API
-     * could push through untranslated; the second is not English at all but
-     * belongs in the same gate, because each one reaches the panel the same
-     * way — as text he reads that means the device is broken. */
-    "undefined", "Unknown", "Error", "Failed", "Loading", "N/A",
-    "NaN", "(null)", "nil", "TODO", "FIXME",
+/* How a needle is matched against a field.
+ *
+ * The distinction is not pedantry. Plain substring matching — what this gate
+ * did until the boundaries below — reports "nil" inside *Manila*, and "NaN"
+ * inside *Nantes*, *Nanjing*, *Nan*, *Penang*, *Da Nang*, *Antananarivo*,
+ * *Hainan Airlines* and *Beechcraft Bonanza*. Every one of those is a correct
+ * shipped row of main/data/tbl_airport.c, tbl_airline.c or tbl_actype.c, and a
+ * gate whose failure message asserts that correct German and real proper nouns
+ * are English teaches the next person to delete the rule rather than the leak.
+ *
+ * A boundary fix that also disarms the detector is not a fix, so both halves —
+ * still bites, no longer bites correct German — are asserted by
+ * test_english_detector_itself() below rather than assumed. */
+typedef enum {
+    /* Must stand alone: not a run of letters buried inside a longer name. */
+    MATCH_WORD = 0,
+    /* Anywhere. These byte sequences have no legitimate place in any German
+     * sentence, city name or type designator, so any occurrence is a find. */
+    MATCH_ANY,
+} giveaway_match_t;
+
+typedef struct {
+    const char       *word;
+    giveaway_match_t  match;
+    bool              case_sensitive;   /* false = fold ASCII case before matching */
+} giveaway_t;
+
+static const giveaway_t GIVEAWAY_WORDS[] = {
+    /* English a table or an API could push through untranslated. */
+    { "Vienna",    MATCH_WORD, false },
+    { "Munich",    MATCH_WORD, false },
+    { "Prague",    MATCH_WORD, false },
+    { "Airport",   MATCH_WORD, false },
+    /* "unknown" and "Unknown" were two entries in this list and, after
+     * lowercasing, one needle — a duplicate that cost a check per field and
+     * bought nothing. One entry, matched case-insensitively. */
+    { "unknown",   MATCH_WORD, false },
+    { "undefined", MATCH_WORD, false },
+    { "None",      MATCH_WORD, false },
+    { "Error",     MATCH_WORD, false },
+    { "Failed",    MATCH_WORD, false },
+    { "Loading",   MATCH_WORD, false },
+    { "TODO",      MATCH_WORD, false },
+    { "FIXME",     MATCH_WORD, false },
+    /* Not English at all, but each reaches the panel the same way: as text he
+     * reads that means the device is broken. */
+    { "null",      MATCH_WORD, false },
+    { "nil",       MATCH_WORD, false },   /* ... and never Ma-nil-a */
+    { "(null)",    MATCH_ANY,  false },
+    /* Case IS the signal for these two. "NaN" is the IEEE spelling; "Nan" is a
+     * province and an airport in northern Thailand — the country this device
+     * spends half the year in. Folding case here would fail on a real
+     * destination and call it a bug. */
+    { "NaN",       MATCH_WORD, true  },
+    { "N/A",       MATCH_ANY,  true  },
     /* An unsubstituted conversion specification in an output field means a
      * format string reached the screen instead of its result. Nothing in
      * German, or in any airport/airline/type name, contains "%s" or "%d". */
-    "%s", "%d",
+    { "%s",        MATCH_ANY,  false },
+    { "%d",        MATCH_ANY,  false },
 };
 #define N_GIVEAWAY (sizeof(GIVEAWAY_WORDS) / sizeof(GIVEAWAY_WORDS[0]))
+
+#define SCAN_BUF 256
+/* Truncating a field before scanning it hides every leak past the cut — the
+ * same silent loss of evidence N_SCAN_MODELS used to have. Checked at compile
+ * time so it cannot drift the day a field grows. */
+_Static_assert(SCAN_BUF > VIEW_REASON_LEN && SCAN_BUF > VIEW_LINE_LEN &&
+                   SCAN_BUF > VIEW_HERO_LEN,
+               "scan buffer must hold the longest view_model_t field whole");
 
 static void ascii_lower_copy(char *dst, size_t dst_sz, const char *src)
 {
@@ -818,22 +899,60 @@ static void ascii_lower_copy(char *dst, size_t dst_sz, const char *src)
     dst[i] = '\0';
 }
 
+/* A byte that can be part of a word. Everything >= 0x80 counts: those are the
+ * UTF-8 bytes of "München", "Zürich" and "Militärflüge" as they are really
+ * spelt, and a needle glued to one is not standing alone either. */
+static bool word_byte(unsigned char c)
+{
+    return isalnum(c) != 0 || c == '_' || c >= 0x80;
+}
+
+static bool contains_needle(const char *hay, const char *needle, giveaway_match_t m)
+{
+    size_t nlen = strlen(needle);
+    if (nlen == 0) {
+        return false;
+    }
+    for (const char *p = strstr(hay, needle); p != NULL; p = strstr(p + 1, needle)) {
+        if (m == MATCH_ANY) {
+            return true;
+        }
+        bool left_free  = (p == hay) || !word_byte((unsigned char)p[-1]);
+        bool right_free = !word_byte((unsigned char)p[nlen]);
+        if (left_free && right_free) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The detector, as a pure predicate, so the self-test below can exercise it on
+ * strings that are not view models. */
+static bool field_has_giveaway(const char *value, const giveaway_t *g)
+{
+    if (value == NULL) {
+        return false;
+    }
+    if (g->case_sensitive) {
+        return contains_needle(value, g->word, g->match);
+    }
+    char lower[SCAN_BUF], needle[32];
+    ascii_lower_copy(lower, sizeof lower, value);
+    ascii_lower_copy(needle, sizeof needle, g->word);
+    return contains_needle(lower, needle, g->match);
+}
+
 static void check_field_no_english(const char *model_label, const char *field_label,
                                     const char *value)
 {
     if (value == NULL) {
         return;
     }
-    char lower[256];
-    ascii_lower_copy(lower, sizeof lower, value);
-
     for (size_t i = 0; i < N_GIVEAWAY; i++) {
-        char needle[32];
-        ascii_lower_copy(needle, sizeof needle, GIVEAWAY_WORDS[i]);
         t_run++;
-        if (strstr(lower, needle) != NULL) {
+        if (field_has_giveaway(value, &GIVEAWAY_WORDS[i])) {
             FAIL_("%s.%s = \"%s\" contains English giveaway word \"%s\"",
-                  model_label, field_label, value, GIVEAWAY_WORDS[i]);
+                  model_label, field_label, value, GIVEAWAY_WORDS[i].word);
         }
     }
 }
@@ -856,11 +975,77 @@ static void scan_model_for_english_leaks(const char *label, const view_model_t *
     check_field_no_english(label, "date_line", vm->date_line);
 }
 
+/* ---- the gate's own gate: it must still bite ----------------------------- */
+
+static bool any_giveaway(const char *value)
+{
+    for (size_t i = 0; i < N_GIVEAWAY; i++) {
+        if (field_has_giveaway(value, &GIVEAWAY_WORDS[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The English gate is only as good as its matcher, and the matcher is the part
+ * nothing else exercises: every model it scans is expected to be CLEAN, so a
+ * detector that had quietly stopped detecting would report the same "0 failed"
+ * as a product with no English in it. Word boundaries made that risk real —
+ * they exist to stop "nil" firing on Manila, and the same edit could just as
+ * easily stop "unknown" firing on "unknown".
+ *
+ * So both directions are pinned here: real leaks still fail, and real shipped
+ * German and proper nouns still pass. */
+static void test_english_detector_itself(void)
+{
+    GROUP("the English gate still bites (and no longer bites correct German)");
+
+    /* Every one of these must be caught. */
+    static const char *const leaks[] = {
+        "Vienna", "vienna", "VIENNA", "Munich", "Prague", "Munich Airport",
+        "Unknown", "unknown", "undefined", "None", "Error", "Failed",
+        "Loading", "TODO", "FIXME", "null", "(null)", "nil",
+        "NaN", "N/A", "%s", "%d",
+        /* Inside a real sentence, not only standing on its own. */
+        "Ziel: unknown", "Wien (null)", "Flug %s nach Wien",
+        "Ankunft in Vienna um 09:47", "nil km nordöstlich",
+    };
+    for (size_t i = 0; i < sizeof leaks / sizeof leaks[0]; i++) {
+        t_run++;
+        if (!any_giveaway(leaks[i])) {
+            FAIL_("the gate no longer catches the leak \"%s\"", leaks[i]);
+        }
+    }
+
+    /* And none of these may be. Each is real shipped content: a row of
+     * tbl_airport.c, tbl_airline.c or tbl_actype.c, or a string the panel
+     * renders. Before word boundaries, the first nine all failed. */
+    static const char *const clean[] = {
+        "Manila", "Nantes", "Nanjing", "Nan", "Penang", "Da Nang",
+        "Antananarivo", "Hainan Airlines", "Beechcraft Bonanza",
+        "München", "Wien", "Zürich", "Klausenburg", "Mittelstreckenjet",
+        "Airbus A320neo", "Freitag, 18. September 2026", "09:47",
+        "Unbekanntes Flugzeug", "unbekannt",
+        "Militärflüge scheinen in keinem öffentlichen Flugplan auf.",
+        "Der Flugplan ist im Moment nicht verfügbar.",
+        "16,8 km nordöstlich", "",
+    };
+    for (size_t i = 0; i < sizeof clean / sizeof clean[0]; i++) {
+        t_run++;
+        if (any_giveaway(clean[i])) {
+            FAIL_("the gate calls correct shipped text \"%s\" English", clean[i]);
+        }
+    }
+}
+
 static void test_no_english_leaks_anywhere(void)
 {
     GROUP("view_build: NO English may leak into any output field (the gate)");
 
-    CHECK(g_scan_count > 0);
+    /* Not "> 0". The array used to hold 8 of the 17 models built above and
+     * silently discarded the rest, so half of this gate never ran while it
+     * reported a check count as if it had. */
+    CHECK_INT(g_scan_count, N_SCAN_EXPECTED);
     for (int i = 0; i < g_scan_count; i++) {
         scan_model_for_english_leaks(g_scan_labels[i], &g_scan_models[i]);
     }
@@ -892,6 +1077,7 @@ int main(void)
     /* Must run last: it scans every model remember_for_scan() collected above. */
     test_net_state_round_trip();
     test_hero_is_never_a_bare_code();
+    test_english_detector_itself();
     test_no_english_leaks_anywhere();
 
 

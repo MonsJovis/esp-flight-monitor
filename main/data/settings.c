@@ -2,8 +2,6 @@
 #include <string.h>
 #include "compat.h"
 
-static const char *TAG = "settings";
-
 /* The two places this device lives. Coordinates verified in AGENTS.md §6;
  * both were measured for traffic density before being chosen. */
 static const struct {
@@ -134,6 +132,13 @@ void settings_sanitise(settings_t *s)
 }
 
 #ifndef HOST_TEST
+
+/* Declared inside the device-only block because its one use is: on the host
+ * build there is no persistence and therefore no log line, and an unused TAG
+ * at file scope is a warning in every host suite. Warning noise is not
+ * cosmetic — a real -Wincompatible-pointer-types in test_view.c hid behind
+ * exactly this kind of chatter for a whole session. */
+static const char *TAG = "settings";
 #include "nvs.h"
 #include "nvs_flash.h"
 

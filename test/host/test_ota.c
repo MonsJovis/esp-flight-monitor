@@ -128,9 +128,43 @@ static void test_version_cmp(void)
 
     GROUP("ota_version_cmp: absurd components clamp, they do not wrap");
     /* A wrapped component could make an OLD build compare as newer, which is
-     * the one failure mode here with teeth. */
+     * the one failure mode here with teeth.
+     *
+     * "99999999999" alone does NOT test that: unguarded, it wraps to
+     * 1215752191 — still huge, still positive, so the assertion holds either
+     * way and deleting the clamp survives the whole suite. The input that
+     * catches it is 2^32, which wraps to exactly 0:
+     *
+     *                                    with clamp   without
+     *     cmp("4294967296.0.0", "1.0.0")     +1         -1
+     *     cmp("99999999999.0.0","1.0.0")     +1         +1
+     */
+    CHECK(ota_version_cmp("4294967296.0.0", "1.0.0") > 0);      /* 2^32 -> 0 */
+    CHECK(ota_version_cmp("1.0.0", "4294967296.0.0") < 0);
+    CHECK(ota_version_cmp("0.4294967296.0", "0.1.0") > 0);      /* and not only in the first component */
     CHECK(ota_version_cmp("99999999999.0.0", "1.0.0") > 0);
     CHECK(ota_version_cmp("1.0.0", "99999999999.0.0") < 0);
+    /* "Does not go negative" is only half the contract. A clamp that stops
+     * accumulating part-way is not saturating: at a ceiling of 100000,
+     * "1000000" came out as 100000 while "999999" came out whole, so the
+     * LARGER version compared as smaller — the old-build-looks-newer failure
+     * this group exists to prevent, moved further up the number line rather
+     * than removed. Ordering has to survive the clamp boundary. */
+    CHECK(ota_version_cmp("1000000.0.0", "999999.0.0") > 0);
+    CHECK(ota_version_cmp("100000.0.0", "99999.0.0") > 0);
+    CHECK(ota_version_cmp("4294967296.0.0", "4294967295.0.0") > 0);
+    /* Monotonic all the way up the ladder, not just at one step. */
+    {
+        static const char *const ascending[] = {
+            "9.0.0", "99.0.0", "999.0.0", "9999.0.0", "99999.0.0",
+            "100000.0.0", "999999.0.0", "1000000.0.0", "99999999.0.0",
+            "4294967295.0.0", "4294967296.0.0",
+        };
+        for (unsigned i = 1; i < sizeof ascending / sizeof ascending[0]; i++) {
+            CHECK(ota_version_cmp(ascending[i], ascending[i - 1]) > 0);
+            CHECK(ota_version_cmp(ascending[i - 1], ascending[i]) < 0);
+        }
+    }
 }
 
 /* ---- the midnight wrap -------------------------------------------------- */

@@ -75,7 +75,13 @@ int main(void)
         for (int i = 0; i < LOC_COUNT; i++) {
             location_preset_t p = location_display_order(i);
             CHECK(p >= 0 && p < LOC_COUNT);
-            seen[p]++;
+            /* CHECK records and CONTINUES. Without this guard, the very
+             * failure above is followed by seen[p]++ writing off the end of
+             * a stack array — so the one run that has something to report
+             * corrupts the stack instead of reporting it. */
+            if (p >= 0 && p < LOC_COUNT) {
+                seen[p]++;
+            }
         }
         for (int i = 0; i < LOC_COUNT; i++) CHECK_INT(seen[i], 1);
 
@@ -128,35 +134,57 @@ int main(void)
         CHECK_INT(s.dim_from_hour, 22);
         CHECK_INT(s.dim_to_hour, 7);
 
+        /* The two brightness levels, pinned to their actual values rather
+         * than read back out of the same struct the assertions compare
+         * against. Every check below used to read both sides from this one
+         * settings_defaults() call, which made the whole group tautological:
+         * setting the default dim_brightness_pct to 100 satisfied all
+         * fourteen at once, Nachtabsenkung quietly stopped lowering anything
+         * on the device, and the suite reported 0 failed. */
+        CHECK_INT(s.brightness_pct, 100);
+        CHECK_INT(s.dim_brightness_pct, 25);
+        /* And the property that makes the feature a feature. Whatever the two
+         * numbers become, dim has to be dimmer. */
+        CHECK(s.dim_brightness_pct < s.brightness_pct);
+
         /* 22:00-07:00 wraps midnight — the normal case, and the one an
-         * inclusive-range implementation gets wrong. */
-        CHECK_INT(settings_brightness_for_hour(&s, 22), s.dim_brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 23), s.dim_brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s,  0), s.dim_brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s,  6), s.dim_brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s,  7), s.brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 12), s.brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 21), s.brightness_pct);
+         * inclusive-range implementation gets wrong. Literal 25 / 100, not
+         * s.dim_brightness_pct / s.brightness_pct, for the reason above. */
+        CHECK_INT(settings_brightness_for_hour(&s, 22), 25);
+        CHECK_INT(settings_brightness_for_hour(&s, 23), 25);
+        CHECK_INT(settings_brightness_for_hour(&s,  0), 25);
+        CHECK_INT(settings_brightness_for_hour(&s,  6), 25);
+        CHECK_INT(settings_brightness_for_hour(&s,  7), 100);
+        CHECK_INT(settings_brightness_for_hour(&s, 12), 100);
+        CHECK_INT(settings_brightness_for_hour(&s, 21), 100);
 
         /* Switched off, it is always full brightness. */
         s.auto_dim = false;
-        CHECK_INT(settings_brightness_for_hour(&s, 23), s.brightness_pct);
+        CHECK_INT(settings_brightness_for_hour(&s, 23), 100);
 
         /* A non-wrapping window still works. */
         s.auto_dim = true; s.dim_from_hour = 1; s.dim_to_hour = 5;
-        CHECK_INT(settings_brightness_for_hour(&s, 0), s.brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 3), s.dim_brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 5), s.brightness_pct);
+        CHECK_INT(settings_brightness_for_hour(&s, 0), 100);
+        CHECK_INT(settings_brightness_for_hour(&s, 3), 25);
+        CHECK_INT(settings_brightness_for_hour(&s, 5), 100);
 
         /* An empty window dims nothing rather than everything. */
         s.dim_from_hour = 4; s.dim_to_hour = 4;
         for (int h = 0; h < 24; h++) {
-            CHECK_INT(settings_brightness_for_hour(&s, h), s.brightness_pct);
+            CHECK_INT(settings_brightness_for_hour(&s, h), 100);
         }
 
         /* Out-of-range hours must not dim by accident. */
-        CHECK_INT(settings_brightness_for_hour(&s, -1), s.brightness_pct);
-        CHECK_INT(settings_brightness_for_hour(&s, 24), s.brightness_pct);
+        CHECK_INT(settings_brightness_for_hour(&s, -1), 100);
+        CHECK_INT(settings_brightness_for_hour(&s, 24), 100);
+
+        /* The two levels are still whatever they were asked to be, not the
+         * defaults: a dim level that only ever equals 25 would pass
+         * everything above while ignoring the setting he actually changed. */
+        settings_defaults(&s);
+        s.brightness_pct = 80; s.dim_brightness_pct = 15;
+        CHECK_INT(settings_brightness_for_hour(&s, 23), 15);
+        CHECK_INT(settings_brightness_for_hour(&s, 12), 80);
     }
 
     GROUP("sanitise: a bad blob must never produce a black screen");
@@ -187,12 +215,35 @@ int main(void)
         settings_sanitise(&s);
         CHECK(s.dim_brightness_pct <= s.brightness_pct);
 
-        /* An out-of-range custom coordinate falls back rather than polling it. */
+        /* An out-of-range custom coordinate falls back rather than polling it.
+         *
+         * Asserting only "now in range" does not say that. Clamping 300.0 to
+         * 90.0 and -9999.0 to -180.0 satisfies a range check perfectly, and
+         * leaves the device politely polling the North Pole in the Bering
+         * Sea — a place with no traffic, which looks exactly like a broken
+         * radar. The value has to be Gloggnitz. */
         settings_defaults(&s);
         s.preset = LOC_CUSTOM; s.custom_lat = 300.0; s.custom_lon = -9999.0;
         settings_sanitise(&s);
+        CHECK_NEAR(s.custom_lat, 47.6691, 0.0001);   /* Semmeringstraße 11 */
+        CHECK_NEAR(s.custom_lon, 15.9303, 0.0001);
         CHECK(s.custom_lat >= -90.0 && s.custom_lat <= 90.0);
         CHECK(s.custom_lon >= -180.0 && s.custom_lon <= 180.0);
+        /* And the coordinates the device would actually poll follow it. */
+        {
+            double flat = 0, flon = 0;
+            settings_coords(&s, &flat, &flon);
+            CHECK_NEAR(flat, 47.6691, 0.0001);
+            CHECK_NEAR(flon, 15.9303, 0.0001);
+        }
+
+        /* A custom coordinate that IS valid must survive untouched, or the
+         * fallback above would be indistinguishable from "always Gloggnitz". */
+        settings_defaults(&s);
+        s.preset = LOC_CUSTOM; s.custom_lat = 12.9211; s.custom_lon = 100.8721;
+        settings_sanitise(&s);
+        CHECK_NEAR(s.custom_lat, 12.9211, 0.0001);
+        CHECK_NEAR(s.custom_lon, 100.8721, 0.0001);
 
         /* NULL is not a crash. */
         settings_sanitise(NULL);
@@ -210,6 +261,8 @@ int main(void)
          * near 4 KB instead of 60 KB at 100 nm (AGENTS.md §6). */
         CHECK_INT(s.radius_nm, 30);
         CHECK_INT(s.brightness_pct, 100);
+        CHECK_INT(s.dim_brightness_pct, 25);
+        CHECK(s.dim_brightness_pct < s.brightness_pct);
     }
 
     return test_summary();

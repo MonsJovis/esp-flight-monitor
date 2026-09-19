@@ -47,7 +47,13 @@ static const char *t_group = "";
 } while (0)
 
 /* Load a fixture from test/fixtures/. Caller frees. Fails hard — a missing
- * fixture is a broken test run, not a failing assertion. */
+ * fixture is a broken test run, not a failing assertion.
+ *
+ * Marked unused because only some suites load fixtures, and the warning it
+ * otherwise raises in the others is the kind of noise a real warning hides
+ * behind — which is exactly what happened to a -Wincompatible-pointer-types
+ * in test_view.c that turned out to be undefined behaviour. */
+__attribute__((unused))
 static char *load_fixture(const char *name)
 {
     char path[512];
