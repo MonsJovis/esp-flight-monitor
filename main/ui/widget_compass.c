@@ -141,23 +141,31 @@ void widget_compass_set_bearing(lv_obj_t *compass, float bearing_deg, const char
     snprintf(deg_buf, sizeof deg_buf, "%d°", deg);
     lv_label_set_text(s_lbl_deg, deg_buf);
 
-    int32_t marker_center = x + MARKER_SIZE / 2;
-    position_centered(s_lbl_abbr, marker_center, READOUT_Y, s_width);
-
-    /* The degree figure sits right after the abbreviation — two separate
-     * label objects placed side by side, not one string built from two
-     * fields (screen_overhead.c and this widget position strings; they do
-     * not compose them). */
+    /* The abbreviation and the degree figure are two label objects, but they
+     * read as one thing and must be placed as one thing.
+     *
+     * They used to be positioned and edge-clamped INDEPENDENTLY, which is fine
+     * until the bearing approaches 0/360: both got pushed against the right
+     * edge and landed on top of each other, printing "NNW" and "352°" as one
+     * unreadable smear. Seen on a live Pattaya poll at 352°.
+     *
+     * So: measure both, centre the PAIR on the marker, clamp the pair once,
+     * then lay them out inside it. */
     lv_obj_update_layout(s_lbl_abbr);
-    int32_t abbr_right = lv_obj_get_x(s_lbl_abbr) + lv_obj_get_width(s_lbl_abbr) + READOUT_GAP;
     lv_obj_update_layout(s_lbl_deg);
-    int32_t deg_w = lv_obj_get_width(s_lbl_deg);
-    int32_t deg_x = abbr_right;
-    if (deg_x + deg_w > s_width) {
-        deg_x = s_width - deg_w;
+    int32_t abbr_w = lv_obj_get_width(s_lbl_abbr);
+    int32_t deg_w  = lv_obj_get_width(s_lbl_deg);
+    int32_t group_w = abbr_w + READOUT_GAP + deg_w;
+
+    int32_t marker_center = x + MARKER_SIZE / 2;
+    int32_t group_x = marker_center - group_w / 2;
+    if (group_x + group_w > s_width) {
+        group_x = s_width - group_w;
     }
-    if (deg_x < 0) {
-        deg_x = 0;
+    if (group_x < 0) {
+        group_x = 0;
     }
-    lv_obj_set_pos(s_lbl_deg, deg_x, READOUT_Y);
+
+    lv_obj_set_pos(s_lbl_abbr, group_x, READOUT_Y);
+    lv_obj_set_pos(s_lbl_deg,  group_x + abbr_w + READOUT_GAP, READOUT_Y);
 }

@@ -15,6 +15,7 @@ set(SRCS
     "data/tbl_actype.c"
     "data/fmt_de.c"
     "data/view_build.c"
+    "data/settings.c"
     "net/adsb_parse.c"
     "net/route_parse.c"
     "net/source_logic.c"

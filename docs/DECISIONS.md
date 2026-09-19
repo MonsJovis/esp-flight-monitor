@@ -471,3 +471,44 @@ leaves *no software trace*. It cannot be measured from inside the firmware; it h
 looked at. `t` on the debug console therefore ends by sweeping hard-edged white bars down
 the panel for ten seconds with NVS hammering underneath, which is what a tear shows up on.
 **Still to be confirmed by eye.**
+
+## D30 — Location is one tap, and everything else follows from it
+
+**Decision:** `main/data/settings.h` — two named places plus a custom escape hatch. The
+poll coordinates, the timezone and (via the clock) the auto-dim window all derive from that
+single choice. Persisted in NVS, sanitised on every load.
+
+**Why:** AGENTS.md §6 says switching location must be one tap, not a coordinate form, and
+that the timezone must follow the place because he never sets a clock. Those are the same
+decision, so they live in the same struct. `location_tz()` sits next to the coordinates for
+exactly that reason.
+
+**Verified end to end on the device:** switched to Pattaya from a holiday apartment in
+Europe and watched it track `TGW134 | A20N | Singapore -> Xianyang | 3.5 nm NW`, with the
+panel showing **20:05 Thai time**. Survives a reboot.
+
+Two guards worth keeping:
+- A corrupt preset resolves to Gloggnitz, never to **0,0** — the middle of the Atlantic
+  would look like a broken device rather than a misconfigured one.
+- Brightness has a **floor of 10%**. A device that can be configured to invisible gives him
+  no way back, because he cannot see the control that got him there.
+
+**Auto-dim defaults ON**, per DESIGN.md §7. Someone who never opens the settings screen is
+precisely who that protects.
+
+## D31 — Two bugs the Pattaya preset exposed
+
+Switching hemispheres turned out to be a good test of things that had only ever been seen
+from one place.
+
+**The compass readout collided with itself near north.** The bearing abbreviation and the
+degree figure were positioned and edge-clamped *independently*, which is invisible until
+the bearing approaches 0/360 — then both get pushed against the right edge and land on top
+of each other. A live Pattaya poll at 352° printed "NNW" and "352°" as one smear. They are
+now measured, centred and clamped as a single group.
+
+**The airline table was Europe-shaped.** `TGW` — Scoot, the first Singapore carrier the
+device ever saw — was missing, so the airline line simply vanished. Ten Asian carriers
+added (AAR, AXM, CES, NOK, PAL, SEJ, SJX, TGW, VJC, XAX), now 206 entries. `MNA` was
+deliberately **not** added: I could not state it with confidence, and an invented airline
+name is worse on this panel than a blank line.

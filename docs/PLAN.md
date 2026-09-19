@@ -271,17 +271,17 @@ intervention and no rate-limit ban.
 **Goal:** he carries it to Thailand and it just works.
 
 - [ ] **§5.6 Einstellungen** — location preset, radius, brightness
-- [ ] Location presets: **Gloggnitz** `47.6691/15.9303`, **Pattaya** `12.9211/100.8721`, custom
-- [ ] Timezone bound to the preset — he never sets a clock (the SNTP plumbing landed in M2.5)
+- [x] Location presets: **Gloggnitz** `47.6691/15.9303`, **Pattaya** `12.9211/100.8721`, custom
+- [x] Timezone bound to the preset — he never sets a clock (the SNTP plumbing landed in M2.5)
 - [ ] **§5.7 WLAN — on-device network list, with `lv_keyboard` for passwords.** Decided
       against the captive portal: that needs a phone, a second network join and a browser,
       in a foreign country, by someone who will not read a manual. Costs one keyboard
       screen; buys a device he can fix standing in front of it.
-- [ ] **Multiple WiFi networks remembered**, not reconfigured on arrival
+- [x] **Multiple WiFi networks remembered**, not reconfigured on arrival
 - [ ] Optional: auto-select the location preset from the connected SSID
-- [ ] **Auto-dim.** DESIGN.md §7 — a glowing dark panel in a dim living room at 22:00 is
+- [x] **Auto-dim.** DESIGN.md §7 — a glowing dark panel in a dim living room at 22:00 is
       glare, and the clock is already correct, so a schedule is enough. Not optional.
-- [ ] All settings in NVS (mind the tearing interaction from M4)
+- [x] All settings in NVS (mind the tearing interaction from M4)
 
 **Done when:** unplug in Gloggnitz, plug in at Thappraya Rd, and it shows Thai traffic in
 local time without anyone touching a setting.

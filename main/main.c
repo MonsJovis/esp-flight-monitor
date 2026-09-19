@@ -30,6 +30,7 @@
 #include "net/wifi.h"
 #include "net/flight_source.h"
 #include "net/timesync.h"
+#include "data/settings.h"
 #include "net/http_get.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -111,10 +112,30 @@ static void bench_suite(void)
     font_card();
 }
 
-/* Gloggnitz — Semmeringstraße 11. The Pattaya preset and the picker are M6. */
-#define HOME_LAT   47.6691
-#define HOME_LON   15.9303
-#define HOME_RADIUS_NM 30
+/* Where the device thinks it is, and how it should look. Loaded from NVS at
+ * boot; the coordinates, the timezone and the backlight all follow from it,
+ * because he must never have to set a clock or type a coordinate. */
+static settings_t g_settings;
+
+/* Applies the whole of g_settings to the running system: the poll location, the
+ * timezone that follows it, and the backlight. Safe to call whenever something
+ * changed. */
+static void apply_settings(void)
+{
+    double lat, lon;
+    settings_coords(&g_settings, &lat, &lon);
+    flight_source_set_location(lat, lon, g_settings.radius_nm);
+    timesync_set_tz(location_tz(g_settings.preset));
+
+    time_t raw = time(NULL);
+    struct tm now;
+    localtime_r(&raw, &now);
+    bsp_display_brightness_set(settings_brightness_for_hour(&g_settings, now.tm_hour));
+
+    ESP_LOGW(TAG, "settings applied: %s (%.4f/%.4f) r=%d nm tz=%s",
+             location_name(g_settings.preset), lat, lon,
+             g_settings.radius_nm, location_tz(g_settings.preset));
+}
 
 /* Credentials are typed in here and stored in NVS. They must never appear in a
  * source file: AGENTS.md §10, and "temporarily hard-coded" is exactly how they
@@ -256,6 +277,7 @@ static void ui_task(void *arg)
     static bool       have_last_seen = false;
 
     bool sntp_started = false;
+    int  applied_hour = -1;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -264,8 +286,23 @@ static void ui_task(void *arg)
         /* Start SNTP the first time we actually have a network, whenever that
          * happens — at boot on a known network, or minutes later when someone
          * types a password in a holiday apartment. */
+        /* Auto-dim. DESIGN.md §7: a glowing dark panel in a dim living room at
+         * 22:00 is glare, and the clock is already right, so a schedule is
+         * enough. Only acted on when the hour actually changes — re-setting the
+         * LEDC duty every two seconds would be pointless traffic. */
+        {
+            time_t raw = time(NULL);
+            struct tm lt;
+            localtime_r(&raw, &lt);
+            if (lt.tm_hour != applied_hour) {
+                applied_hour = lt.tm_hour;
+                bsp_display_brightness_set(
+                    settings_brightness_for_hour(&g_settings, lt.tm_hour));
+            }
+        }
+
         if (!sntp_started && wifi_is_connected()) {
-            if (timesync_start(TZ_GLOGGNITZ) == ESP_OK) {
+            if (timesync_start(location_tz(g_settings.preset)) == ESP_OK) {
                 sntp_started = true;
             }
         }
@@ -379,6 +416,16 @@ static void ui_resume(void)
     ESP_LOGW(TAG, "live view restored");
 }
 
+/* Cycles Gloggnitz -> Pattaya -> Eigener Ort. Stands in for the §5.6 screen
+ * until it is wired into the navigation graph. */
+static void cycle_location(void)
+{
+    g_settings.preset = (location_preset_t)((g_settings.preset + 1) % LOC_COUNT);
+    settings_sanitise(&g_settings);
+    settings_save(&g_settings);
+    apply_settings();
+}
+
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '4') {
@@ -398,6 +445,7 @@ static void on_cmd(char c)
     else if (c == 'n') network_status();
     else if (c == 'p') probe_link();
     else if (c == 't') { ui_suspend(); dbg_bench_tearing(); }
+    else if (c == 'o') cycle_location();
     else if (c == 'f') { ui_suspend(); font_card(); }
 }
 
@@ -437,9 +485,15 @@ void app_main(void)
      * ui_task): starting it here only worked on a device that already had
      * credentials at boot, which is never true of a device arriving somewhere
      * new — exactly the case this product is built around. */
-    timesync_set_tz(TZ_GLOGGNITZ);
+    settings_load(&g_settings);
+    timesync_set_tz(location_tz(g_settings.preset));
+
+    double lat, lon;
+    settings_coords(&g_settings, &lat, &lon);
+    bsp_display_brightness_set(g_settings.brightness_pct);
+
     if (wifi_start() == ESP_OK) {
-        ESP_ERROR_CHECK(flight_source_start(HOME_LAT, HOME_LON, HOME_RADIUS_NM));
+        ESP_ERROR_CHECK(flight_source_start(lat, lon, g_settings.radius_nm));
         log_memory_budget("after wifi + poller started");
     } else {
         ESP_LOGW(TAG, "no WiFi credentials stored — press 'w' to provision");
@@ -447,7 +501,7 @@ void app_main(void)
 
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net o=ort 1-4=fixture 0=live");
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(30000));
