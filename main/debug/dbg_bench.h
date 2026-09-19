@@ -15,3 +15,11 @@ void dbg_bench_init(void);
  * `seconds`. Logs achieved FPS and the PSRAM cost. */
 void dbg_bench_run(const lv_font_t *font, const char *font_name,
                    const char *text, int seconds);
+
+/* Characterises espressif/esp-bsp#570 on THIS unit: flash and PSRAM share SPI1,
+ * so an NVS commit can starve the RGB panel's refill and tear the display.
+ * Tearing is a scan-out artifact — a framebuffer screenshot cannot see it — but
+ * the starvation shows up as a frame-time spike, which can be measured.
+ * Reports worst-case frame interval idle, during NVS commits, and during NVS
+ * commits with LVGL paused around them. (PLAN.md M4.) */
+void dbg_bench_tearing(void);

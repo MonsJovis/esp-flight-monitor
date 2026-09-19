@@ -46,8 +46,15 @@
 
 static const char *TAG = "flight";
 
-/* A replayed fixture screen must not be overwritten by the next live poll. */
-static volatile bool s_fixture_mode = false;
+/* Set while a debug command owns the screen.
+ *
+ * It is not merely "do not overwrite my screen": every debug view calls
+ * lv_obj_clean(), which DELETES screen_overhead's labels. If the UI task then
+ * runs screen_overhead_update() it writes through dangling pointers and the
+ * device panics with LoadProhibited. The fixture commands happened to set this
+ * flag; bench, fontcard and the tearing test did not, so each of them was a
+ * crash waiting for the next 2 s tick. Resuming rebuilds the widget tree. */
+static volatile bool s_ui_suspended = false;
 
 static void log_memory_budget(const char *when)
 {
@@ -262,7 +269,7 @@ static void ui_task(void *arg)
                 sntp_started = true;
             }
         }
-        if (s_fixture_mode) {
+        if (s_ui_suspended) {
             continue;   /* a replayed screen stays up until dismissed */
         }
 
@@ -352,24 +359,46 @@ static void probe_link(void)
     }
 }
 
+/* Hand the screen to a debug view: stop the UI task touching it, and wait out
+ * any update already in progress. */
+static void ui_suspend(void)
+{
+    s_ui_suspended = true;
+    vTaskDelay(pdMS_TO_TICKS(120));   /* longer than one update takes */
+}
+
+/* Give it back. The widget tree was destroyed by lv_obj_clean(), so it has to
+ * be rebuilt before the UI task is allowed near it again. */
+static void ui_resume(void)
+{
+    display_lock(0);
+    lv_obj_clean(lv_screen_active());
+    screen_overhead_create(lv_screen_active());
+    display_unlock();
+    s_ui_suspended = false;
+    ESP_LOGW(TAG, "live view restored");
+}
+
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '4') {
-        s_fixture_mode = true;
+        ui_suspend();
         dbg_fixture_show(c - '0');
         return;
     }
     if (c == '0') {
-        s_fixture_mode = false;      /* back to live data */
-        ESP_LOGW(TAG, "fixture mode off; resuming live snapshots");
+        ui_resume();
         return;
     }
-    if (c == 'b') bench_suite();
+    /* Everything below replaces the screen wholesale, so it must take
+     * ownership first. Press '0' to get the live view back. */
+    if (c == 'b') { ui_suspend(); bench_suite(); }
     else if (c == 'm') dbg_metrics_hero();
     else if (c == 'w') provision_wifi();
     else if (c == 'n') network_status();
     else if (c == 'p') probe_link();
-    else if (c == 'f') font_card();
+    else if (c == 't') { ui_suspend(); dbg_bench_tearing(); }
+    else if (c == 'f') { ui_suspend(); font_card(); }
 }
 
 void app_main(void)

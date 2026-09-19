@@ -443,3 +443,31 @@ the entire 30 nm ring. Measured after the change: **route resolved 11.6 s after 
 The fast path cannot run away, because the cache means any callsign is asked at most once
 per flight, and the `asked` flag is set on any completed attempt — success or failure — so a
 failing POST drops to the slow interval instead of looping.
+
+## D29 — The tearing bug does not reproduce here, and the prescribed mitigation is harmful
+
+**Measured on the unit**, animating a 100 px face at full-screen invalidate while committing
+20 × 2 KB NVS blobs:
+
+| | worst frame gap |
+|---|---:|
+| idle | 49,729 µs |
+| during NVS commits | 49,732 µs |
+| during commits, **with LVGL held across them** | 2,850,903 µs |
+
+**NVS commits cost 3 µs — 1.0× idle.** On this configuration (2 framebuffers, anti-tearing
+on, direct mode, `SPIRAM_FETCH_INSTRUCTIONS` and `SPIRAM_RODATA` both on) flash writes do
+not disturb rendering at all.
+
+**So do NOT pause LVGL around NVS writes.** AGENTS.md §7 prescribes exactly that, and it is
+measurably the wrong trade here: holding the display lock across a commit burst stalls
+rendering for **2.85 seconds** to save 3 µs. That guidance predates the framebuffer
+measurement in D12, and two framebuffers are very likely why the hazard went away.
+
+**What this does not settle, stated plainly.** Those gaps are LVGL's refresh cadence. The
+mechanism in espressif/esp-bsp#570 is the LCD peripheral's DMA starving while it reads the
+framebuffer out of PSRAM, and with `bb_mode = 0` the panel reads PSRAM directly — a tear
+leaves *no software trace*. It cannot be measured from inside the firmware; it has to be
+looked at. `t` on the debug console therefore ends by sweeping hard-edged white bars down
+the panel for ten seconds with NVS hammering underneath, which is what a tear shows up on.
+**Still to be confirmed by eye.**
