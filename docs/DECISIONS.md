@@ -708,10 +708,20 @@ says "Suche Netzwerke...", and the device talks to him in the first person every
 
 M7's last checklist item — **read every screen aloud with someone Austrian** — is the one
 thing here that cannot be done by a tool or by me. `python3 tools/check_strings.py --list`
-prints all 110 strings grouped by screen for exactly that pass. Two the list raises and I
-have deliberately left alone, because they are judgement and not error: **"Nachtabsenkung"**
-(precise, and a word he plausibly knows from his heating, but technical) and **"in
-Reichweite"** (correct and self-contained, but "in der Nähe" is what a person would say).
+prints all 110 strings grouped by screen for exactly that pass.
+
+**Done, 2026-09-19.** The list was read through by a native speaker. Two entries had been
+flagged as open judgement calls and both were ruled to stay:
+
+- **"Nachtabsenkung"** — technical-sounding, and I suspected it might be opaque. It is not:
+  it is the ordinary word, familiar from domestic heating controls.
+- **"in Reichweite"** — I had weighed "in der Nähe" as warmer. "in Reichweite" is right; it
+  also happens to be the more honest of the two, since the list really is bounded by the
+  radius setting rather than by nearness.
+
+Worth recording that both of my instincts here were wrong in the same direction: I read
+precise German as cold. That is a bias to correct for, not a judgement to repeat — and it is
+the reason this item was written into the plan as needing a person rather than a checker.
 
 ## D43 — Two tables that were too small to keep their promise
 

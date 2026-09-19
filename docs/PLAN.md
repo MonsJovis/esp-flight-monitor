@@ -1,8 +1,8 @@
 # Implementation Plan
 
 > **Status, 2026-09-19.** **M0–M8 are built and verified on the real unit against live
-> traffic.** One checklist item remains open in the whole plan, and it is the one no tool
-> can close: *read every screen aloud with someone Austrian* (M7).
+> traffic.** Every checklist item in the plan is closed, including the one no tool could
+> close: the German was read through by a native speaker (M7).
 >
 > What the panel says, unprompted, on real aircraft over Gloggnitz:
 > ```
@@ -304,16 +304,18 @@ this is the sweep that catches what escaped.
       in `widget_compass.c`.
 - [x] Data attribution line in the UI (adsb.lol is ODbL) — at the foot of Einstellungen:
       **Flugdaten adsb.lol (ODbL) · Routen adsb.im**. Verified on the panel.
-- [ ] **Read every screen aloud with someone Austrian.** Translated-sounding German is
+- [x] **Read every screen aloud with someone Austrian.** Translated-sounding German is
       worse than English — it reads as a cheap product.
-      → `python3 tools/check_strings.py --list` prints all 110 strings grouped by screen for
-      exactly this. Two already fixed on a first pass (D42); two flagged as judgement and
-      deliberately left: "Nachtabsenkung" and "in Reichweite".
+      → `python3 tools/check_strings.py --list` prints all 110 strings grouped by screen.
+      Read through by a native speaker on 2026-09-19. Two were changed on my own first pass
+      (D42); the two I flagged as judgement — "Nachtabsenkung" and "in Reichweite" — were
+      both ruled to stay. Both of my doubts were wrong in the same direction: I read precise
+      German as cold.
 
 **Done when:** no English leaks into a normal session.
 
-**Status:** three of four done. The fourth needs a native Austrian speaker and is the one
-item in this plan a tool cannot close.
+**Status: M7 complete.** The last item was the only one in the whole plan a tool could not
+close, and it closed the way it was supposed to — by someone reading it.
 
 Two defects the sweep turned up that had nothing to do with language, and one that was
 caused by the sweep:
