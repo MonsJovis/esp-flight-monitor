@@ -53,6 +53,11 @@ esp_err_t wifi_creds_list(char out[][WIFI_SSID_LEN], int max);
  * shows what's actually in range rather than asking for a typed SSID. */
 int wifi_scan(char out[][WIFI_SSID_LEN], int max);
 
+/* Abandon the current backoff and try to associate right now. Called after new
+ * credentials are stored: the reconnect loop may be 60 s into a wait, and
+ * nobody should have to stand there after typing a password. */
+void wifi_reconnect_now(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -9,6 +9,14 @@ it reads the actual RGB565 framebuffer being scanned out, not a re-render.
 import argparse, base64, re, struct, sys, time, zlib
 import serial
 
+def _default_port():
+    """The board re-enumerates under a different node after a replug
+    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it."""
+    import glob
+    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
+    return ports[0] if ports else "/dev/cu.usbmodem1101"
+
+
 MARK_START = re.compile(rb"<<<SHOT w=(\d+) h=(\d+) fmt=(\w+) bytes=(\d+) crc=([0-9a-f]+)>>>")
 MARK_END   = b"<<<ENDSHOT>>>"
 B64_LINE   = re.compile(rb"^[A-Za-z0-9+/]+={0,2}$")
@@ -46,7 +54,7 @@ def rgb565_to_rgb888(buf, w, h):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--port", default="/dev/cu.usbmodem1101")
+    ap.add_argument("--port", default=_default_port())
     ap.add_argument("--timeout", type=float, default=40.0)
     a = ap.parse_args()
 

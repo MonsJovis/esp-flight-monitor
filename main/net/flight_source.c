@@ -1,4 +1,5 @@
 #include "flight_source.h"
+#include "wifi.h"
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -22,14 +23,17 @@
 
 static const char *TAG = "flight_source";
 
-#define POLL_HTTP_TIMEOUT_MS   6000
+/* 6000 was too impatient for this radio. The panel's antenna sees the house AP
+ * at about -67 dBm, where a connect that a laptop completes in 40 ms can take
+ * seconds or lose a SYN outright — and a timeout costs a whole 12 s poll cycle
+ * plus a backoff step, whereas waiting a few more seconds costs nothing. Kept
+ * below SRC_POLL_INTERVAL_MS so a slow poll can never overlap the next one. */
+#define POLL_HTTP_TIMEOUT_MS  10000
 #define ROUTE_HTTP_TIMEOUT_MS  8000
 
 /* AGENTS.md §6: a 30 nm poll is ~4-8 KB; 16 KB leaves headroom for the
  * 100 nm case without letting a malicious/broken response grow unbounded. */
 #define POLL_BUF_SZ            (16 * 1024)
-#define ROUTE_REQ_BUF_SZ       4096
-#define ROUTE_RESP_BUF_SZ      4096
 
 /* Generous relative to MAX_AIRCRAFT (24): aircraft turn over through the day,
  * and a RESOLVED/NONE entry is worth keeping for the rest of a flight even
@@ -282,7 +286,35 @@ static void flight_source_task(void *arg)
         return;
     }
 
+    bool was_connected = false;
+
     for (;;) {
+        /* Failures accumulated while the radio was down are not evidence that
+         * the API is unhappy with us, so they must not keep us in a five-minute
+         * backoff once the network comes back. Without this, a router reboot —
+         * or a first-time provisioning, which is exactly how this surfaced —
+         * leaves the panel blank for minutes after the WiFi is fine again.
+         * AGENTS.md §5's backoff is about protecting a free community service
+         * from OUR retries; it should not punish us for their outage. */
+        bool connected = wifi_is_connected();
+        if (connected && !was_connected) {
+            xSemaphoreTake(s.mutex, portMAX_DELAY);
+            if (s.consec_failures > 0) {
+                ESP_LOGI(TAG, "network back — clearing %d failure(s) and polling now",
+                         s.consec_failures);
+                s.consec_failures = 0;
+            }
+            xSemaphoreGive(s.mutex);
+        }
+        was_connected = connected;
+
+        /* No radio, nothing to say: wait for it rather than burning a request
+         * and counting a failure the source had nothing to do with. */
+        if (!connected) {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            continue;
+        }
+
         xSemaphoreTake(s.mutex, portMAX_DELAY);
         double lat = s.lat, lon = s.lon;
         int radius = s.radius_nm;
@@ -326,11 +358,20 @@ static void flight_source_task(void *arg)
             }
             ac_n = adsb_parse(poll_buf, (size_t)n, local_ac, MAX_AIRCRAFT);
             if (ac_n < 0) {
-                ESP_LOGW(TAG, "%s: parse failed", source_name(src));
+                /* Almost always a body cut short by the link rather than a
+                 * genuinely malformed feed, so say how much arrived and how it
+                 * ended — that distinguishes the two without a packet capture. */
+                ESP_LOGW(TAG, "%s: parse failed after %d bytes (ends: \"%.16s\")",
+                         source_name(src), n, n >= 16 ? poll_buf + n - 16 : poll_buf);
             } else {
                 success = true;
             }
         }
+
+        /* Smallest free stack this task has ever had, in bytes. Keep an eye on
+         * it: the parse depth scales with how busy the sky is. */
+        ESP_LOGI(TAG, "stack headroom: %u B",
+                 (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
 
         int64_t now = esp_timer_get_time() / 1000;
 
@@ -384,7 +425,13 @@ esp_err_t flight_source_start(double lat, double lon, int radius_nm)
         return ESP_ERR_NO_MEM;
     }
 
-    BaseType_t ok = xTaskCreate(flight_source_task, "flight_source", 8192, NULL, 5, NULL);
+    /* 8192 overflowed for real, on the first poll that actually reached the
+     * network: esp_http_client's connect path plus a cJSON parse of an 8 KB
+     * document does not fit. It crashed and rebooted before any poll completed,
+     * which presented as an endless run of ESP_ERR_HTTP_CONNECT rather than as a
+     * stack problem. The task logs its own high-water mark each poll so this
+     * number stays honest rather than superstitious. */
+    BaseType_t ok = xTaskCreate(flight_source_task, "flight_source", 16384, NULL, 5, NULL);
     if (ok != pdPASS) {
         return ESP_ERR_NO_MEM;
     }

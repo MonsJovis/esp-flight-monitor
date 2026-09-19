@@ -38,6 +38,15 @@ typedef enum {
 /* Starts the polling task at (lat, lon, radius_nm). Safe to call once; a
  * second call logs a warning and returns ESP_ERR_INVALID_STATE without
  * starting a second task. */
+/* Sized against the real thing, not a guess. The captured routeset response for
+ * 13 aircraft over Gloggnitz is 5,833 bytes — already past the 4 KB these
+ * buffers used to be, so every route silently truncated and failed to parse, and
+ * the panel said "route pending" forever. MAX_AIRCRAFT is 24, so allow for
+ * roughly double that capture. Both live in PSRAM, so the headroom is cheap.
+ * test_source.c asserts the fixture fits with margin. */
+#define ROUTE_REQ_BUF_SZ       8192
+#define ROUTE_RESP_BUF_SZ     24576
+
 esp_err_t flight_source_start(double lat, double lon, int radius_nm);
 
 /* Changes where the next poll queries. Takes effect on the poll after next;

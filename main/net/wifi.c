@@ -35,6 +35,7 @@ typedef struct {
 } wifi_cred_t;
 
 static wifi_cred_t        g_creds[WIFI_MAX_NETWORKS];
+static volatile bool      g_force_retry;
 static SemaphoreHandle_t  g_cred_mutex;
 static SemaphoreHandle_t  g_scan_mutex; /* serialises esp_wifi_scan_start() callers */
 static EventGroupHandle_t g_evt;
@@ -211,7 +212,17 @@ static void wifi_task(void *arg)
                     attempt++;
                 }
                 ESP_LOGW(TAG, "reconnect attempt failed, retrying in %lld ms", (long long)delay);
-                vTaskDelay(pdMS_TO_TICKS(delay));
+                /* Wake early if new credentials arrived mid-backoff. */
+                int64_t waited = 0;
+                while (waited < delay && !g_force_retry) {
+                    vTaskDelay(pdMS_TO_TICKS(250));
+                    waited += 250;
+                }
+                if (g_force_retry) {
+                    g_force_retry = false;
+                    attempt = 0;
+                    ESP_LOGI(TAG, "new credentials — retrying immediately");
+                }
                 continue;
             }
         }
@@ -257,6 +268,16 @@ esp_err_t wifi_start(void)
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    /* Power save OFF. The default WIFI_PS_MIN_MODEM parks the radio between
+     * DTIM beacons — the log shows it stretching the listen interval out to
+     * 409600 us — and on this AP that quietly black-holes outbound traffic:
+     * the device still reports connected with a valid IP and a valid DNS
+     * server, but every connect() and every DNS query times out. It presents
+     * as an unreachable internet, which sends you hunting in entirely the
+     * wrong place. This thing is mains-powered over USB-C and always on, so
+     * power save buys nothing and costs the one thing it must do. */
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     if (xTaskCreate(wifi_task, "wifi_reconnect", 4096, NULL, 4, NULL) != pdPASS) {
         return ESP_ERR_NO_MEM;
@@ -338,6 +359,11 @@ esp_err_t wifi_creds_list(char out[][WIFI_SSID_LEN], int max)
         out[i][0] = '\0';
     }
     return ESP_OK;
+}
+
+void wifi_reconnect_now(void)
+{
+    g_force_retry = true;
 }
 
 int wifi_scan(char out[][WIFI_SSID_LEN], int max)

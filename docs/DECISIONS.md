@@ -348,3 +348,64 @@ wrong.
 
 `clock_valid` is an explicit field rather than the screen sniffing for `"--:--"`, so the
 rule lives in the model where both sides can see it.
+
+## D24 — What live traffic found that fixtures could not
+
+The device polled real aircraft for the first time on 2026-09-19. Five defects surfaced
+that no host test and no replayed fixture would ever have caught, because each one lives in
+the gap between the code and the physical world.
+
+**1. IPv6 broke every single request.** `api.adsb.lol` publishes AAAA records, lwIP's
+`getaddrinfo()` returns the IPv6 address first, and no domestic network here or in Thailand
+routes IPv6. Every poll dialled an unreachable address and waited out the timeout. A
+browser hides this with Happy Eyeballs (RFC 8305), racing A against AAAA; lwIP takes the
+first address and commits. `CONFIG_LWIP_IPV6=n`.
+
+**2. My own lwIP tuning broke outbound TCP.** Shrinking `LWIP_TCPIP_RECVMBOX_SIZE` and
+`LWIP_MAX_SOCKETS` to reclaim ~6 KB of internal SRAM silently dropped packets, including
+the SYN-ACK. It presented as an unreachable host on a network where a laptop on the same
+subnet completed the same request in 40 ms. Reverted, with the reasoning recorded in
+`sdkconfig.defaults` so it is not re-done. **Correctness first; the 6 KB was not worth it.**
+
+**3. The routeset buffer was smaller than the captured response.** 4 KB, against a fixture
+sitting in this repo that is 5,833 bytes — so every live route truncated mid-JSON, failed to
+parse, and the panel said "route pending" forever. A buffer size is a claim about the data,
+and the data was already in `test/fixtures`. `test_source.c` now asserts it fits with room
+for `MAX_AIRCRAFT`.
+
+**4. An 8 KB task stack overflowed on the first poll that reached the network.**
+`esp_http_client` plus a cJSON parse does not fit. It crashed and rebooted before any poll
+completed, which presented as an endless run of `ESP_ERR_HTTP_CONNECT` rather than as a
+stack problem. Now 16 KB, and the task logs its own high-water mark each poll so the number
+stays honest — measured 6.8 KB free with routes resolving.
+
+**5. SNTP only ever started at boot.** It was called inside the `wifi_start()` success path,
+so a device with no stored credentials — *every* new device, and every arrival somewhere
+new — never started it at all, and the clock stayed at 1970 until a reboot. It now starts
+the first time a network actually appears, which is the whole point.
+
+**And one thing that was wrong in the diagnosis, not the code.** A long stretch of
+"intermittent WiFi" was chased as far as blaming RF noise from the USB port. The device had
+simply been carried to a different building; `rssi=0 dBm` with 2 ms failures is not a
+marginal link, it is *not associated at all*. The lesson is narrow and worth keeping: check
+whether the thing is connected before theorising about why its packets are lost.
+
+## D25 — An unactionable caution is worse than none
+
+**Decision:** the amber "KEIN NETZ" appears when WiFi is down, or after three consecutive
+poll failures — not after one.
+
+**Why:** it was driven by `!flight_source_is_stale()`, which is true after a *single* failed
+poll. On a −72 dBm link in a holiday apartment, one lost request told him the network was
+down while SNTP was demonstrably syncing through it. The only thing he can do about "KEIN
+NETZ" is go and look at the router, so a caution that fires on a routine dropped packet
+sends him on an errand that cannot succeed. The screen already keeps showing the last
+aircraft, which is the designed behaviour for exactly this case.
+
+Still imperfect and marked TODO(M4) in the code: "no network" and "the data source is not
+answering" are different problems with different fixes, and they currently share a label.
+
+## D26 — The serial port is not a fixed name
+
+The board enumerates as `/dev/cu.usbmodem1101` or `/dev/cu.usbmodem101` depending on the
+replug, which broke every hardcoded tool. `tools/*.py` now discover it.

@@ -12,6 +12,12 @@
 #include <string.h>
 
 #include "source_logic.h"
+#include "flight_types.h"
+/* flight_source.h pulls in esp_err.h, which the host runner has no business
+ * linking; take just the two buffer sizes it declares. */
+#define ROUTE_REQ_BUF_SZ       8192
+#define ROUTE_RESP_BUF_SZ     24576
+
 
 static void test_backoff_schedule(void)
 {
@@ -174,5 +180,23 @@ int main(void)
     test_find_uncached();
     test_should_post_routes();
     test_compass_abbrev();
+
+    GROUP("routeset buffers are sized against the real captured response");
+    {
+        /* This is the test that should have existed before the device ran: the
+         * fixture was captured at 5,833 bytes while the buffer was 4,096, so
+         * every live route truncated mid-JSON, failed to parse, and the panel
+         * showed "route pending" forever. A buffer size is a claim about the
+         * data, and the data was sitting in the repo the whole time. */
+        char *rt = load_fixture("routeset_response.json");
+        size_t n = strlen(rt);
+        CHECK(n > 4096);                       /* the old size really was too small */
+        CHECK(n < ROUTE_RESP_BUF_SZ);          /* the new one fits */
+        /* MAX_AIRCRAFT is nearly double the 13 in the capture, so insist on
+         * room for that many rather than merely fitting today's sample. */
+        CHECK(n * MAX_AIRCRAFT / 13 < ROUTE_RESP_BUF_SZ);
+        free(rt);
+    }
+
     return test_summary();
 }

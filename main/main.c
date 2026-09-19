@@ -30,7 +30,14 @@
 #include "net/wifi.h"
 #include "net/flight_source.h"
 #include "net/timesync.h"
+#include "net/http_get.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "ui/screen_overhead.h"
 #include "data/view_build.h"
 #include "net/route_parse.h"
@@ -122,10 +129,36 @@ static void provision_wifi(void)
     }
     *tab = '\0';
     const char *ssid = line, *pass = tab + 1;
-    if (wifi_creds_set(0, ssid, pass) == ESP_OK) {
+
+    /* Pick the slot rather than always writing 0. The device is meant to
+     * remember several networks and join whichever is in range (AGENTS.md §6) —
+     * it spends half the year in Thailand — so provisioning a new one must not
+     * quietly destroy the one that gets him home. Same SSID overwrites itself;
+     * otherwise take the first free slot. */
+    char known[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
+    int slot = -1;
+    if (wifi_creds_list(known, WIFI_MAX_NETWORKS) == ESP_OK) {
+        for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+            if (strcmp(known[i], ssid) == 0) { slot = i; break; }
+        }
+        if (slot < 0) {
+            for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+                if (known[i][0] == '\0') { slot = i; break; }
+            }
+        }
+    }
+    if (slot < 0) {
+        slot = WIFI_MAX_NETWORKS - 1;   /* all full: replace the last */
+        ESP_LOGW(TAG, "all %d slots full — replacing slot %d",
+                 WIFI_MAX_NETWORKS, slot);
+    }
+
+    if (wifi_creds_set(slot, ssid, pass) == ESP_OK) {
         /* SSID only. Never log the password. */
-        ESP_LOGW(TAG, "stored network \"%s\" in slot 0; restarting WiFi", ssid);
-        wifi_start();
+        /* The reconnect loop may be deep in a backoff, so nudge it instead of
+         * making him wait up to a minute after typing his password. */
+        ESP_LOGW(TAG, "stored \"%s\" in slot %d; reconnecting now", ssid, slot);
+        wifi_reconnect_now();
     } else {
         ESP_LOGE(TAG, "could not store credentials");
     }
@@ -157,6 +190,46 @@ static void network_status(void)
     for (int i = 0; i < n; i++) {
         ESP_LOGW(TAG, "  in range: %s", ssids[i]);
     }
+
+    /* Which DNS servers did DHCP actually give us? A poll that dies in
+     * getaddrinfo() looks identical to one that dies in connect(), and the
+     * difference decides whether the problem is name resolution or routing. */
+    /* Signal strength, because intermittent connect() timeouts on a link that
+     * reports "connected" are usually a radio problem rather than a routing one.
+     * Rule of thumb: > -60 dBm is comfortable, < -75 dBm is where TCP starts
+     * failing in ways that look like an unreachable host. */
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        ESP_LOGW(TAG, "  ap: %s  rssi=%d dBm  ch=%d", (char *)ap.ssid, ap.rssi, ap.primary);
+    }
+
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    for (int i = 0; i < 2 && sta; i++) {
+        esp_netif_dns_info_t dns;
+        if (esp_netif_get_dns_info(sta, i, &dns) == ESP_OK) {
+            ESP_LOGW(TAG, "  dns%d: " IPSTR, i, IP2STR(&dns.ip.u_addr.ip4));
+        }
+    }
+
+    /* Resolve, then connect by raw IP. If the name fails but the IP works, it
+     * is DNS; if both fail it is routing. */
+    struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM };
+    struct addrinfo *res = NULL;
+    int rc = getaddrinfo("api.adsb.lol", "80", &hints, &res);
+    if (rc != 0 || res == NULL) {
+        ESP_LOGE(TAG, "  getaddrinfo(api.adsb.lol) failed: %d", rc);
+    } else {
+        struct in_addr a = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
+        ESP_LOGW(TAG, "  api.adsb.lol -> " IPSTR, IP2STR((esp_ip4_addr_t *)&a));
+        freeaddrinfo(res);
+    }
+
+    char buf[512];
+    int status = 0;
+    bool trunc = false;
+    int got = http_get("http://89.58.11.153/v2/point/47.6691/15.9303/30",
+                       buf, sizeof buf, 8000, &status, &trunc);
+    ESP_LOGW(TAG, "  raw-IP GET: bytes=%d http=%d (bypasses DNS entirely)", got, status);
 }
 
 /* Reads the poller's snapshot and repaints. Owns no network state and does no
@@ -175,9 +248,20 @@ static void ui_task(void *arg)
     static aircraft_t last_seen;
     static bool       have_last_seen = false;
 
+    bool sntp_started = false;
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
         esp_task_wdt_reset();
+
+        /* Start SNTP the first time we actually have a network, whenever that
+         * happens — at boot on a known network, or minutes later when someone
+         * types a password in a holiday apartment. */
+        if (!sntp_started && wifi_is_connected()) {
+            if (timesync_start(TZ_GLOGGNITZ) == ESP_OK) {
+                sntp_started = true;
+            }
+        }
         if (s_fixture_mode) {
             continue;   /* a replayed screen stays up until dismissed */
         }
@@ -187,20 +271,80 @@ static void ui_task(void *arg)
         struct tm now;
         localtime_r(&raw, &now);
 
+        /* What the amber "KEIN NETZ" caution actually means.
+         *
+         * It used to be !flight_source_is_stale(), which is true after a SINGLE
+         * failed poll — so one dropped request on a weak link told him the
+         * network was down while it was demonstrably fine, and the only thing he
+         * can do about "KEIN NETZ" is go and look at the router. A caution he
+         * cannot act on correctly is worse than none.
+         *
+         * No WiFi is the case he can actually fix, so that shows immediately.
+         * With WiFi up, tolerate a couple of lost polls before crying wolf —
+         * a weak link drops one now and then and the screen keeps showing the
+         * last aircraft, which is the designed behaviour anyway.
+         *
+         * TODO(M4): split these into two messages. "no network" and "the data
+         * source is not answering" are different problems with different fixes,
+         * and right now they share a label. */
+        bool net_ok = wifi_is_connected() &&
+                      flight_source_consecutive_failures() < 3;
+
         view_model_t vm;
         if (n > 0) {
             last_seen = ac[0];
             have_last_seen = true;
             view_build(&ac[0], route_find(rt, n, ac[0].flight), &now, n,
-                       !flight_source_is_stale(), &vm);
+                       net_ok, &vm);
         } else {
             view_build_empty(&now, have_last_seen ? &last_seen : NULL,
-                             !flight_source_is_stale(), &vm);
+                             net_ok, &vm);
         }
 
         display_lock(0);
         screen_overhead_update(&vm);
         display_unlock();
+    }
+}
+
+/* Fires the same request repeatedly and reports how many got through. The point
+ * is to tell a firmware fault apart from a bad radio environment: a logic bug
+ * fails every time, RF interference fails a fraction of the time. Those two look
+ * identical in a log of one failure. */
+static void probe_link(void)
+{
+    static char buf[1024];
+    const int tries = 15;
+    int ok = 0;
+    int64_t best = INT64_MAX, worst = 0, total = 0;
+
+    ESP_LOGW(TAG, "probing the link, %d attempts...", tries);
+    for (int i = 0; i < tries; i++) {
+        int status = 0;
+        bool trunc = false;
+        int64_t t0 = esp_timer_get_time();
+        int n = http_get("http://api.adsb.lol/v2/point/47.6691/15.9303/5",
+                         buf, sizeof buf, 10000, &status, &trunc);
+        int64_t dt = (esp_timer_get_time() - t0) / 1000;
+        if (n >= 0 && status == 200) {
+            ok++;
+            total += dt;
+            if (dt < best)  best = dt;
+            if (dt > worst) worst = dt;
+        }
+        ESP_LOGW(TAG, "  %2d/%d  %-4s  %5lld ms  http=%d",
+                 i + 1, tries, (n >= 0 && status == 200) ? "ok" : "FAIL",
+                 (long long)dt, status);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    wifi_ap_record_t ap;
+    int rssi = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) ? ap.rssi : 0;
+    ESP_LOGW(TAG, "link probe: %d/%d succeeded (%d%%), rssi=%d dBm", ok, tries,
+             ok * 100 / tries, rssi);
+    if (ok > 0) {
+        ESP_LOGW(TAG, "  latency  best=%lld ms  worst=%lld ms  mean=%lld ms",
+                 (long long)best, (long long)worst, (long long)(total / ok));
     }
 }
 
@@ -220,6 +364,7 @@ static void on_cmd(char c)
     else if (c == 'm') dbg_metrics_hero();
     else if (c == 'w') provision_wifi();
     else if (c == 'n') network_status();
+    else if (c == 'p') probe_link();
     else if (c == 'f') font_card();
 }
 
@@ -253,10 +398,14 @@ void app_main(void)
     /* Network last, and never fatal: the panel must come up and show something
      * even with no credentials stored, which is the state every new device is
      * in and the state he will be in when he lands in Thailand. */
+    /* Timezone follows the location preset — he never sets a clock. The preset
+     * picker is M6; for now it is compiled in with the coordinates. The TZ can
+     * be set immediately, but SNTP itself must wait for an actual network (see
+     * ui_task): starting it here only worked on a device that already had
+     * credentials at boot, which is never true of a device arriving somewhere
+     * new — exactly the case this product is built around. */
+    timesync_set_tz(TZ_GLOGGNITZ);
     if (wifi_start() == ESP_OK) {
-        /* Timezone follows the location preset — he never sets a clock. The
-         * preset picker is M6; for now it is compiled in with the coordinates. */
-        timesync_start(TZ_GLOGGNITZ);
         ESP_ERROR_CHECK(flight_source_start(HOME_LAT, HOME_LON, HOME_RADIUS_NM));
         log_memory_budget("after wifi + poller started");
     } else {

@@ -14,6 +14,14 @@ and connects to whichever is in range, because it travels (AGENTS.md §6).
 import argparse, getpass, json, subprocess, sys, time
 import serial
 
+def _default_port():
+    """The board re-enumerates under a different node after a replug
+    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it."""
+    import glob
+    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
+    return ports[0] if ports else "/dev/cu.usbmodem1101"
+
+
 
 def _osascript(prompt, hidden):
     """Native macOS dialog. Used when stdin is not a TTY — which is the case
@@ -41,7 +49,7 @@ def prompt_credentials():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", default="/dev/cu.usbmodem1101")
+    ap.add_argument("--port", default=_default_port())
     ap.add_argument("--slot", type=int, default=0, choices=range(4))
     a = ap.parse_args()
 

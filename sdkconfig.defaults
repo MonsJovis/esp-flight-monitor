@@ -78,12 +78,16 @@ CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_RX_BA_WIN=4
 CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
 CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
-CONFIG_LWIP_TCP_SND_BUF_DEFAULT=2880
-CONFIG_LWIP_TCP_WND_DEFAULT=2880
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=6
-CONFIG_LWIP_UDP_RECVMBOX_SIZE=6
-CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=16
-CONFIG_LWIP_MAX_SOCKETS=6
+# lwIP mailbox and socket counts are left at their DEFAULTS on purpose. An
+# earlier version of this file shrank them to claw back internal SRAM, and it
+# broke outbound TCP: connect() timed out in select() on a network where the
+# same request from a laptop completed in 40 ms. A tcpip mailbox that is too
+# small silently drops packets — including the SYN-ACK — so the failure looks
+# like an unreachable host rather than like a tuning mistake, which cost far
+# more time than the ~6 KB it saved. The WiFi buffer counts above are the part
+# that was actually safe to reduce.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5744
+CONFIG_LWIP_TCP_WND_DEFAULT=5744
 
 # Task watchdog, with panic-and-reboot. This device sits on a desk in a living
 # room with nothing plugged into it, so "hung until someone notices" is the worst
@@ -96,3 +100,21 @@ CONFIG_ESP_TASK_WDT_INIT=y
 CONFIG_ESP_TASK_WDT_PANIC=y
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
+
+# IPv6 OFF. api.adsb.lol publishes AAAA records, lwIP's getaddrinfo() prefers
+# IPv6, and this network (like most domestic ones, here and in Thailand) has no
+# IPv6 route to the internet. So every poll resolved to 2a03:4000:5f:82:: and
+# sat there until the 6 s connect timeout — "select() timeout", forever, on a
+# network that was working perfectly.
+#
+# A desktop browser hides this with Happy Eyeballs (RFC 8305), racing A and AAAA
+# and taking whichever answers. lwIP does not race; it takes the first address.
+# We speak to three IPv4-reachable hosts and nothing else, so IPv6 buys nothing
+# and costs internal SRAM we are short of.
+CONFIG_LWIP_IPV6=n
+
+# SNTP asked for the DHCP-supplied NTP server without this enabled, so
+# esp_netif_sntp_init() failed outright and the clock was never set:
+#   E esp_netif_sntp: Tried to configure SNTP server from DHCP, while disabled
+# A hotel or guest network often blocks pool.ntp.org while offering its own.
+CONFIG_LWIP_DHCP_GET_NTP_SRV=y
