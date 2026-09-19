@@ -171,12 +171,18 @@ In practice that means one `routeset` POST every few minutes, not one per poll.
 
 ## 6. Locations
 
-Two presets plus a custom entry. Store in NVS.
+Three presets plus a custom entry. Store in NVS.
 
 | Preset | Address | Lat / Lon |
 |---|---|---|
 | Gloggnitz (AT) | Semmeringstraße 11, 2640 Gloggnitz | `47.6691` / `15.9303` |
+| Wien (AT) | Meiselstraße 79, 1140 Wien | `48.1984` / `16.3074` |
 | Pattaya (TH) | 154 Thappraya Rd, Pattaya City, Chon Buri 20150 | `12.9211` / `100.8721` |
+
+**The enum values are written to NVS, so the list is append-only.** `LOC_WIEN` is 3, after
+`LOC_CUSTOM`, even though it belongs next to Gloggnitz on screen — renumbering would move a
+device already in the field to a different city on a firmware update, silently. The order he
+sees comes from `location_display_order()`, which exists for exactly that reason.
 
 Measured traffic on 2026-09-18 (aircraft returned by `adsb.lol`):
 

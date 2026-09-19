@@ -25,8 +25,9 @@ That is why the destination is the headline in 76 px type rather than a field in
 why it says "Airbus A321neo" and not `A21N`, and why the screen is never blank: an empty
 panel reads as *broken* to someone who did not build it.
 
-He splits the year between Gloggnitz and Pattaya. One tap moves the device — location,
-time zone, clock and all.
+He splits the year between Gloggnitz, Vienna and Pattaya. One tap moves the device —
+location, time zone, clock and all. He never sets a clock, because the timezone is bound to
+the place rather than configured beside it.
 
 ## The three screens
 

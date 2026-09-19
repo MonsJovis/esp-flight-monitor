@@ -965,3 +965,23 @@ someone types in an update URL and sits watching the console for an answer, and 
 settling delay settles nothing. It is a semaphore wait now, and `ota_request_check()` has
 already posted by then, so the check runs in under two seconds instead of after a minute of
 apparent silence.
+
+## D53 — A third address, and why it is numbered last
+
+**Decision:** `LOC_WIEN` — Meiselstraße 79, 1140 Wien (Penzing), `48.1984 / 16.3074`, on
+Austria's clock. Its enum value is **3**, after `LOC_CUSTOM`, while it appears **second** on
+screen, above Pattaya.
+
+**Why the split:** `location_preset_t` is written to NVS. Slotting Wien in beside Gloggnitz
+where it belongs visually would renumber `LOC_CUSTOM` from 2 to 3, and a device already in
+the field with 2 stored would come back from a firmware update sitting in Vienna. Nothing
+would announce it — the distances would simply stop making sense, on the one screen whose
+entire job is to be trusted at a glance. So the enum is append-only and
+`location_display_order()` carries the order he sees. A test asserts the four values by
+number and asserts the display order is a permutation, because a duplicate would make one
+place unreachable by tap and a gap would give him a card that selects nothing.
+
+Coordinates geocoded rather than estimated. A transposed lat/lon or a stale 0.0 row is
+invisible on a panel that only ever shows a distance, so the test also asserts Vienna is
+north **and** east of Gloggnitz — the cheapest available check that the row is in the right
+hemisphere.

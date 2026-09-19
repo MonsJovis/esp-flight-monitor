@@ -16,7 +16,24 @@ static const struct {
     /* 154 Thappraya Rd, Pattaya City. No DST in Thailand. */
     [LOC_PATTAYA]   = { "Pattaya",   "ICT-7",                      12.9211, 100.8721 },
     [LOC_CUSTOM]    = { "Eigener Ort", "UTC0",                     0.0,     0.0 },
+    /* Meiselstraße 79, 1140 Wien (Penzing). Same timezone as Gloggnitz —
+     * bound to the place, not set separately, because he never sets a clock.
+     * Appended rather than slotted in beside Gloggnitz: the enum value goes
+     * into NVS (settings.h). */
+    [LOC_WIEN]      = { "Wien",        "CET-1CEST,M3.5.0,M10.5.0/3", 48.1984, 16.3074 },
 };
+
+/* What he sees, top to bottom. The two Austrian places together, then the
+ * one he flies to, then the escape hatch. */
+static const location_preset_t k_display_order[LOC_COUNT] = {
+    LOC_GLOGGNITZ, LOC_WIEN, LOC_PATTAYA, LOC_CUSTOM,
+};
+
+location_preset_t location_display_order(int i)
+{
+    if (i < 0 || i >= LOC_COUNT) return LOC_GLOGGNITZ;
+    return k_display_order[i];
+}
 
 const char *location_name(location_preset_t p)
 {

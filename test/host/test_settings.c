@@ -9,7 +9,36 @@ int main(void)
     {
         CHECK_STR(location_name(LOC_GLOGGNITZ), "Gloggnitz");
         CHECK_STR(location_name(LOC_PATTAYA),   "Pattaya");
+        CHECK_STR(location_name(LOC_WIEN),      "Wien");
         CHECK(location_name(LOC_CUSTOM)[0] != '\0');
+
+        /* Vienna is in Austria, so it gets Austria's clock — bound to the
+         * place, never set separately. */
+        CHECK_STR(location_tz(LOC_WIEN), location_tz(LOC_GLOGGNITZ));
+
+        /* Meiselstraße 79, 1140 Wien (Penzing). Loose bounds: the point is
+         * that it is in Vienna and not, say, in the Atlantic with its
+         * coordinates transposed — which is exactly what a 0.0/0.0 row or a
+         * lat/lon swap looks like, and both are silent on a panel that only
+         * ever shows a distance. */
+        {
+            settings_t w;
+            settings_defaults(&w);
+            w.preset = LOC_WIEN;
+            double lat = 0, lon = 0;
+            settings_coords(&w, &lat, &lon);
+            CHECK(lat > 48.0 && lat < 48.4);
+            CHECK(lon > 16.1 && lon < 16.6);
+            /* Vienna is north-east of Gloggnitz, ~65 km. If these two ever
+             * compare the other way round, one of the rows has been edited
+             * into the wrong hemisphere. */
+            settings_t g;
+            settings_defaults(&g);
+            double glat = 0, glon = 0;
+            settings_coords(&g, &glat, &glon);
+            CHECK(lat > glat);
+            CHECK(lon > glon);
+        }
 
         /* The timezone is bound to the place because he never sets a clock
          * (AGENTS.md §6). Austria has DST rules; Thailand has none. */
@@ -21,6 +50,43 @@ int main(void)
         /* A nonsense preset must degrade, not index out of bounds. */
         CHECK(location_name((location_preset_t)99) != NULL);
         CHECK(location_tz((location_preset_t)-1) != NULL);
+    }
+
+    GROUP("the enum is persisted, so its numbering is append-only");
+    {
+        /* These four numbers are written into NVS. Renumbering them moves a
+         * device that is already in the field to a different city, silently,
+         * on a firmware update — the distances simply stop making sense and
+         * he has no way to know why. A new place goes on the END. */
+        CHECK_INT((int)LOC_GLOGGNITZ, 0);
+        CHECK_INT((int)LOC_PATTAYA,   1);
+        CHECK_INT((int)LOC_CUSTOM,    2);
+        CHECK_INT((int)LOC_WIEN,      3);
+    }
+
+    GROUP("display order is every preset exactly once, escape hatch last");
+    {
+        /* The screen renders this order, not the enum's, which is what lets
+         * the enum stay append-only. It has to be a permutation: a duplicate
+         * means one place is unreachable by tap, and a gap means a card that
+         * selects nothing. */
+        int seen[LOC_COUNT];
+        for (int i = 0; i < LOC_COUNT; i++) seen[i] = 0;
+        for (int i = 0; i < LOC_COUNT; i++) {
+            location_preset_t p = location_display_order(i);
+            CHECK(p >= 0 && p < LOC_COUNT);
+            seen[p]++;
+        }
+        for (int i = 0; i < LOC_COUNT; i++) CHECK_INT(seen[i], 1);
+
+        /* "Eigener Ort" is the advanced escape hatch (AGENTS.md §6), so it
+         * sits below the places he actually taps. */
+        CHECK(location_display_order(LOC_COUNT - 1) == LOC_CUSTOM);
+        CHECK(location_display_order(0) == LOC_GLOGGNITZ);
+
+        /* Out of range degrades rather than reading off the end. */
+        CHECK(location_display_order(-1)  == LOC_GLOGGNITZ);
+        CHECK(location_display_order(999) == LOC_GLOGGNITZ);
     }
 
     GROUP("coordinates resolve, and never to 0,0");

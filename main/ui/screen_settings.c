@@ -333,8 +333,14 @@ void screen_settings_create(lv_obj_t *parent)
     int32_t card_h_plain  = LV_MAX(TOUCH_ROW_H, 2 * CARD_PAD_V + body_lh);
     int32_t card_h_custom = LV_MAX(TOUCH_ROW_H, 2 * CARD_PAD_V + body_lh + GAP_INNER + coord_lh);
 
+    /* Indexed by SLOT, not by preset: the cards are laid out in
+     * location_display_order() so a new place can be appended to the enum
+     * (whose values are persisted) without moving anything he sees. s_card[]
+     * and friends are indexed the same way, and card_event_cb() is handed
+     * the preset itself rather than the slot. */
     for (int i = 0; i < LOC_COUNT; i++) {
-        bool    is_custom = (i == LOC_CUSTOM);
+        location_preset_t p = location_display_order(i);
+        bool    is_custom = (p == LOC_CUSTOM);
         int32_t h         = is_custom ? card_h_custom : card_h_plain;
 
         lv_obj_t *card = make_row(s_cont, y, h);
@@ -342,7 +348,7 @@ void screen_settings_create(lv_obj_t *parent)
         lv_obj_set_style_border_color(card, THEME_BORDER_IDLE, 0);
 
         lv_obj_t *name = make_label(card, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
-        lv_label_set_text(name, location_name((location_preset_t)i));
+        lv_label_set_text(name, location_name(p));
         lv_obj_set_pos(name, CARD_PAD_H, CARD_PAD_V);
 
         /* Never colour alone (DO-257A §2.1.6): the active card is also
@@ -373,7 +379,7 @@ void screen_settings_create(lv_obj_t *parent)
              * this section. */
         }
 
-        lv_obj_add_event_cb(card, card_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(card, card_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)p);
 
         y += h + ((i == LOC_COUNT - 1) ? GAP_SECTION : GAP_CARD);
     }
@@ -510,7 +516,7 @@ void screen_settings_update(const settings_t *s)
 
     /* --- Ort: fill + border + word tag on the active card only --- */
     for (int i = 0; i < LOC_COUNT; i++) {
-        bool active = (i == s_current.preset);
+        bool active = (location_display_order(i) == s_current.preset);
         lv_obj_set_style_bg_color(s_card[i], active ? THEME_SURFACE_MAGENTA : THEME_GROUND, 0);
         lv_obj_set_style_border_color(s_card[i], active ? THEME_MAGENTA : THEME_BORDER_IDLE, 0);
         lv_obj_set_style_text_color(s_card_name[i], active ? THEME_WHITE : THEME_TEXT_PRIMARY, 0);
