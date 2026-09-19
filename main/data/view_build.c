@@ -15,6 +15,7 @@
 #include "fmt_de.h"
 #include "tables.h"
 #include "strings_de.h"
+#include "compat.h"
 
 /* ---- small local helper ------------------------------------------------
  *
@@ -73,10 +74,17 @@ static void resolve_city(const char *icao, const char *api_city, char *out, size
     }
     if (api_city != NULL && api_city[0] != '\0') {
         /* No table entry: fall back to the API's own city name rather than
-         * ever showing the raw ICAO code. Every airport this project's
-         * fixtures have seen is in the table (docs/PLAN.md M2.5), so this
-         * path is a genuine fallback for airports not yet added, not the
-         * common case. */
+         * ever showing the raw ICAO code.
+         *
+         * This path is LOUD on purpose. The API's `location` field is
+         * English at best and data-entry noise at worst — the panel once put
+         * "Rodes Island" in 76 px type as the answer to "where is that plane
+         * going", because LGRP was not in the table and nobody knew. A miss
+         * is a gap in tbl_airport.c, and the only way anyone finds out is if
+         * the device says so: leave the board on a serial console for an
+         * afternoon and it tells you exactly which rows to add. */
+        ESP_LOGW("view", "airport %s not in tbl_airport.c; showing API text \"%s\"",
+                 (icao != NULL) ? icao : "????", api_city);
         copy_trunc(out, outsz, api_city);
         return;
     }
