@@ -720,8 +720,15 @@ flagged as open judgement calls and both were ruled to stay:
   radius setting rather than by nearness.
 
 Worth recording that both of my instincts here were wrong in the same direction: I read
-precise German as cold. That is a bias to correct for, not a judgement to repeat — and it is
-the reason this item was written into the plan as needing a person rather than a checker.
+precise German as cold.
+
+**That reading was itself too neat — see the end of D56.** A third call went the other way:
+I proposed replacing "Flugzeuge" with the strictly-correct *Luftfahrzeuge* and was told it
+does not fit. So the pattern is not "I lean technical" or "I lean plain". It is that my
+sense of German REGISTER is unreliable in both directions, while my sense of German
+*correctness* has held up. The rule that follows: check facts against sources and settle
+register with a native speaker — which is exactly why this item was written into the plan as
+needing a person rather than a checker.
 
 ## D43 — Two tables that were too small to keep their promise
 
@@ -1149,3 +1156,28 @@ Wikipedia's primary article for the word is the ATC flight plan — the timetabl
 disambiguated secondary one — and Austro Control uses *Flugplan* and *Flugplanaufgabe*
 throughout. Left alone. Seventeen of the twenty-two class words needed no change either,
 five of them confirmed against Austro Control's own category nouns.
+
+## D57 — "Flugzeuge", not "Luftfahrzeuge"
+
+**Decision:** the list header stays **"%d Flugzeuge in Reichweite"**, and an unidentifiable
+target stays **"Unbekanntes Flugzeug"**, even though both are strictly wrong.
+
+**Why, and why it is not a compromise.** In both legal and everyday German a *Flugzeug* is
+fixed-wing; a helicopter is not one, and the umbrella term is *Luftfahrzeug*. German
+registrations even separate them (D-H for rotorcraft). So the count line is inaccurate
+whenever a helicopter, glider or balloon is in the list — which is most of the time.
+
+Ruled by the native speaker: *Luftfahrzeug* does not fit. And he is right, for a reason worth
+writing down rather than just recording the verdict. The panel's claim on him is that it says
+true things **in his own words**. *Luftfahrzeug* is a word from a form, not from a garden, and
+a man looking up at the sky counts Flugzeuge. Swapping in the legally exact term would buy an
+accuracy he was never going to notice at the cost of the register the whole product depends
+on — and register is not decoration here, it is the thing that makes a device feel like it
+was made for you rather than issued to you.
+
+**Where the line actually sits.** The three findings in D56 that were *changed* were factual:
+a false claim about Linienflüge, a category word asserting a widebody about a narrowbody, a
+term meaning the opposite of what it labelled. Those are wrong in a way he could be misled
+by. "Flugzeuge" for a helicopter is imprecise in a way he would use himself. Correctness is
+not negotiable; register is his call, and this is the third time it has gone against my
+instinct.
