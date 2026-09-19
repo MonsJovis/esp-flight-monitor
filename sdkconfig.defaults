@@ -118,3 +118,35 @@ CONFIG_LWIP_IPV6=n
 #   E esp_netif_sntp: Tried to configure SNTP server from DHCP, while disabled
 # A hotel or guest network often blocks pool.ntp.org while offering its own.
 CONFIG_LWIP_DHCP_GET_NTP_SRV=y
+
+# ---- OTA (docs/PLAN.md M8, docs/DECISIONS.md D44) -------------------------
+# Rollback: a freshly written image boots ONCE on probation. Unless it calls
+# esp_ota_mark_app_valid_cancel_rollback() the bootloader reverts to the image
+# that was working. The failure this guards against is not a corrupt image —
+# the bootloader already checks the hash — but a working image that cannot get
+# online, which is precisely the state nobody can fix from 9,000 km away.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# HTTPS only, with the Mozilla root bundle. An unauthenticated firmware source
+# is a remote root shell with extra steps, and this device sits on hotel and
+# holiday-apartment WiFi for months at a time. main/net/ota.c refuses a
+# non-https URL as well, because a Kconfig flag is one edit away and code is
+# not.
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=n
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# TLS buffers live in PSRAM, not internal SRAM. Measured, not assumed: with the
+# framebuffer and WiFi up, this board has ~35 KB of internal heap free and its
+# largest free block is 15 KB, while mbedtls_ssl_setup() wants a 16 KB inbound
+# record buffer plus a 4 KB outbound one. The first real handshake therefore
+# failed with mbedtls_ssl_setup returned -0x7F00 (MBEDTLS_ERR_SSL_ALLOC_FAILED)
+# — not a network error, an out-of-memory error wearing a network error's
+# clothes. There are 4.7 MB of PSRAM sitting idle on the other side of the bus.
+#
+# DYNAMIC_BUFFER on top of that frees the record buffers between handshakes
+# instead of holding 20 KB for the 24 hours until the next check.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT=y

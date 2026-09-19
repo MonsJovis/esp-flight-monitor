@@ -329,12 +329,28 @@ caused by the sweep:
 
 ## M8 — Ship it
 
-- [ ] Desk stand — printed or sourced. Board is 86.5 × 86.5 × 14 mm, ships as a flush
-      86-type faceplate, so the stand is the missing piece
-- [ ] Power: USB-C (side edge — fine for a desk unit)
-- [ ] Optional: OTA update (ironicbadger's `ota_update.cpp`, MIT) so it can be fixed
-      remotely while he is in Thailand
-- [ ] README with a photo and a one-paragraph "what it does"
+- [x] Desk stand — `hardware/desk_stand.scad`, a parametric wedge at 20° off vertical.
+      **Not printed**: dimensions are datasheet figures, not calipers, so it ships with a
+      four-minute fit-test part and says so in three places.
+- [x] Power: USB-C (side edge — fine for a desk unit)
+- [x] OTA update — written from scratch rather than adapted: `net/ota.c` +
+      `net/ota_policy.c`. HTTPS only, rollback on, installs only inside the night dim
+      window because flash writes tear this panel. **Off unless an update URL is stored
+      in NVS**, and there is no release infrastructure yet, so it ships off. D44–D45.
+- [x] README with photos and a one-paragraph "what it does" — six real framebuffer
+      captures, not mockups, plus the full ODbL notice.
+
+**Done.** What is verified and what is not, precisely: the manifest path is proven on the
+device end to end (DNS, TLS, root-bundle validation, 2,262 bytes byte-exact, parse, field
+rejection). The image download and slot switch are not — that needs a hosted build and
+there is nowhere to host one. The policy layer is host-tested to 14,055 checks.
+
+Three defects surfaced while building it, all worth more than the feature (D45): a 4 KB
+task stack that presented its overflow as an I²C fault in the touch driver; a TLS
+allocation failure that presented as a network error; and a single `esp_http_client_read()`
+mistaken for the whole body. A fourth, D46, was a raw ICAO designator — **"C177"** — in the
+hero at 76 px, the exact bug D36 thought it had removed, still alive in the file D36 did
+not finish.
 
 ---
 

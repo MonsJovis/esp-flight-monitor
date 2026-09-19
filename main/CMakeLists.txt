@@ -28,6 +28,8 @@ set(SRCS
     "net/http_get.c"
     "net/flight_source.c"
     "net/timesync.c"
+    "net/ota_policy.c"
+    "net/ota.c"
 )
 
 # Generated font faces are globbed: they are build output with stable names,
@@ -43,6 +45,7 @@ idf_component_register(
     INCLUDE_DIRS "." "ui" "data" "net" "debug" "ui/fonts"
     REQUIRES esp_driver_usb_serial_jtag esp_lcd esp_timer
              json esp_wifi esp_netif esp_event nvs_flash esp_http_client lwip
+             app_update esp_https_ota esp-tls
              espressif__esp_lcd_touch espressif__esp_lvgl_port
              waveshare__esp32_s3_touch_lcd_4b
 )

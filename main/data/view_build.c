@@ -115,19 +115,17 @@ static void hero_from_type(const ac_type_t *t, const char *icao_type,
         copy_trunc(out, outsz, name);
         return;
     }
-    /* No usable type designator. Two of the thirteen aircraft in the real
-     * Gloggnitz capture were exactly this — genuine aircraft doing 160 kt with
-     * no `t` and no `r` — and the hero used to render as a literal "?", which
-     * is the largest text on the panel telling him the device is broken.
-     * The ICAO emitter category still says WHAT is up there. */
-    const char *fallback = actype_full_or_code(icao_type);
-    /* actype_full_or_code() is documented to never return NULL or "", but its
-     * last resort is "?" — never acceptable as a hero. */
-    if (fallback == NULL || fallback[0] == '\0' || strcmp(fallback, ACTYPE_NO_TYPE) == 0) {
-        copy_trunc(out, outsz, STR_UNKNOWN_AIRCRAFT);
-        return;
-    }
-    copy_trunc(out, outsz, fallback);
+    /* NULL means the table had nothing AND the emitter category had nothing.
+     * There is no third source, so the honest answer is the honest answer.
+     *
+     * What used to be here was a fall-through to actype_full_or_code(), whose
+     * last resort is the raw ICAO designator — and that put "C177" on the
+     * panel in 76 px type, which is precisely the bare code AGENTS.md §1
+     * forbids and precisely the bug D36 removed from screen_list.c. The same
+     * mistake, surviving in the other file, because D36 fixed the duplication
+     * in the list and left this tail standing. A type nobody can name is
+     * "Unbekanntes Flugzeug"; a type nobody can name is not "C177". */
+    copy_trunc(out, outsz, STR_UNKNOWN_AIRCRAFT);
 }
 
 /* ---- VIEW_NO_ROUTE reason: WHY, chosen by category (rule 3) -------------- */

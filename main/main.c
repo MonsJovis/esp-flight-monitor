@@ -38,6 +38,7 @@
 #include "net/wifi.h"
 #include "net/flight_source.h"
 #include "net/timesync.h"
+#include "net/ota.h"
 #include "data/settings.h"
 #include "net/http_get.h"
 #include "esp_netif.h"
@@ -161,6 +162,9 @@ static void apply_settings(void)
     struct tm now;
     localtime_r(&raw, &now);
     bsp_display_brightness_set(settings_brightness_for_hour(&g_settings, now.tm_hour));
+    /* The OTA task installs only inside the night window, so it needs to hear
+     * about a change to that window at the same moment the dimmer does. */
+    ota_settings_update(&g_settings);
 
     ESP_LOGW(TAG, "settings applied: %s (%.4f/%.4f) r=%d nm tz=%s",
              location_name(g_settings.preset), lat, lon,
@@ -638,6 +642,47 @@ static void scroll_to_end(void)
     display_unlock();
 }
 
+/* Update source, typed in over serial. Deliberately the same shape as
+ * provision_wifi(): a URL that decides what firmware this device will run is
+ * not something to leave in a config file in a repository either. */
+static void update_console(void)
+{
+    char cur[192];
+    ota_get_url(cur, sizeof cur);
+    printf("\nrunning version : %s\n", ota_running_version());
+    printf("update source   : %s\n", cur[0] ? cur : "(none — updates are off)");
+    printf("\nPaste an https:// manifest URL and press ENTER.\n"
+           "ENTER alone leaves it as it is; \"-\" turns updates off.\n> ");
+    fflush(stdout);
+
+    /* dbg_read_line(), not fgets(): stdin is non-blocking on this build (D22 —
+     * the usb_serial_jtag driver's blocking write wedged the device, and "no
+     * host attached" is its normal state), so fgets() returns NULL instantly
+     * and every character typed afterwards arrives at on_cmd() as a COMMAND.
+     * Pasting an https:// URL that way runs 't' — the tearing benchmark —
+     * among others. Found exactly that way. */
+    char line[256];
+    if (dbg_read_line(line, sizeof line, 120000) < 0) {
+        printf("\ntimed out — nothing stored\n");
+        return;
+    }
+    if (line[0] == '\0') {
+        printf("unchanged\n");
+    } else if (strcmp(line, "-") == 0) {
+        printf(ota_set_url(NULL) ? "updates off\n" : "could not clear\n");
+    } else if (!ota_set_url(line)) {
+        printf("rejected (must be https:// and under 192 bytes)\n");
+    } else {
+        /* Handed to the OTA task rather than run here: this console task has a
+         * 4 KB stack and a TLS handshake needs about 8 KB. Doing it inline
+         * silently corrupted the touch driver and aborted the device. */
+        ota_request_check();
+        printf("stored; the update task is checking now — watch the log.\n"
+               "anything newer installs inside the night window (%02d:00-%02d:00)\n",
+               g_settings.dim_from_hour, g_settings.dim_to_hour);
+    }
+}
+
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '4') {
@@ -661,6 +706,7 @@ static void on_cmd(char c)
     else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % 3, true); display_unlock(); }
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
+    else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'f') { ui_suspend(); font_card(); }
 }
@@ -718,11 +764,30 @@ void app_main(void)
     }
 
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
+    ota_start();
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net o=ort g=seite e=einst k=wlan 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
 
+    /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
+     * freshly written image is on probation until it says otherwise, and the
+     * thing worth proving before it says so is not that the image runs — the
+     * bootloader already checked its hash — but that it can still get ONLINE.
+     * An image that boots happily and cannot reach WiFi is exactly the brick
+     * nobody can fix from 9,000 km away, and it is the one a rollback saves.
+     * Two minutes of steady-state polling is the evidence; if it never comes,
+     * the next reboot goes back to the build that worked. */
+    int healthy_ticks = 0;
+    bool confirmed = false;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(30000));
         log_memory_budget("steady state");
+
+        if (!confirmed) {
+            healthy_ticks = wifi_is_connected() ? healthy_ticks + 1 : 0;
+            if (healthy_ticks >= 4) {
+                ota_confirm_running_image();
+                confirmed = true;
+            }
+        }
     }
 }

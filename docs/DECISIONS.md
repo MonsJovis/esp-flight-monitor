@@ -712,3 +712,121 @@ prints all 110 strings grouped by screen for exactly that pass. Two the list rai
 have deliberately left alone, because they are judgement and not error: **"Nachtabsenkung"**
 (precise, and a word he plausibly knows from his heating, but technical) and **"in
 Reichweite"** (correct and self-contained, but "in der Nähe" is what a person would say).
+
+## D43 — Two tables that were too small to keep their promise
+
+**Decision:** `tbl_airport.c` grows from 74 to 601 cities; `tbl_actype.c` grows to cover
+general aviation. `resolve_city()` now logs every miss.
+
+**Why:** taking the README screenshots put **"Rodes Island → London"** on the panel in 76 px
+type, and **"Roma"** in the list. Neither is English, German, or the local name — the first
+is data-entry noise in the adsb.im `location` field, showing through because LGRP was not in
+the table. `resolve_city()` was structurally right the whole time (German table, then the
+API's own text, never a bare code) and its comment claimed the fallback was rare. It was not
+rare; nobody had ever counted. It now says so in the log, so the next gap is found by
+leaving the board on a console for an afternoon instead of by noticing it in a photograph.
+
+The naming policy did not change and is worth restating because it is the part that is easy
+to get wrong in the generous direction: the German exonym **only where Austrian usage
+genuinely has one** — Mailand, Warschau, Laibach, Danzig, Hermannstadt — and the local
+spelling everywhere else. "Neu-York" is not a German name, it is an insult to both
+languages. One more constraint that bites: the three hero faces carry Latin-1 only, so
+Wrocław and Timișoara have to be spelled around. `check_font_coverage.py` enforces it.
+
+## D44 — Over-the-air updates, off by default
+
+**Decision:** OTA is implemented, and a device with no update URL stored in NVS never
+contacts anything. HTTPS only. Rollback on. Installs only inside the night dim window.
+
+**Why off by default:** there is no release infrastructure yet, and a firmware source is the
+most dangerous string on the device — whoever controls it controls the device. A URL is
+stored the same way WiFi credentials are: typed in over serial, never in the repository.
+`ota_set_url()` refuses anything that is not `https://`, and `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP`
+stays off, because a Kconfig flag is one edit away and code is not.
+
+**Why the night window:** writing 2 MB to flash tears this panel — espressif/esp-bsp#570, on
+this exact silicon, one of the three risks the whole build order exists to retire. An update
+during the day would garble the screen for a minute in front of the one person who must never
+see this thing look broken. At 3 a.m. it costs nothing. With auto-dim switched off there is
+no window and therefore no safe hour, and the answer is never.
+
+**Why rollback:** the failure worth guarding against is not a corrupt image — the bootloader
+checks the hash — but a working image that cannot get online. That is the brick nobody can
+fix from 9,000 km away. `ota_confirm_running_image()` is called only after four consecutive
+30-second ticks with WiFi associated; if that never happens, the next reboot returns to the
+build that worked.
+
+**Verified on the device, and what was not.** DNS, TLS handshake, Mozilla-root-bundle
+validation, HTTP 200, 2,262 bytes received byte-exact, cJSON parse, and our own field check
+correctly rejecting a body that is valid JSON but not a manifest. The image download, flash
+write and slot switch are **not** exercised end to end: that needs a hosted signed build, and
+there is nowhere to host one yet. The policy layer is exhaustively host-tested (14,055
+checks, including all 13,824 combinations of hour × window against the dimmer's own answer).
+
+## D45 — Three bugs that only appeared once TLS ran
+
+Each cost a build cycle and each is worth more than the feature that found it.
+
+**A 4 KB stack does not report its own overflow.** `ota_check()` was first called from the
+debug console task. A TLS handshake against the full root bundle needs about 8 KB. The
+overflow did not announce itself — it corrupted the touch driver's context, and the device
+aborted a few hundred milliseconds later inside `esp_lcd_touch_read_data()` with
+`ESP_ERR_INVALID_ARG`, which reads as an I²C fault in a subsystem TLS has never heard of.
+The OTA task now has 10 KB and reports 6,172 B of headroom after a real handshake — so the
+4 KB task had none at all. `ota_request_check()` exists so the console never does this again.
+This is the third time on this project that a stack overflow has presented as something else
+entirely; it is the house failure mode.
+
+**`mbedtls_ssl_setup returned -0x7F00` is an out-of-memory error wearing a network error's
+clothes.** With the framebuffer and WiFi up, this board has ~35 KB of internal heap and a
+largest free block of 15 KB; mbedTLS wants a 16 KB inbound record buffer. There are 4.7 MB of
+PSRAM idle on the other side of the bus, so `CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y` plus
+`CONFIG_MBEDTLS_DYNAMIC_BUFFER=y`. Cost of the whole TLS + OTA stack, measured at four
+boot checkpoints against the previous commit: **1,328 bytes of internal SRAM, exactly**, and
+104 KB of flash.
+
+**One `esp_http_client_read()` is not the body.** It returns whatever has arrived — one TLS
+record, one chunk. The first working handshake fetched 2,262 bytes and parsed the first 1,024
+of them, which failed as "not JSON" and looked exactly like a server problem. It reads in a
+loop now, refuses a body that does not fit rather than parsing a truncated one (half a JSON
+object can still be valid JSON, and then the device believes a version number nobody sent),
+and checks `esp_http_client_is_complete_data_received()`.
+
+**And a fourth, found by the fix.** Pasting a URL into a console whose stdin is non-blocking
+(D22) means `fgets()` returns NULL instantly and every character afterwards arrives at
+`on_cmd()` as a *command*. `https://...` contains `t`, which runs the tearing benchmark.
+`dbg_read_line()` already existed and already solved this; the new console had not used it.
+
+## D46 — "C177" in the hero, and why D36 did not prevent it
+
+**Decision:** `hero_from_type()` no longer falls back to `actype_full_or_code()`.
+
+**Why:** the panel showed **C177** — a raw ICAO designator, at 76 px, as the answer. D36
+removed exactly this from the list screen by routing both callers through
+`actype_display_name()`, which returns NULL when neither the table nor the emitter category
+knows anything. But the hero kept a tail below that call: on NULL it asked
+`actype_full_or_code()`, whose documented last resort is *the code itself*, and then replaced
+the result only if it was literally `"?"`. So the fix held for every type that produced a
+question mark and failed for every type that produced a designator.
+
+D36 said the bug was the duplication, not either copy. It was right, and it did not go far
+enough: deleting one copy left the other's dead fallback standing. If `actype_display_name()`
+returns NULL there is no third source, and the answer is "Unbekanntes Flugzeug".
+
+The test that locks it uses designators deliberately absent from the table and asserts the
+hero neither equals nor *contains* them — plus, in the same group, that a known type is still
+named, because "make every hero say Unbekanntes Flugzeug" would pass the first half and
+destroy the product.
+
+## D47 — A transient I²C error aborts the device
+
+**Not decided — recorded.** `esp_lvgl_port_touch.c` wraps both touch reads in
+`ESP_ERROR_CHECK`, so any failure on the GT911 — which sits behind a TCA9554 expander on a
+shared I²C bus — panics the whole device. The stack overflow in D45 surfaced through this
+path, which is how it was found at all, but the hazard is independent of that bug: a genuine
+bus glitch in a living room in Pattaya would reboot the panel rather than drop a frame of
+touch input.
+
+Left alone deliberately. It is a managed component, patching it forks a dependency, and
+nothing observed so far suggests spontaneous I²C failure on this unit. Written down because
+the next unexplained reboot should start here.

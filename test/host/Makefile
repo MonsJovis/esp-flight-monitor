@@ -13,7 +13,8 @@ CJSON_DIR := $(IDF_PATH)/components/json/cJSON
 # precisely so its backoff and failover rules could be tested off-device.
 MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) \
                $(wildcard $(ROOT)/main/net/*_parse.c) \
-               $(wildcard $(ROOT)/main/net/source_logic.c)
+               $(wildcard $(ROOT)/main/net/source_logic.c) \
+               $(wildcard $(ROOT)/main/net/ota_policy.c)
 SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c
 
 TESTS   := $(patsubst %.c,%,$(wildcard test_*.c))

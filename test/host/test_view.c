@@ -681,6 +681,67 @@ static void test_synthetic_military_reason(void)
     remember_for_scan("synthetic military no-route", &vm);
 }
 
+/* ---- the gate: a raw ICAO designator may never be the hero ---------------- */
+
+static void test_hero_is_never_a_bare_code(void)
+{
+    GROUP("view_build: an unknown type is named, never spelled as its code");
+
+    /* Real capture, 2026-09-19: a Cessna 177 Cardinal, type "C177", not in
+     * tbl_actype.c and broadcasting no emitter category. The panel put C177
+     * in the hero at 76 px — the bare designator AGENTS.md §1 forbids, and
+     * the bug D36 removed from the list while leaving it standing here.
+     *
+     * The designators below are deliberately NOT in the table: the point is
+     * the behaviour when lookup fails, so adding any of them to the table
+     * later must not quietly disarm this test. */
+    static const char *const unknown_types[] = {
+        "C177", "ZZZZ", "QQ12", "X", "AB", "7777", "----",
+    };
+
+    for (size_t i = 0; i < sizeof unknown_types / sizeof unknown_types[0]; i++) {
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "abc12%d", (int)i);
+        snprintf(ac.flight, sizeof ac.flight, "OEXYZ");
+        snprintf(ac.type, sizeof ac.type, "%s", unknown_types[i]);
+        ac.category[0] = '\0';               /* nothing from the category either */
+        ac.alt_ft = 5300;
+        ac.dst_nm = 2.5f;
+        ac.dir_deg = 270.0f;
+
+        time_t now = 1789000000;
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, true, &vm);
+
+        /* The hero must not BE the code, must not START with it, and must not
+         * contain it: "C177" alone, "C177 Flugzeug" and "Typ C177" are all the
+         * same failure wearing different hats. */
+        CHECK(strstr(vm.hero, unknown_types[i]) == NULL);
+        CHECK(vm.hero[0] != '\0');
+        CHECK_STR(vm.hero, "Unbekanntes Flugzeug");
+        remember_for_scan("unknown type designator", &vm);
+    }
+
+    GROUP("view_build: a KNOWN type is still named, not blanked");
+    /* The fix above must not have turned every hero into "Unbekanntes
+     * Flugzeug" — that would pass the checks above and destroy the product. */
+    {
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "abcdef");
+        snprintf(ac.type, sizeof ac.type, "A20N");
+        ac.alt_ft = 31000;
+        ac.dst_nm = 9.0f;
+        time_t now = 1789000000;
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, true, &vm);
+        CHECK(strcmp(vm.hero, "Unbekanntes Flugzeug") != 0);
+        CHECK(strstr(vm.hero, "A20N") == NULL);
+        CHECK(strstr(vm.hero, "Airbus") != NULL);
+    }
+}
+
 /* ---- the gate: no English may leak into any output field ----------------- */
 
 static const char *const GIVEAWAY_WORDS[] = {
@@ -779,6 +840,7 @@ int main(void)
     test_synthetic_military_reason();
 
     /* Must run last: it scans every model remember_for_scan() collected above. */
+    test_hero_is_never_a_bare_code();
     test_no_english_leaks_anywhere();
 
 

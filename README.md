@@ -104,6 +104,23 @@ cd test/host && make
   the build if one leaks into a widget constructor. `--list` prints the whole German
   vocabulary, grouped by screen, for reading aloud.
 
+## Updating it remotely
+
+It spends half the year 9,000 km away, so it can update itself — but only if you tell it
+where from, and it leaves the workshop not knowing. Press `u` on the serial console and
+paste an `https://` manifest URL:
+
+```json
+{ "version": "0.2.0",
+  "url": "https://example.org/esp-flight-monitor-0.2.0.bin",
+  "size": 2313536 }
+```
+
+It checks daily and installs **only inside the night dim window**, because writing 2 MB to
+flash tears this panel and he should never see that. A freshly written image boots on
+probation: unless it proves it can still reach WiFi, the bootloader puts the working one
+back. Plain HTTP is refused — whoever controls that URL controls the device.
+
 ## Data
 
 Positions come from **[adsb.lol](https://adsb.lol)**, routes from
