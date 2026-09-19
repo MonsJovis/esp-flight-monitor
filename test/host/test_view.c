@@ -33,8 +33,8 @@
  * pass whatever anyone typed into the header. Changing what the device says
  * to him is supposed to cost two edits in two files, and the failing test in
  * between is the point. */
-static const char *const REASON_PRIVATE    = "Eine Route gibt es nur bei Linienflügen.";
-static const char *const REASON_HELICOPTER = "Hubschrauber fliegen meist ohne festen Flugplan.";
+static const char *const REASON_PRIVATE    = "Eine Route gibt es nur zu Flügen mit Flugnummer.";
+static const char *const REASON_HELICOPTER = "Hubschrauber fliegen meist ohne feste Route.";
 static const char *const REASON_MILITARY   = "Militärflüge scheinen in keinem öffentlichen Flugplan auf.";
 static const char *const REASON_AIRLINER   = "Der Flugplan ist im Moment nicht verfügbar.";
 static const char *const REASON_UNKNOWN    = "Zu diesem Flug ist keine Route bekannt.";
@@ -361,7 +361,9 @@ static void test_overhead_aua_flights(void)
         CHECK_STR(vm.origin, "Skopje");
         CHECK_STR(vm.airline, "Austrian Airlines");
         CHECK_STR(vm.type_full, "Airbus A220-300");
-        CHECK_STR(vm.size_class, "Regionaljet");
+        /* Mittelstreckenjet, not Regionaljet: the A220 is a narrowbody flying
+         * short and medium haul, and German aviation press calls it that. */
+        CHECK_STR(vm.size_class, "Mittelstreckenjet");
         CHECK_STR(vm.registration, "YL-ABG");
         remember_for_scan("AUA76PZ overhead", &vm);
     }

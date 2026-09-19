@@ -7,7 +7,7 @@
 > What the panel says, unprompted, on real aircraft over Gloggnitz:
 > ```
 > Wien → Bologna · Austrian Airlines · 4.793 m · 16,4 km nordöstlich
-> Scheibe SF-25 Falke · Eine Route gibt es nur bei Linienflügen. · 11,5 km nordwestlich
+> Scheibe SF-25 Falke · Eine Route gibt es nur zu Flügen mit Flugnummer. · 11,5 km NW
 > München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
 >

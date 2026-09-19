@@ -1092,3 +1092,60 @@ second is that the exemption list is where a gate goes to die. Eight font-specim
 were listed in it by spelling; they moved to `main/debug/dbg_fontcard.c` instead, because
 "developer diagnostics live in main/debug" is a rule, and eight spellings is a list someone
 has to maintain forever.
+
+## D56 — The aviation German, checked against the standards rather than against my ear
+
+A term-by-term review of every aviation word on the panel, sourced to RTCA DO-260B
+Table 2-21, Austro Control publications and German aviation press. Four things were wrong.
+
+**"Eine Route gibt es nur bei Linienflügen." was false.** A *Linienflug* is specifically
+scheduled, regular public transport; a *Charterflug*/*Bedarfsflug* is explicitly not one —
+and charter, cargo and ambulance flights all have routes. What is actually true is narrower
+and plainer: the lookup is keyed on the **callsign**, so a route exists exactly when the
+aircraft flies under a flight number. Now **"Eine Route gibt es nur zu Flügen mit
+Flugnummer."** — he has read a Flugnummer off a ticket his whole life.
+
+**A1 and A2 shared a synonym pair.** German treats *Leichtflugzeug* and *Kleinflugzeug* as
+two words for the same ~5.7 t class, so the table spent them on two different weight bands —
+and the larger band got the word that sounds smaller. A2 reaches 34 t: a Dash 8 Q400 is not
+a "Kleinflugzeug" under any German definition. A1 is *Kleinflugzeug* now (the word Austrian
+press actually uses for what he sees overhead); A2 is *Mittelgroßes Flugzeug*, a description
+rather than a term of art, because German has no term — A2, A3 and A4 all sit inside one
+German wake class.
+
+**A4 asserted the one thing it is known not to be.** DO-260B's A4 is "High-Vortex Large" and
+names the **B-757** as its example — a narrowbody. *Großraumflugzeug* means widebody
+specifically: over five metres of fuselage, two aisles. A4 now shares A3's *Verkehrsflugzeug*,
+which is honest, instead of A5's, which was not.
+
+**A6's word meant roughly the opposite of A6.** *Hochleistungsflugzeug* is a real EASA
+Part-FCL term — High Performance Airplane, a single-pilot TBM, King Air or Citation. DO-260B's
+A6 is ">5 g and >400 knots", which in practice is only ever a fast military jet. Now
+*Militärjet*.
+
+**Set C was missing entirely** — surface vehicles and fixed obstacles. Added, with Austro
+Control's own vocabulary from its *Datenproduktspezifikation für Luftfahrthindernisse*
+(Punktobjekte, Linienobjekte, and "Hindernisgruppe" for a cluster). The load-bearing property
+of all six words is that none contains "Flugzeug", and a test asserts exactly that.
+
+**Being accurate about what this fixed:** `adsb_parse.c` already drops `t == "TWR"` and
+`category[0] == 'C'` at the boundary, and `test_parse.c` asserts both. So nothing was
+reaching the panel, and these entries are a backstop for a path that is currently
+unreachable — not a live bug. The same applies to the `TWR` row, which could never be
+reached for a second reason: `manufacturer = "-"` made `actype_is_placeholder()` true, so
+its carefully-written "Boden-Referenzsignal (MLAT)" was dead text. It is *Bodenstation* now,
+which is what FlightAware's and AirNav's German pages call the thing, with "Kein Flugzeug"
+underneath.
+
+**Four class words changed on plainness or accuracy:** *Geschäftsreisejet* → **Privatjet**
+(no aviation source uses the former; Vienna's own charter operators say the latter);
+*Großraumjet* → **Großraumflugzeug** (rare, and it contradicted `k_category_de` in the same
+file); *Turboprop* → **Propellerflugzeug** (correct but jargon — the plain word names what he
+can see); and the A220 moved from *Regionaljet* to *Mittelstreckenjet*, which is what German
+press calls a narrowbody on short and medium haul.
+
+**And one I was wrong about.** I suspected *Flugplan* of reading as "timetable". German
+Wikipedia's primary article for the word is the ATC flight plan — the timetable sense is the
+disambiguated secondary one — and Austro Control uses *Flugplan* and *Flugplanaufgabe*
+throughout. Left alone. Seventeen of the twenty-two class words needed no change either,
+five of them confirmed against Austro Control's own category nouns.

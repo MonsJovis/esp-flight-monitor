@@ -94,7 +94,7 @@ static int name_is_or_starts_with_code(const char *code, const char *name)
  * really emits these; what this file owns is the other half of the contract --
  * that each ROW carries the category which lands on the right sentence. A
  * glider filed as AC_CAT_AIRLINER compiles, sorts and looks fine in review, and
- * then tells him "Eine Route gibt es nur bei Linienflügen." about a sailplane.
+ * then tells him "Eine Route gibt es nur zu Flügen mit Flugnummer." about a sailplane.
  *
  * READ THIS BEFORE EDITING IT. This is a HAND-WRITTEN MIRROR and it can drift.
  * Nothing links it to fill_reason(): if that switch changes its category ->
@@ -347,16 +347,16 @@ int main(void)
         check_type("PA44", "Piper PA-44 Seminole", "Viersitzer", AC_CAT_PRIVATE);
         check_type("P28R", "Piper PA-28R Arrow", "Viersitzer", AC_CAT_PRIVATE);
         check_type("P32R", "Piper PA-32R Saratoga", "Sechssitzer", AC_CAT_PRIVATE);
-        check_type("P46T", "Piper PA-46 Meridian", "Turboprop", AC_CAT_PRIVATE);
+        check_type("P46T", "Piper PA-46 Meridian", "Propellerflugzeug", AC_CAT_PRIVATE);
 
         check_type("BE33", "Beechcraft Debonair", "Viersitzer", AC_CAT_PRIVATE);
         check_type("BE35", "Beechcraft Bonanza 35", "Viersitzer", AC_CAT_PRIVATE);
         check_type("BE55", "Beechcraft Baron 55", "Sechssitzer", AC_CAT_PRIVATE);
         check_type("BE76", "Beechcraft Duchess", "Viersitzer", AC_CAT_PRIVATE);
-        check_type("BE30", "Beechcraft King Air 300", "Turboprop", AC_CAT_PRIVATE);
+        check_type("BE30", "Beechcraft King Air 300", "Propellerflugzeug", AC_CAT_PRIVATE);
 
         check_type("S22T", "Cirrus SR22T", "Viersitzer", AC_CAT_PRIVATE);
-        check_type("SF50", "Cirrus Vision Jet", "Geschäftsreisejet", AC_CAT_PRIVATE);
+        check_type("SF50", "Cirrus Vision Jet", "Privatjet", AC_CAT_PRIVATE);
         check_type("DA20", "Diamond DA20 Katana", "Zweisitzer", AC_CAT_PRIVATE);
         check_type("DA62", "Diamond DA62", "Sechssitzer", AC_CAT_PRIVATE);
 
@@ -371,19 +371,19 @@ int main(void)
 
     GROUP("business jets and turboprops");
     {
-        check_type("C25M", "Cessna Citation M2", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("C68A", "Cessna Citation Latitude", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("C700", "Cessna Citation Longitude", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("CL30", "Bombardier Challenger 300", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("E50P", "Embraer Phenom 100", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("E35L", "Embraer Legacy 600", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("FA8X", "Dassault Falcon 8X", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("G280", "Gulfstream G280", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("HDJT", "HondaJet HA-420", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("LJ75", "Learjet 75", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("PRM1", "Beechcraft Premier I", "Geschäftsreisejet", AC_CAT_PRIVATE);
-        check_type("MU2",  "Mitsubishi MU-2", "Turboprop", AC_CAT_PRIVATE);
-        check_type("PAY3", "Piper PA-42 Cheyenne III", "Turboprop", AC_CAT_PRIVATE);
+        check_type("C25M", "Cessna Citation M2", "Privatjet", AC_CAT_PRIVATE);
+        check_type("C68A", "Cessna Citation Latitude", "Privatjet", AC_CAT_PRIVATE);
+        check_type("C700", "Cessna Citation Longitude", "Privatjet", AC_CAT_PRIVATE);
+        check_type("CL30", "Bombardier Challenger 300", "Privatjet", AC_CAT_PRIVATE);
+        check_type("E50P", "Embraer Phenom 100", "Privatjet", AC_CAT_PRIVATE);
+        check_type("E35L", "Embraer Legacy 600", "Privatjet", AC_CAT_PRIVATE);
+        check_type("FA8X", "Dassault Falcon 8X", "Privatjet", AC_CAT_PRIVATE);
+        check_type("G280", "Gulfstream G280", "Privatjet", AC_CAT_PRIVATE);
+        check_type("HDJT", "HondaJet HA-420", "Privatjet", AC_CAT_PRIVATE);
+        check_type("LJ75", "Learjet 75", "Privatjet", AC_CAT_PRIVATE);
+        check_type("PRM1", "Beechcraft Premier I", "Privatjet", AC_CAT_PRIVATE);
+        check_type("MU2",  "Mitsubishi MU-2", "Propellerflugzeug", AC_CAT_PRIVATE);
+        check_type("PAY3", "Piper PA-42 Cheyenne III", "Propellerflugzeug", AC_CAT_PRIVATE);
     }
 
     GROUP("gliders and motorgliders -- this is Austria");
@@ -517,25 +517,25 @@ int main(void)
 
     GROUP("regional and Asian types -- the half of the year in Pattaya");
     {
-        check_type("DHC6", "De Havilland Twin Otter", "Turboprop", AC_CAT_AIRLINER);
+        check_type("DHC6", "De Havilland Twin Otter", "Propellerflugzeug", AC_CAT_AIRLINER);
         check_type("BN2P", "Britten-Norman Islander", "Kleinflugzeug", AC_CAT_PRIVATE);
-        check_type("E110", "Embraer EMB-110 Bandeirante", "Turboprop", AC_CAT_AIRLINER);
-        check_type("SW4",  "Swearingen Metro", "Turboprop", AC_CAT_AIRLINER);
+        check_type("E110", "Embraer EMB-110 Bandeirante", "Propellerflugzeug", AC_CAT_AIRLINER);
+        check_type("SW4",  "Swearingen Metro", "Propellerflugzeug", AC_CAT_AIRLINER);
         check_type("AN12", "Antonov An-12", "Frachtflugzeug", AC_CAT_AIRLINER);
-        check_type("AN24", "Antonov An-24", "Turboprop", AC_CAT_AIRLINER);
-        check_type("AN26", "Antonov An-26", "Turboprop", AC_CAT_AIRLINER);
-        check_type("MA60", "Xi'an MA60", "Turboprop", AC_CAT_AIRLINER);
+        check_type("AN24", "Antonov An-24", "Propellerflugzeug", AC_CAT_AIRLINER);
+        check_type("AN26", "Antonov An-26", "Propellerflugzeug", AC_CAT_AIRLINER);
+        check_type("MA60", "Xi'an MA60", "Propellerflugzeug", AC_CAT_AIRLINER);
         check_type("ARJ2", "COMAC ARJ21", "Regionaljet", AC_CAT_AIRLINER);
         check_type("C919", "COMAC C919", "Mittelstreckenjet", AC_CAT_AIRLINER);
         check_type("SU95", "Sukhoi Superjet 100", "Regionaljet", AC_CAT_AIRLINER);
-        check_type("F27",  "Fokker F27 Friendship", "Turboprop", AC_CAT_AIRLINER);
+        check_type("F27",  "Fokker F27 Friendship", "Propellerflugzeug", AC_CAT_AIRLINER);
         check_type("F28",  "Fokker F28 Fellowship", "Regionaljet", AC_CAT_AIRLINER);
         check_type("B732", "Boeing 737-200", "Mittelstreckenjet", AC_CAT_AIRLINER);
         check_type("B733", "Boeing 737-300", "Mittelstreckenjet", AC_CAT_AIRLINER);
         check_type("MD82", "McDonnell Douglas MD-82", "Mittelstreckenjet", AC_CAT_AIRLINER);
         check_type("MD90", "McDonnell Douglas MD-90", "Mittelstreckenjet", AC_CAT_AIRLINER);
-        check_type("A30B", "Airbus A300B", "Großraumjet", AC_CAT_AIRLINER);
-        check_type("B742", "Boeing 747-200", "Großraumjet", AC_CAT_AIRLINER);
+        check_type("A30B", "Airbus A300B", "Großraumflugzeug", AC_CAT_AIRLINER);
+        check_type("B742", "Boeing 747-200", "Großraumflugzeug", AC_CAT_AIRLINER);
         /* E175 files under three designators depending on the wing. One
          * aircraft, one name -- the same rule the airport table follows for a
          * city with three fields. */
@@ -1007,9 +1007,56 @@ int main(void)
         CHECK(ac_category_de("") == NULL);
         CHECK(ac_category_de(NULL) == NULL);
         /* The ones that do carry information still must. */
-        CHECK_STR(ac_category_de("A1"), "Leichtflugzeug");
+        CHECK_STR(ac_category_de("A1"), "Kleinflugzeug");
         CHECK_STR(ac_category_de("A7"), "Hubschrauber");
         CHECK_STR(ac_category_de("B1"), "Segelflugzeug");
+
+        /* Read against DO-260B Table 2-21. A1 and A2 used to be
+         * "Leichtflugzeug" and "Kleinflugzeug" — which German treats as
+         * SYNONYMS for one ~5.7 t class, so two different weight bands shared
+         * a synonym pair and the larger got the smaller-sounding word. A2
+         * reaches 34 t. */
+        CHECK_STR(ac_category_de("A2"), "Mittelgroßes Flugzeug");
+        CHECK(strcmp(ac_category_de("A1"), ac_category_de("A2")) != 0);
+
+        /* A4 is "High-Vortex Large" and DO-260B names the B-757 as its
+         * example — a narrowbody. It must NOT claim Großraumflugzeug, which
+         * means widebody. It shares A3's word; it must not share A5's. */
+        CHECK_STR(ac_category_de("A4"), "Verkehrsflugzeug");
+        CHECK_STR(ac_category_de("A4"), ac_category_de("A3"));
+        CHECK(strcmp(ac_category_de("A4"), ac_category_de("A5")) != 0);
+
+        /* A6 was "Hochleistungsflugzeug", a real EASA Part-FCL term meaning a
+         * single-pilot TBM or King Air — roughly the opposite of DO-260B's
+         * ">5g and >400 knots". */
+        CHECK(strstr(ac_category_de("A6"), "Hochleistung") == NULL);
+    }
+
+    GROUP("Set C is on the ground, and nothing in it may be called a Flugzeug");
+    {
+        /* These were missing entirely, so ac_category_de() returned NULL and
+         * the panel announced a fire truck to him as "Unbekanntes Flugzeug" in
+         * 76 px type. C0 is the sharp one: it means "Set C emitter, not saying
+         * which" — a vehicle or an obstacle — and NOT "unknown aircraft". */
+        static const char *const set_c[] = { "C0", "C1", "C2", "C3", "C4", "C5" };
+        for (size_t i = 0; i < sizeof set_c / sizeof set_c[0]; i++) {
+            const char *w = ac_category_de(set_c[i]);
+            CHECK(w != NULL);
+            if (w == NULL) {
+                continue;
+            }
+            CHECK(w[0] != '\0');
+            /* The load-bearing assertion of this whole group. */
+            CHECK(strstr(w, "Flugzeug") == NULL);
+            CHECK(strstr(w, "flugzeug") == NULL);
+        }
+        CHECK_STR(ac_category_de("C1"), "Einsatzfahrzeug");
+        CHECK_STR(ac_category_de("C4"), "Hindernisgruppe");
+
+        /* Still reserved in DO-260B; naming them would be inventing data. */
+        CHECK(ac_category_de("C6") == NULL);
+        CHECK(ac_category_de("C7") == NULL);
+        CHECK(ac_category_de("B5") == NULL);
     }
 
     GROUP("actype_display_name never yields a raw ICAO code");
@@ -1022,7 +1069,7 @@ int main(void)
         CHECK_STR(actype_display_name("B734", "A3"), "Boeing 737-400");
 
         /* Unknown type, known category -> the class, not the code. */
-        CHECK_STR(actype_display_name("ZZZZ", "A1"), "Leichtflugzeug");
+        CHECK_STR(actype_display_name("ZZZZ", "A1"), "Kleinflugzeug");
         CHECK_STR(actype_display_name("",     "A7"), "Hubschrauber");
         CHECK(actype_display_name(NULL, "B1") != NULL);
 

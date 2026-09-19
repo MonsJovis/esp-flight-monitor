@@ -221,8 +221,21 @@
  * low and slow over the house. A blank slot reads as broken; a sentence
  * reads as informative. Each of these answers "why does it not say where
  * this one is going", in the register a person would answer it. */
-#define STR_REASON_GA          "Eine Route gibt es nur bei Linienflügen."
-#define STR_REASON_HELI        "Hubschrauber fliegen meist ohne festen Flugplan."
+/* NOT "nur bei Linienflügen". A Linienflug is specifically scheduled, regular
+ * public transport — a Charterflug or Bedarfsflug is explicitly not one, and
+ * charter, cargo and ambulance flights all have routes. The sentence was
+ * simply false.
+ *
+ * What is actually true is narrower and plainer: the route lookup is keyed on
+ * the CALLSIGN, so a route exists exactly when the aircraft is flying under a
+ * flight number. He knows what a Flugnummer is; he has read one off a ticket
+ * his whole life. */
+#define STR_REASON_GA          "Eine Route gibt es nur zu Flügen mit Flugnummer."
+/* "feste Route", not "fester Flugplan": a rescue or police helicopter flies
+ * where it is needed, which is the thing he can see for himself. It keeps
+ * "Flugplan" for the two sentences where the filed ATC plan is genuinely the
+ * subject, rather than spending the word on a sense closer to "timetable". */
+#define STR_REASON_HELI        "Hubschrauber fliegen meist ohne feste Route."
 #define STR_REASON_MIL         "Militärflüge scheinen in keinem öffentlichen Flugplan auf."
 
 /* Not "there is no flight plan" — we do not know that. We know we cannot get

@@ -41,7 +41,7 @@ sky. Aircraft with no filed route are not a failure case — seven of the thirte
 first live capture were light aircraft with no flight plan, and those are precisely the
 ones he *hears*, low and slow over the house. They keep the layout and say why:
 
-> **Eine Route gibt es nur bei Linienflügen.**
+> **Eine Route gibt es nur zu Flügen mit Flugnummer.**
 
 Settings are one screen: where he is, how far to look, how bright, and when to dim.
 
