@@ -520,3 +520,45 @@ device ever saw — was missing, so the airline line simply vanished. Ten Asian 
 added (AAR, AXM, CES, NOK, PAL, SEJ, SJX, TGW, VJC, XAX), now 206 entries. `MNA` was
 deliberately **not** added: I could not state it with confidence, and an invented airline
 name is worse on this panel than a blank line.
+
+## D32 — A missing glyph renders as nothing, so it is now a test
+
+**Decision:** `tools/check_font_coverage.py`, wired into `make all` in `test/host`.
+
+**Why:** LVGL draws a glyph the font does not contain as **nothing at all** — no error, no
+placeholder box, no log line. The text is simply shorter than it was written, and on a panel
+nobody reads character by character that can survive indefinitely. AGENTS.md §7 flags this
+for umlauts; the same trap catches a real `…`, a non-breaking space, or a typographic quote
+pasted out of a document.
+
+It found three on its first run, all user-facing: **Aeroméxico**, **Aerolíneas Argentinas**
+and **Air Algérie** would have rendered as "Aerom xico" on the panel.
+
+The checker **parses the ranges out of `tools/build_fonts.sh`** rather than keeping its own
+copy. The first draft did keep a copy, and it went stale within minutes of the subset
+changing — a checker with a private definition of the truth is a checker that lies.
+
+## D33 — Latin-1 accents at every size, including the hero
+
+**Decision:** widen the subset from the seven German umlauts to the whole `0xC0–0xFF`
+block, on all ten faces.
+
+**Why:** the data genuinely contains them, and not only in body text. Airline names
+(Aeroméxico) sit in the supporting band, but a city name reaching the **hero** through the
+API fallback can too — "Málaga", "Nîmes". Rendering that as "M laga" at 100 px is the most
+visible possible failure.
+
+**Cost, measured:** 482,256 → 752,589 B of binary (+270 KB), app image 2.09 MB with the
+partition 58% free. **FPS: 28.58 / 28.50 / 28.45 — unchanged.** So the extra glyph data
+costs nothing at runtime, which is consistent with D12's finding that font bandwidth is not
+the constraint here.
+
+Latin Extended-A stays off the three hero faces; Polish and Czech place names are rarer in
+the hero slot and that range is where the real bytes are (tools/README.md has the numbers).
+
+## D34 — The settings screen speaks km, not nautical miles
+
+The radius control arrived reading **"30 NM"**. The API takes nautical miles and that is the
+API's business; DESIGN.md is explicit that the panel speaks km, and "NM" means nothing to
+the man this is built for. Now **"56 km"**, converted and grouped through the same `fmt_de`
+helpers as every other number on the device rather than a local `snprintf`.

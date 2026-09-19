@@ -1,0 +1,197 @@
+#include "nav.h"
+#include <string.h>
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "ui/theme.h"
+#include "ui/fonts/fonts.h"
+
+static const char *TAG = "nav";
+
+#define NAV_MAX_PAGES 4
+#define DOT_SIZE      8
+#define DOT_GAP       10
+#define DOT_Y         (THEME_SCREEN_HEIGHT - 16)
+
+/* DESIGN.md §6: only from §5.3, and only after 30 s without a touch. */
+#define AUTO_RETURN_MS 30000
+/* A long-press that is too short fires while he is just resting a finger;
+ * too long and he gives up. */
+#define LONGPRESS_MS   1200
+
+static lv_obj_t *s_tiles;
+static lv_obj_t *s_page[NAV_MAX_PAGES];
+static lv_obj_t *s_dot[NAV_MAX_PAGES];
+static int       s_n_pages;
+static int       s_page_idx;
+
+static lv_obj_t *s_overlay;
+static void    (*s_longpress_cb)(void);
+
+static int64_t  s_last_touch_ms;
+
+static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
+
+static void paint_dots(void)
+{
+    for (int i = 0; i < s_n_pages; i++) {
+        /* The active dot is brighter AND wider — never colour alone
+         * (DO-257A §2.1.6), even for something this small. */
+        bool on = (i == s_page_idx);
+        lv_obj_set_width(s_dot[i], on ? DOT_SIZE * 3 : DOT_SIZE);
+        lv_obj_set_style_bg_color(s_dot[i], on ? THEME_CYAN : THEME_BORDER_IDLE, 0);
+    }
+    /* Re-centre: the row's width changes when the active dot widens. */
+    int32_t total = 0;
+    for (int i = 0; i < s_n_pages; i++) {
+        total += lv_obj_get_width(s_dot[i]) + (i ? DOT_GAP : 0);
+    }
+    int32_t x = (THEME_SCREEN_WIDTH - total) / 2;
+    for (int i = 0; i < s_n_pages; i++) {
+        lv_obj_set_pos(s_dot[i], x, DOT_Y);
+        x += lv_obj_get_width(s_dot[i]) + DOT_GAP;
+    }
+}
+
+static void on_tile_change(lv_event_t *e)
+{
+    (void)e;
+    lv_obj_t *act = lv_tileview_get_tile_active(s_tiles);
+    for (int i = 0; i < s_n_pages; i++) {
+        if (s_page[i] == act) {
+            s_page_idx = i;
+            break;
+        }
+    }
+    s_last_touch_ms = now_ms();
+    paint_dots();
+}
+
+static void on_press(lv_event_t *e)
+{
+    (void)e;
+    s_last_touch_ms = now_ms();
+}
+
+static void on_longpress(lv_event_t *e)
+{
+    (void)e;
+    s_last_touch_ms = now_ms();
+    if (s_longpress_cb && !nav_overlay_open()) {
+        s_longpress_cb();
+    }
+}
+
+void nav_create(const nav_page_t *pages, int n_pages)
+{
+    if (n_pages > NAV_MAX_PAGES) n_pages = NAV_MAX_PAGES;
+    s_n_pages = n_pages;
+    s_page_idx = 0;
+
+    lv_obj_t *root = lv_screen_active();
+    lv_obj_set_style_bg_color(root, THEME_GROUND, 0);
+    lv_obj_set_style_pad_all(root, 0, 0);
+
+    s_tiles = lv_tileview_create(root);
+    lv_obj_set_size(s_tiles, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(s_tiles, 0, 0);
+    lv_obj_set_style_bg_color(s_tiles, THEME_GROUND, 0);
+    lv_obj_set_style_border_width(s_tiles, 0, 0);
+    /* The tileview draws its own scrollbar across the bottom, right where the
+     * page indicator lives. The dots already say which page this is. */
+    lv_obj_set_scrollbar_mode(s_tiles, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(s_tiles, on_tile_change, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_tiles, on_press, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_tiles, on_longpress, LV_EVENT_LONG_PRESSED, NULL);
+
+    for (int i = 0; i < n_pages; i++) {
+        /* Horizontal deck: the first tile may only be left, the last only
+         * right, so a swipe never falls off the end into a blank tile. */
+        lv_dir_t dir = 0;
+        if (i > 0)            dir |= LV_DIR_LEFT;
+        if (i < n_pages - 1)  dir |= LV_DIR_RIGHT;
+
+        s_page[i] = lv_tileview_add_tile(s_tiles, (uint8_t)i, 0, dir);
+        lv_obj_set_style_bg_color(s_page[i], THEME_GROUND, 0);
+        lv_obj_set_style_pad_all(s_page[i], 0, 0);
+        lv_obj_set_scrollbar_mode(s_page[i], LV_SCROLLBAR_MODE_OFF);
+        if (pages[i].create) {
+            pages[i].create(s_page[i]);
+        }
+
+        s_dot[i] = lv_obj_create(root);
+        lv_obj_set_size(s_dot[i], DOT_SIZE, DOT_SIZE);
+        lv_obj_set_style_radius(s_dot[i], DOT_SIZE / 2, 0);
+        lv_obj_set_style_border_width(s_dot[i], 0, 0);
+        lv_obj_set_scrollbar_mode(s_dot[i], LV_SCROLLBAR_MODE_OFF);
+    }
+
+    /* One page is not a deck — hide the indicator rather than show a lone dot
+     * that suggests there is somewhere else to go. */
+    if (n_pages < 2) {
+        for (int i = 0; i < n_pages; i++) lv_obj_set_hidden(s_dot[i], true);
+    } else {
+        paint_dots();
+    }
+
+    s_last_touch_ms = now_ms();
+    ESP_LOGI(TAG, "deck built with %d page(s)", n_pages);
+}
+
+int nav_page(void) { return s_page_idx; }
+
+void nav_go_to(int page, bool animate)
+{
+    if (page < 0 || page >= s_n_pages || s_tiles == NULL) return;
+    lv_tileview_set_tile_by_index(s_tiles, (uint32_t)page, 0,
+                                  animate ? LV_ANIM_ON : LV_ANIM_OFF);
+    s_page_idx = page;
+    paint_dots();
+}
+
+void nav_open_overlay(void (*create)(lv_obj_t *parent), const char *name)
+{
+    if (s_overlay != NULL) {
+        nav_close_overlay();
+    }
+    lv_obj_t *root = lv_screen_active();
+    s_overlay = lv_obj_create(root);
+    lv_obj_set_size(s_overlay, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(s_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_overlay, THEME_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_overlay, 0, 0);
+    lv_obj_set_scrollbar_mode(s_overlay, LV_SCROLLBAR_MODE_OFF);
+    if (create) create(s_overlay);
+    ESP_LOGI(TAG, "overlay open: %s", name ? name : "?");
+    s_last_touch_ms = now_ms();
+}
+
+void nav_close_overlay(void)
+{
+    if (s_overlay == NULL) return;
+    lv_obj_delete(s_overlay);
+    s_overlay = NULL;
+    s_last_touch_ms = now_ms();
+    ESP_LOGI(TAG, "overlay closed");
+}
+
+bool nav_overlay_open(void) { return s_overlay != NULL; }
+
+void nav_set_longpress_cb(void (*cb)(void)) { s_longpress_cb = cb; }
+
+void nav_tick(bool empty_sky)
+{
+    if (s_tiles == NULL || nav_overlay_open()) return;
+    if (s_page_idx == 0) return;
+
+    /* The rule that keeps the device from being rude: it may only take the
+     * screen back when there is nothing to look at anyway, and only when he
+     * has clearly stopped touching it. Everything else waits for him. */
+    if (!empty_sky) return;
+    if (now_ms() - s_last_touch_ms < AUTO_RETURN_MS) return;
+
+    ESP_LOGI(TAG, "auto-return to page 0 (empty sky, %d s untouched)",
+             AUTO_RETURN_MS / 1000);
+    nav_go_to(0, true);
+}

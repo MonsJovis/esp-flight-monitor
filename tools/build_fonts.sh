@@ -161,7 +161,17 @@ RANGE_LATIN_EXT_A="0x0104-0x017C"                   # Polish/Romanian etc.
 
 # "Core" set: guaranteed present on every single face this script produces,
 # at every size. This is the non-negotiable minimum from DESIGN.md §3.
-CORE_RANGES="-r $RANGE_ASCII -r $RANGE_LATIN1_UMLAUTS -r $RANGE_DEGREE_MIDDOT -r $RANGE_ARROW_DASH"
+# Latin-1 supplement letters, 0xC0-0xFF. The umlauts were already listed
+# individually; this widens it to the whole accented block because real data
+# needs it at EVERY size, hero included:
+#   - airline names ("Aeroméxico", "Aerolíneas Argentinas", "Air Algérie")
+#   - city names reaching the hero via the API fallback ("Málaga", "Nîmes")
+# A missing glyph renders as nothing at all in LVGL — "Aerom xico" — so this
+# is a correctness range, not a nicety. tools/check_font_coverage.py enforces
+# that no UI string needs anything outside these ranges.
+RANGE_LATIN1_LETTERS="0xC0-0xFF"
+
+CORE_RANGES="-r $RANGE_ASCII -r $RANGE_LATIN1_UMLAUTS -r $RANGE_LATIN1_LETTERS -r $RANGE_DEGREE_MIDDOT -r $RANGE_ARROW_DASH"
 
 # "Full" set: core + Latin Extended-A (Polish/Romanian destinations such as
 # Poznań, Timişoara). Used on every face EXCEPT the three hero sizes — see

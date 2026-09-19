@@ -40,6 +40,9 @@
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "ui/screen_overhead.h"
+#include "ui/nav.h"
+#include "ui/screen_settings.h"
+#include "ui/screen_wifi.h"
 #include "data/view_build.h"
 #include "net/route_parse.h"
 #include "debug/dbg_fixture.h"
@@ -351,6 +354,7 @@ static void ui_task(void *arg)
 
         display_lock(0);
         screen_overhead_update(&vm);
+        nav_tick(vm.state == VIEW_EMPTY_SKY);
         display_unlock();
     }
 }
@@ -396,6 +400,149 @@ static void probe_link(void)
     }
 }
 
+/* Temporary stand-ins for §5.4 Liste and §5.5 Radar while those screens are
+ * built. They exist so the deck, the swipe gestures and the page indicator can
+ * be verified now rather than all at once at the end. */
+static void placeholder_page(lv_obj_t *parent, const char *title)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_label_set_text(l, title);
+    lv_obj_set_style_text_font(l, &plex_sans_cond_34, 0);
+    lv_obj_set_style_text_color(l, THEME_TEXT_LABEL, 0);
+    lv_obj_center(l);
+}
+static void page_liste(lv_obj_t *p) { placeholder_page(p, "Liste"); }
+static void page_radar(lv_obj_t *p) { placeholder_page(p, "Radar"); }
+
+static const nav_page_t k_pages[] = {
+    { "ueber-dir", screen_overhead_create },
+    { "liste",     page_liste },
+    { "radar",     page_radar },
+};
+
+/* ---- Einstellungen and WLAN, reached from the long-press ----------------
+ *
+ * Both are overlays, not deck pages (DESIGN.md §6): you leave them the way you
+ * came in. WLAN can also present itself, which is the one case the device is
+ * allowed to interrupt him.
+ */
+static void open_settings(void);
+
+/* Scanning blocks for seconds, so it cannot happen on the LVGL task. This runs
+ * it once on its own stack and hands the result back under the display lock. */
+static void wifi_scan_task(void *arg)
+{
+    (void)arg;
+    static char found[8][WIFI_SSID_LEN];
+    static char saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
+
+    int n = wifi_scan(found, 8);
+    int n_saved = (wifi_creds_list(saved, WIFI_MAX_NETWORKS) == ESP_OK)
+                      ? WIFI_MAX_NETWORKS : 0;
+
+    display_lock(0);
+    if (nav_overlay_open()) {
+        screen_wifi_set_networks((const char (*)[WIFI_SSID_LEN])found, n,
+                                 (const char (*)[WIFI_SSID_LEN])saved, n_saved);
+        screen_wifi_set_status(NULL, wifi_is_connected(), false);
+    }
+    display_unlock();
+    vTaskDelete(NULL);
+}
+
+static void start_wifi_scan(void)
+{
+    display_lock(0);
+    if (nav_overlay_open()) {
+        screen_wifi_set_status(NULL, wifi_is_connected(), true);
+    }
+    display_unlock();
+    xTaskCreate(wifi_scan_task, "wifiscan", 4096, NULL, 4, NULL);
+}
+
+static void on_wifi_join(const char *ssid, const char *password)
+{
+    if (ssid == NULL || ssid[0] == '\0') return;
+
+    if (password != NULL) {
+        /* A new network. Slot choice is the same rule as the serial path: reuse
+         * the slot this SSID already occupies, else the first free one, so
+         * setting up a holiday network never destroys the one that gets him
+         * home (AGENTS.md §6). */
+        char known[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
+        int slot = -1;
+        if (wifi_creds_list(known, WIFI_MAX_NETWORKS) == ESP_OK) {
+            for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+                if (strcmp(known[i], ssid) == 0) { slot = i; break; }
+            }
+            if (slot < 0) {
+                for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+                    if (known[i][0] == '\0') { slot = i; break; }
+                }
+            }
+        }
+        if (slot < 0) slot = WIFI_MAX_NETWORKS - 1;
+        wifi_creds_set(slot, ssid, password);   /* never logs the password */
+        ESP_LOGW(TAG, "stored \"%s\" in slot %d from the panel", ssid, slot);
+    } else {
+        /* A saved network: the screen never had the password and must not ask
+         * for one again. Just reconnect with what NVS already holds. */
+        ESP_LOGW(TAG, "reconnecting to saved network \"%s\"", ssid);
+    }
+    wifi_reconnect_now();
+}
+
+static void close_overlay(void)
+{
+    display_lock(0);
+    nav_close_overlay();
+    display_unlock();
+}
+
+static void build_wifi_screen(lv_obj_t *parent)
+{
+    screen_wifi_create(parent);
+    screen_wifi_set_join_cb(on_wifi_join);
+    screen_wifi_set_rescan_cb(start_wifi_scan);
+    screen_wifi_set_exit_cb(open_settings);   /* back to where he came from */
+}
+
+static void open_wifi(void)
+{
+    display_lock(0);
+    nav_open_overlay(build_wifi_screen, "wlan");
+    display_unlock();
+    start_wifi_scan();
+}
+
+static void on_settings_changed(const settings_t *s)
+{
+    if (s == NULL) return;
+    g_settings = *s;
+    settings_sanitise(&g_settings);
+    settings_save(&g_settings);
+    apply_settings();
+    display_lock(0);
+    screen_settings_update(&g_settings);
+    display_unlock();
+}
+
+static void build_settings_screen(lv_obj_t *parent)
+{
+    screen_settings_create(parent);
+    screen_settings_set_cb(on_settings_changed);
+    screen_settings_set_wifi_cb(open_wifi);
+    screen_settings_set_exit_cb(close_overlay);
+    screen_settings_update(&g_settings);
+}
+
+static void open_settings(void)
+{
+    display_lock(0);
+    nav_open_overlay(build_settings_screen, "einstellungen");
+    display_unlock();
+}
+
 /* Hand the screen to a debug view: stop the UI task touching it, and wait out
  * any update already in progress. */
 static void ui_suspend(void)
@@ -410,7 +557,8 @@ static void ui_resume(void)
 {
     display_lock(0);
     lv_obj_clean(lv_screen_active());
-    screen_overhead_create(lv_screen_active());
+    nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
+    nav_set_longpress_cb(open_settings);
     display_unlock();
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
@@ -446,6 +594,9 @@ static void on_cmd(char c)
     else if (c == 'p') probe_link();
     else if (c == 't') { ui_suspend(); dbg_bench_tearing(); }
     else if (c == 'o') cycle_location();
+    else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % 3, true); display_unlock(); }
+    else if (c == 'e') open_settings();
+    else if (c == 'k') open_wifi();
     else if (c == 'f') { ui_suspend(); font_card(); }
 }
 
@@ -472,7 +623,8 @@ void app_main(void)
     dbg_screen_start(on_cmd);
 
     display_lock(0);
-    screen_overhead_create(lv_screen_active());
+    nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
+    nav_set_longpress_cb(open_settings);
     display_unlock();
     log_memory_budget("after screen built");
 
@@ -501,7 +653,7 @@ void app_main(void)
 
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net o=ort 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net o=ort g=seite e=einst k=wlan 1-4=fixture 0=live");
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(30000));

@@ -250,7 +250,7 @@ intervention and no rate-limit ban.
 
 **Goal:** his "just browsing" mode.
 
-- [ ] **Build the screen graph** — DESIGN.md §6. Three swipe pages
+- [x] **Build the screen graph** — DESIGN.md §6. Three swipe pages
       (Über dir · Liste · Radar); Einstellungen behind a long-press on the chrome bar and
       *not* in the deck. The page indicator shows three dots because there are three pages.
 - [ ] **§5.4 Liste** — nearby aircraft sorted by distance (`dst` is pre-computed)
@@ -270,10 +270,10 @@ intervention and no rate-limit ban.
 
 **Goal:** he carries it to Thailand and it just works.
 
-- [ ] **§5.6 Einstellungen** — location preset, radius, brightness
+- [x] **§5.6 Einstellungen** — location preset, radius, brightness
 - [x] Location presets: **Gloggnitz** `47.6691/15.9303`, **Pattaya** `12.9211/100.8721`, custom
 - [x] Timezone bound to the preset — he never sets a clock (the SNTP plumbing landed in M2.5)
-- [ ] **§5.7 WLAN — on-device network list, with `lv_keyboard` for passwords.** Decided
+- [x] **§5.7 WLAN — on-device network list, with `lv_keyboard` for passwords.** Decided
       against the captive portal: that needs a phone, a second network join and a browser,
       in a foreign country, by someone who will not read a manual. Costs one keyboard
       screen; buys a device he can fix standing in front of it.
@@ -338,7 +338,7 @@ this is the sweep that catches what escaped.
 | Free PSRAM with framebuffer | 6.81 MB (1 fb) · 5.88 MB (2 fb) · 5.42 MB (3 fb) | M1 |
 | FPS at 1 / 2 / 3 framebuffers | **21.4 / 28.5 / 28.4** (100 px face, full-screen invalidate) | M1 |
 | FPS delta with a 100 px face on screen | 1 fb: −1.38 FPS (−6%) · **2 fb: zero** | M1 |
-| Flash + PSRAM cost of the full font set | **482,256 B (471 KiB)** uncompressed, 10 faces; 100 px face alone 151 KiB | M1 |
+| Flash + PSRAM cost of the full font set | **752,589 B (735 KiB)** uncompressed, 10 faces, incl. Latin-1 accents at every size. Costs **0 FPS** (28.5 before and after) | M1 |
 | Magenta-on-black verdict | legible and clearly distinct beside white and cyan at ≥56 px — see M1 note | M1 |
 | Longest destination name that fits at 100 px | **"Innsbruck", 430 px of 440**; 63/74 fit at 100, 9 at 76, 2 at 56, **0 fail** | M1 |
 | Tearing severity on NVS write | **none.** 3 µs on a 49.7 ms worst-case frame gap (1.0× idle), and **no tearing visible on the panel** under sustained NVS writes | M4 |

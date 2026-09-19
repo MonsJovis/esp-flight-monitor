@@ -25,8 +25,15 @@ CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 
-.PHONY: all clean $(TESTS)
-all: $(TESTS)
+.PHONY: all clean fontcheck $(TESTS)
+all: fontcheck $(TESTS)
+
+# A glyph missing from the subset renders as NOTHING in LVGL — no error, no
+# placeholder. That is not something to discover on the panel, so it is checked
+# here with everything else.
+fontcheck:
+	@echo "== font coverage"
+	@python3 $(ROOT)/tools/check_font_coverage.py
 
 $(TESTS): %: $(BINDIR)/%
 	@echo "== $@"
