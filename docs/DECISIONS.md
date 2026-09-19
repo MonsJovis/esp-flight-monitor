@@ -562,3 +562,39 @@ The radius control arrived reading **"30 NM"**. The API takes nautical miles and
 API's business; DESIGN.md is explicit that the panel speaks km, and "NM" means nothing to
 the man this is built for. Now **"56 km"**, converted and grouped through the same `fmt_de`
 helpers as every other number on the device rather than a local `snprintf`.
+
+## D35 — The radar's words go under the scope, not on it
+
+**Decision:** §5.5 draws marks only — shape and colour, no prose. The nearest aircraft is
+captioned in a band **below** the scope, at full size.
+
+**Why:** DESIGN.md §3 warns that §5.5 as drawn is below the readability floor, and the type
+pass raises its labels from 10–11 px to the 25 px near-tier minimum. At that size two
+captions cover the middle of a 280 px scope: a live capture had **"DIMO 2,1 km" printed
+straight across the home marker** and over two other aircraft.
+
+There is no way out by adjusting sizes. Shrinking the text is the exact thing the type pass
+forbids, and widening the scope makes the collision worse, because the constraint is the
+text, not the geometry. So the scope stops trying to be a document. It is a picture — where
+things are, which way they point, which one matters — and the words he has to *read* go in
+a band underneath at full size, in the same place every time. DESIGN.md §4's band order
+puts data at the bottom anyway.
+
+Only the nearest is captioned: it is the one the magenta mark already singles out, and a
+second caption is the crowding problem returning by another route.
+
+## D36 — One answer to "what is this aircraft called"
+
+**Decision:** `actype_display_name(type, category)` in `tables.h`. Both the hero and the
+list use it.
+
+**Why:** the list screen printed **"DIMO"** and **"PA18"** at him — raw ICAO designators,
+which AGENTS.md §1 forbids in as many words. The cause was not a missing table entry (though
+those were missing too): `actype_full_or_code()` falls back to *the code itself*, which is
+right for a log line and wrong for a panel, so the list's category fallback was never
+reached. `view_build` had already grown its own private version of the correct chain, and
+the two drifted — the bug was the duplication, not either copy.
+
+Six types the live feed produced were also added: AT75, AT76, B734, DIMO, PA18, PC6T (209
+total). A test now asserts the helper never returns the code it was given, for every one of
+them.

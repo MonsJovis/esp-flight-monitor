@@ -257,6 +257,33 @@ int main(void)
         CHECK_STR(ac_category_de("B1"), "Segelflugzeug");
     }
 
+    GROUP("actype_display_name never yields a raw ICAO code");
+    {
+        /* The list screen printed "DIMO" and "PA18" at him because
+         * actype_full_or_code()'s last resort is the code itself. This is the
+         * helper that exists so the hero and the list cannot disagree. */
+        CHECK_STR(actype_display_name("DIMO", "A1"), "Diamond HK36 Super Dimona");
+        CHECK_STR(actype_display_name("PA18", "A1"), "Piper PA-18 Super Cub");
+        CHECK_STR(actype_display_name("B734", "A3"), "Boeing 737-400");
+
+        /* Unknown type, known category -> the class, not the code. */
+        CHECK_STR(actype_display_name("ZZZZ", "A1"), "Leichtflugzeug");
+        CHECK_STR(actype_display_name("",     "A7"), "Hubschrauber");
+        CHECK(actype_display_name(NULL, "B1") != NULL);
+
+        /* Nothing known at all -> NULL, so the caller picks the wording. */
+        CHECK(actype_display_name("ZZZZ", "A0") == NULL);
+        CHECK(actype_display_name(NULL, NULL) == NULL);
+
+        /* Whatever it returns is never the code that was passed in. */
+        const char *codes[] = { "DIMO", "PA18", "B734", "AT75", "PC6T", "G2CA", "TWR" };
+        for (unsigned i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+            const char *n = actype_display_name(codes[i], "A1");
+            CHECK(n != NULL);
+            if (n) CHECK(strcmp(n, codes[i]) != 0);
+        }
+    }
+
     GROUP("unknown keys return NULL, never a garbage pointer");
     {
         CHECK(airport_de("ZZZZ") == NULL);

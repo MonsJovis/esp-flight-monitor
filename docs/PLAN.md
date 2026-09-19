@@ -253,14 +253,14 @@ intervention and no rate-limit ban.
 - [x] **Build the screen graph** — DESIGN.md §6. Three swipe pages
       (Über dir · Liste · Radar); Einstellungen behind a long-press on the chrome bar and
       *not* in the deck. The page indicator shows three dots because there are three pages.
-- [ ] **§5.4 Liste** — nearby aircraft sorted by distance (`dst` is pre-computed)
-- [ ] Tap a row → its detail card
-- [ ] **Type pass on §5.4 and §5.5 before building them.** As drawn they sit below even the
+- [x] **§5.4 Liste** — nearby aircraft sorted by distance (`dst` is pre-computed)
+- [x] Tap a row → its detail card
+- [x] **Type pass on §5.4 and §5.5 before building them.** As drawn they sit below even the
       near-view floor in DESIGN.md §3 — list secondary lines at 12 px, radar city labels at
       10–11 px. The room exists; the list can show four rows instead of five.
-- [ ] **§5.5 Radar** — PPI view if the FPS budget from M1 allows
+- [x] **§5.5 Radar** — PPI view if the FPS budget from M1 allows
       (geo projection from MatixYo `radar_display.cpp`, MIT)
-- [ ] Aircraft glyph rotated by heading (ThingPulse `PlaneSpotter.cpp` `drawPlane()`, MIT)
+- [x] Aircraft glyph rotated by heading (ThingPulse `PlaneSpotter.cpp` `drawPlane()`, MIT)
 
 **Done when:** he can see the whole sky and get from any aircraft to its route in one tap.
 

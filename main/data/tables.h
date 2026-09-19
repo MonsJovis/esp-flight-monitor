@@ -85,6 +85,19 @@ const actype_lookup_t *tbl_actype_entries(size_t *count);
  * an unknown or empty category. */
 const char *ac_category_de(const char *icao_category);
 
+/* The name to SHOW for an aircraft, in plain language, never a raw code.
+ *
+ * actype_full_or_code() falls back to the ICAO designator, which is right for a
+ * log line and wrong for the panel — AGENTS.md §1 says plain language over
+ * codes, and "PA18" means nothing to the man this is built for. This walks the
+ * whole chain instead: real type name, else the emitter category
+ * ("Leichtflugzeug"), else NULL so the caller can decide.
+ *
+ * It also skips table entries that are placeholders for an unidentified target,
+ * whose "name" is just the code again. Both the hero and the list need exactly
+ * this, and having it written twice is how they drifted apart the first time. */
+const char *actype_display_name(const char *icao_type, const char *icao_category);
+
 #ifdef __cplusplus
 }
 #endif

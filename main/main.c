@@ -43,6 +43,8 @@
 #include "ui/nav.h"
 #include "ui/screen_settings.h"
 #include "ui/screen_wifi.h"
+#include "ui/screen_list.h"
+#include "ui/screen_radar.h"
 #include "data/view_build.h"
 #include "net/route_parse.h"
 #include "debug/dbg_fixture.h"
@@ -59,6 +61,23 @@ static const char *TAG = "flight";
  * flag; bench, fontcard and the tearing test did not, so each of them was a
  * crash waiting for the next 2 s tick. Resuming rebuilds the widget tree. */
 static volatile bool s_ui_suspended = false;
+
+/* Tapping a row in the list means "tell me about THAT one", and the screen that
+ * answers that question is §5.1 — so the selection becomes the subject of the
+ * hero screen and the deck slides back to it. No separate detail card: a fourth
+ * layout to learn, for information the first page already shows, is exactly the
+ * kind of thing this user does not need. */
+static aircraft_t s_selected;
+static bool       s_has_selection;
+
+static void on_list_select(const aircraft_t *ac)
+{
+    if (ac == NULL) return;
+    s_selected = *ac;
+    s_has_selection = true;
+    nav_go_to(0, true);
+}
+
 
 static void log_memory_budget(const char *when)
 {
@@ -337,23 +356,41 @@ static void ui_task(void *arg)
         bool net_ok = wifi_is_connected() &&
                       flight_source_consecutive_failures() < 3;
 
+        /* A row he tapped stays the subject while it is still up there. Once it
+         * leaves the ring the device goes back to answering "what is overhead
+         * now", which is the question the screen is for. */
+        int subject = 0;
+        if (s_has_selection) {
+            subject = -1;
+            for (int i = 0; i < n; i++) {
+                if (strcmp(ac[i].hex, s_selected.hex) == 0) { subject = i; break; }
+            }
+            if (subject < 0) { s_has_selection = false; subject = 0; }
+        }
+
         view_model_t vm;
         if (n > 0) {
-            last_seen = ac[0];
+            last_seen = ac[subject];
             have_last_seen = true;
             /* "Still looking" and "has no flight plan" are different answers
              * and must not share a screen. flight_source knows which it is. */
             bool searching =
-                flight_source_route_status(ac[0].flight) == ROUTE_STATUS_RESOLVING;
-            view_build_ex(&ac[0], route_find(rt, n, ac[0].flight), searching,
-                          &now, n, net_ok, &vm);
+                flight_source_route_status(ac[subject].flight) == ROUTE_STATUS_RESOLVING;
+            view_build_ex(&ac[subject], route_find(rt, n, ac[subject].flight),
+                          searching, &now, n, net_ok, &vm);
         } else {
             view_build_empty(&now, have_last_seen ? &last_seen : NULL,
                              net_ok, &vm);
         }
 
         display_lock(0);
-        screen_overhead_update(&vm);
+        /* Only the visible page is repainted. The other two are behind the
+         * tileview and repainting them costs PSRAM bandwidth for nothing. */
+        switch (nav_page()) {
+        case 1:  screen_list_update(ac, n, rt, n); break;
+        case 2:  screen_radar_update(ac, n, rt, n, g_settings.radius_nm); break;
+        default: screen_overhead_update(&vm); break;
+        }
         nav_tick(vm.state == VIEW_EMPTY_SKY);
         display_unlock();
     }
@@ -400,24 +437,10 @@ static void probe_link(void)
     }
 }
 
-/* Temporary stand-ins for §5.4 Liste and §5.5 Radar while those screens are
- * built. They exist so the deck, the swipe gestures and the page indicator can
- * be verified now rather than all at once at the end. */
-static void placeholder_page(lv_obj_t *parent, const char *title)
-{
-    lv_obj_t *l = lv_label_create(parent);
-    lv_label_set_text(l, title);
-    lv_obj_set_style_text_font(l, &plex_sans_cond_34, 0);
-    lv_obj_set_style_text_color(l, THEME_TEXT_LABEL, 0);
-    lv_obj_center(l);
-}
-static void page_liste(lv_obj_t *p) { placeholder_page(p, "Liste"); }
-static void page_radar(lv_obj_t *p) { placeholder_page(p, "Radar"); }
-
 static const nav_page_t k_pages[] = {
     { "ueber-dir", screen_overhead_create },
-    { "liste",     page_liste },
-    { "radar",     page_radar },
+    { "liste",     screen_list_create },
+    { "radar",     screen_radar_create },
 };
 
 /* ---- Einstellungen and WLAN, reached from the long-press ----------------
@@ -559,6 +582,7 @@ static void ui_resume(void)
     lv_obj_clean(lv_screen_active());
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
+    screen_list_set_select_cb(on_list_select);
     display_unlock();
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
@@ -625,6 +649,7 @@ void app_main(void)
     display_lock(0);
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
+    screen_list_set_select_cb(on_list_select);
     display_unlock();
     log_memory_budget("after screen built");
 

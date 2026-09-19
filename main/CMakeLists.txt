@@ -13,6 +13,8 @@ set(SRCS
     "ui/nav.c"
     "ui/screen_settings.c"
     "ui/screen_wifi.c"
+    "ui/screen_list.c"
+    "ui/screen_radar.c"
     "data/tbl_airport.c"
     "data/tbl_airline.c"
     "data/tbl_actype.c"

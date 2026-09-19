@@ -110,24 +110,18 @@ static void hero_from_type(const ac_type_t *t, const char *icao_type,
      * the raw ICAO code. The emitter category says more with fewer letters.
      * Note the near-miss that makes the MANUFACTURER the right signal rather
      * than the model: Diamond's aircraft really is called "DV20". */
-    if (t != NULL && !is_placeholder_type(t)) {
-        const char *name = (t->full_name != NULL && t->full_name[0] != '\0')
-                               ? t->full_name : t->model;
-        if (name != NULL && name[0] != '\0') {
-            copy_trunc(out, outsz, name);
-            return;
-        }
+    /* Shared with screen_list.c — see tables.h. Written twice, these two drifted
+     * apart and the list ended up printing raw ICAO codes. */
+    const char *name = actype_display_name(icao_type, icao_category);
+    if (name != NULL) {
+        copy_trunc(out, outsz, name);
+        return;
     }
     /* No usable type designator. Two of the thirteen aircraft in the real
      * Gloggnitz capture were exactly this — genuine aircraft doing 160 kt with
      * no `t` and no `r` — and the hero used to render as a literal "?", which
      * is the largest text on the panel telling him the device is broken.
      * The ICAO emitter category still says WHAT is up there. */
-    const char *cls = ac_category_de(icao_category);
-    if (cls != NULL) {
-        copy_trunc(out, outsz, cls);
-        return;
-    }
     const char *fallback = actype_full_or_code(icao_type);
     /* actype_full_or_code() is documented to never return NULL or "", but its
      * last resort is "?" — never acceptable as a hero. */

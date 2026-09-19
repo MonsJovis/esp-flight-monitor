@@ -17,6 +17,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 static const actype_lookup_t ACTYPES[] = {
     {"A109", {"Leonardo", "A109", "Leonardo (Agusta) A109", "Hubschrauber", AC_CAT_HELICOPTER}},
@@ -48,6 +49,8 @@ static const actype_lookup_t ACTYPES[] = {
     {"AT43", {"ATR", "42-300", "ATR 42-300", "Turboprop", AC_CAT_AIRLINER}},
     {"AT45", {"ATR", "42-500", "ATR 42-500", "Turboprop", AC_CAT_AIRLINER}},
     {"AT72", {"ATR", "72", "ATR 72", "Turboprop", AC_CAT_AIRLINER}},
+    {"AT75", {"ATR", "ATR 72-500", "ATR 72-500", "Turboprop", AC_CAT_AIRLINER}},
+    {"AT76", {"ATR", "ATR 72-600", "ATR 72-600", "Turboprop", AC_CAT_AIRLINER}},
     {"AW09", {"Leonardo", "AW009", "Leonardo AW009", "Hubschrauber", AC_CAT_HELICOPTER}},
     {"B06", {"Bell", "206", "Bell 206 JetRanger", "Hubschrauber", AC_CAT_HELICOPTER}},
     {"B190", {"Beechcraft", "1900D", "Beechcraft 1900D", "Turboprop", AC_CAT_AIRLINER}},
@@ -63,6 +66,7 @@ static const actype_lookup_t ACTYPES[] = {
     {"B462", {"British Aerospace", "BAe 146-200", "BAe 146-200", "Regionaljet", AC_CAT_AIRLINER}},
     {"B463", {"British Aerospace", "BAe 146-300", "BAe 146-300", "Regionaljet", AC_CAT_AIRLINER}},
     {"B722", {"Boeing", "727-200", "Boeing 727-200", "Mittelstreckenjet", AC_CAT_AIRLINER}},
+    {"B734", {"Boeing", "737-400", "Boeing 737-400", "Mittelstreckenjet", AC_CAT_AIRLINER}},
     {"B735", {"Boeing", "737-500", "Boeing 737-500", "Mittelstreckenjet", AC_CAT_AIRLINER}},
     {"B736", {"Boeing", "737-600", "Boeing 737-600", "Mittelstreckenjet", AC_CAT_AIRLINER}},
     {"B737", {"Boeing", "737-700", "Boeing 737-700", "Mittelstreckenjet", AC_CAT_AIRLINER}},
@@ -131,6 +135,7 @@ static const actype_lookup_t ACTYPES[] = {
     {"DH8B", {"De Havilland Canada", "Dash 8-200", "Dash 8-200", "Turboprop", AC_CAT_AIRLINER}},
     {"DH8C", {"De Havilland Canada", "Dash 8-300", "Dash 8-300", "Turboprop", AC_CAT_AIRLINER}},
     {"DH8D", {"De Havilland Canada", "Dash 8 Q400", "Dash 8 Q400", "Turboprop", AC_CAT_AIRLINER}},
+    {"DIMO", {"Diamond", "HK36", "Diamond HK36 Super Dimona", "Motorsegler", AC_CAT_PRIVATE}},
     {"DUOD", {"Schempp-Hirth", "Duo Discus", "Schempp-Hirth Duo Discus", "Segelflugzeug", AC_CAT_PRIVATE}},
     {"DV20", {"Diamond", "DV20", "Diamond DV20 Katana", "Zweisitzer", AC_CAT_PRIVATE}},
     {"E120", {"Embraer", "EMB-120", "Embraer EMB-120 Brasilia", "Turboprop", AC_CAT_AIRLINER}},
@@ -161,10 +166,6 @@ static const actype_lookup_t ACTYPES[] = {
     {"FA20", {"Dassault", "Falcon 20", "Dassault Falcon 20", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"FA50", {"Dassault", "Falcon 50", "Dassault Falcon 50", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"FA7X", {"Dassault", "Falcon 7X", "Dassault Falcon 7X", "Geschäftsreisejet", AC_CAT_PRIVATE}},
-    /* Guimbal Cabri G2: a two-seat training helicopter, common at flight schools.
-     * The table originally guessed "experimental fixed-wing, manufacturer
-     * unknown"; the live feed settled it — OE-XNC transmits emitter category A7
-     * (rotorcraft) at 50 kt and 1050 ft, which is a Cabri doing circuits. */
     {"G2CA", {"Guimbal", "Cabri G2", "Guimbal Cabri G2", "Hubschrauber", AC_CAT_HELICOPTER}},
     {"GA8", {"GippsAero", "GA8", "GippsAero GA8 Airvan", "Sechssitzer", AC_CAT_PRIVATE}},
     {"GL5T", {"Bombardier", "Global 5000", "Bombardier Global 5000", "Geschäftsreisejet", AC_CAT_PRIVATE}},
@@ -195,10 +196,10 @@ static const actype_lookup_t ACTYPES[] = {
     {"MI24", {"Mil", "Mi-24", "Mil Mi-24", "Hubschrauber", AC_CAT_MILITARY}},
     {"MI8", {"Mil", "Mi-8", "Mil Mi-8", "Hubschrauber", AC_CAT_MILITARY}},
     {"P180", {"Piaggio", "Avanti", "Piaggio P.180 Avanti", "Turboprop", AC_CAT_PRIVATE}},
-    {"P2002", {"Tecnam", "P2002 Sierra", "Tecnam P2002 Sierra", "Zweisitzer", AC_CAT_PRIVATE}},
     {"P208", {"Tecnam", "P2008", "Tecnam P2008", "Zweisitzer", AC_CAT_PRIVATE}},
     {"P28A", {"Piper", "PA-28", "Piper PA-28 Archer", "Viersitzer", AC_CAT_PRIVATE}},
     {"P68", {"Vulcanair", "P68", "Vulcanair (Partenavia) P68", "Sechssitzer", AC_CAT_PRIVATE}},
+    {"PA18", {"Piper", "PA-18", "Piper PA-18 Super Cub", "Zweisitzer", AC_CAT_PRIVATE}},
     {"PA28", {"Piper", "PA-28", "Piper PA-28 Cherokee", "Viersitzer", AC_CAT_PRIVATE}},
     {"PA31", {"Piper", "PA-31", "Piper PA-31 Navajo", "Sechssitzer", AC_CAT_PRIVATE}},
     {"PA32", {"Piper", "PA-32", "Piper PA-32 Saratoga", "Sechssitzer", AC_CAT_PRIVATE}},
@@ -208,6 +209,7 @@ static const actype_lookup_t ACTYPES[] = {
     {"PC21", {"Pilatus", "PC-21", "Pilatus PC-21", "Militärflugzeug", AC_CAT_MILITARY}},
     {"PC24", {"Pilatus", "PC-24", "Pilatus PC-24", "Geschäftsreisejet", AC_CAT_PRIVATE}},
     {"PC6", {"Pilatus", "PC-6", "Pilatus PC-6 Porter", "Turboprop", AC_CAT_PRIVATE}},
+    {"PC6T", {"Pilatus", "PC-6", "Pilatus PC-6 Turbo Porter", "Turboprop", AC_CAT_PRIVATE}},
     {"PC7", {"Pilatus", "PC-7", "Pilatus PC-7", "Militärflugzeug", AC_CAT_MILITARY}},
     {"R22", {"Robinson", "R22", "Robinson R22", "Hubschrauber", AC_CAT_HELICOPTER}},
     {"R44", {"Robinson", "R44", "Robinson R44", "Hubschrauber", AC_CAT_HELICOPTER}},
@@ -306,4 +308,29 @@ const char *ac_category_de(const char *icao_category)
         }
     }
     return NULL;
+}
+
+
+/* True when the table admits it could not identify the aircraft: its
+ * manufacturer is a placeholder, so its "model" is just the ICAO code again.
+ * Note the near-miss that makes the MANUFACTURER the right signal rather than
+ * the model — Diamond's aircraft really is called "DV20". */
+static bool actype_is_placeholder(const ac_type_t *t)
+{
+    if (t == NULL || t->manufacturer == NULL) {
+        return true;
+    }
+    return t->manufacturer[0] == '\0' ||
+           strcmp(t->manufacturer, "unbekannt") == 0 ||
+           strcmp(t->manufacturer, "-") == 0;
+}
+
+const char *actype_display_name(const char *icao_type, const char *icao_category)
+{
+    const ac_type_t *t = actype(icao_type);
+    if (t != NULL && !actype_is_placeholder(t)) {
+        if (t->full_name != NULL && t->full_name[0] != '\0') return t->full_name;
+        if (t->model     != NULL && t->model[0]     != '\0') return t->model;
+    }
+    return ac_category_de(icao_category);   /* NULL when that is unknown too */
 }

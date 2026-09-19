@@ -224,16 +224,13 @@ static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, in
          * than stop at that word — this screen has the full aircraft_t on
          * hand and view_build.c's single hero field does not. */
     }
-    if (ac->type[0] != '\0') {
-        safe_copy(out, outsz, actype_full_or_code(ac->type));
-        return;
-    }
-    /* No route AND no type designator — genuine real traffic (military,
-     * blocked, TIS-B; flight_types.h), not just a table miss. The emitter
-     * category still says WHAT is up there (ac_category_de, same rule
-     * view_build.c's hero_from_type() applies). */
-    const char *cls = ac_category_de(ac->category);
-    safe_copy(out, outsz, (cls != NULL) ? cls : CHROME_UNKNOWN_AIRCRAFT);
+    /* One helper decides what an aircraft is CALLED, for the hero and for this
+     * list alike. Going through actype_full_or_code() here put raw ICAO codes
+     * on the panel — "DIMO", "PA18" — because that function's last resort is
+     * the code itself, so the category fallback below was never reached.
+     * Plain language over codes (AGENTS.md §1). */
+    const char *name = actype_display_name(ac->type, ac->category);
+    safe_copy(out, outsz, (name != NULL) ? name : CHROME_UNKNOWN_AIRCRAFT);
 }
 
 /* "12,4 km NO" — distance converted and rendered by fmt_distance_km(), the
@@ -276,14 +273,27 @@ static void row_event_cb(lv_event_t *e)
  * widgets and fixes geometry and styling that never changes again — which
  * row is "the nearest" is a structural fact (row 0, always), not something
  * recomputed per update, so its distinguishing style is applied here, not
- * in screen_list_update(). */
+ * in screen_list_update().
+ *
+ * Plain lv_obj_create(), not lv_button_create() — matching screen_settings.c's
+ * make_row(), not screen_wifi.c's create_row(). LVGL 9's base lv_obj is
+ * clickable by default (lv_obj_class_create_obj() sets obj->clickable = 1
+ * for every object, not just buttons — screen_settings.c's cards rely on
+ * exactly this), so a button adds nothing here except the default theme's
+ * grey fill and PAD_DEF horizontal padding (lv_theme_default.c) — padding
+ * this file's ROW_INSET/CONTENT_W arithmetic does not know about and must
+ * not silently compound with. lv_obj_remove_style_all() strips it so every
+ * child position below is exactly what the constants say. */
 static void create_row(lv_obj_t *parent, int idx, int32_t y, int32_t row_h, int32_t body_lh)
 {
     list_row_t *r = &s_rows[idx];
 
-    r->row = lv_button_create(parent);
+    r->row = lv_obj_create(parent);
+    lv_obj_remove_style_all(r->row);
     lv_obj_set_size(r->row, CONTENT_W, row_h);
     lv_obj_set_pos(r->row, PAD, y);
+    lv_obj_set_style_pad_all(r->row, 0, 0);
+    lv_obj_set_scrollable(r->row, false);
     lv_obj_set_hidden(r->row, true); /* pool starts empty; screen_list_update() reveals what's in range */
     lv_obj_add_event_cb(r->row, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
 
@@ -304,6 +314,14 @@ static void create_row(lv_obj_t *parent, int idx, int32_t y, int32_t row_h, int3
         lv_obj_set_style_border_width(r->row, 1, 0);
         lv_obj_set_style_border_side(r->row, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_border_color(r->row, THEME_DIVIDER, 0);
+        /* Immediate press feedback — screen_settings.c's make_row() applies
+         * the same reasoning to its own rows: "he is elderly and this screen
+         * has no other confirmation until the state visibly changes." Reuses
+         * THEME_SURFACE_SEL rather than inventing a colour: momentarily
+         * "selected" is exactly what a press is. The nearest row already
+         * rests on that fill, so it needs no separate press state. */
+        lv_obj_set_style_bg_opa(r->row, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(r->row, THEME_SURFACE_SEL, LV_PART_MAIN | LV_STATE_PRESSED);
     }
 
     r->lbl_primary = make_label(r->row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
