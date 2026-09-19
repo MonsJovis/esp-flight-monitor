@@ -579,8 +579,41 @@ esp_err_t flight_source_start(double lat, double lon, int radius_nm)
     return ESP_OK;
 }
 
+/* ---- "is there a poller at all?" ---------------------------------------
+ *
+ * Every public accessor below takes s.mutex, and s.mutex does not exist until
+ * flight_source_start() creates it. That is not a theoretical window: main.c
+ * only starts the poller when wifi_start() succeeds, so a device with NO
+ * STORED CREDENTIALS — the state every brand-new board is in — never calls
+ * flight_source_start() at all. The first ui_task tick two seconds later
+ * called flight_source_snapshot(), which called xQueueSemaphoreTake(NULL),
+ * and FreeRTOS asserted.
+ *
+ * Reproduced on hardware before fixing: four reboots in eighteen seconds,
+ * `assert failed: xQueueSemaphoreTake queue.c:1709 (( pxQueue ))`, with
+ * "no WiFi credentials stored — press 'w' to provision" scrolling past in
+ * between. The device was unusable out of the box, and because the console
+ * message was being washed away by the reboot loop, recovering it over serial
+ * was a race as well.
+ *
+ * The answer is not to make the callers check. It is for this module to have
+ * one honest answer for "I have not been started": no aircraft, no failures,
+ * not stale, still resolving. Every one of those is true of a poller that
+ * does not exist, and every one of them is what the screen already knows how
+ * to render — AGENTS.md §1's "never show an empty screen" path handles it,
+ * because that path was built for exactly this situation. */
+static bool source_ready(void)
+{
+    return s.mutex != NULL;
+}
+
 void flight_source_set_location(double lat, double lon, int radius_nm)
 {
+    /* Not started: nothing to set, and nothing is lost — flight_source_start()
+     * takes the location as arguments and zeroes `s` anyway. */
+    if (!source_ready()) {
+        return;
+    }
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     s.lat = lat;
     s.lon = lon;
@@ -590,6 +623,10 @@ void flight_source_set_location(double lat, double lon, int radius_nm)
 
 int flight_source_snapshot(aircraft_t *out, int max, route_t *routes, int max_routes)
 {
+    if (!source_ready()) {
+        return 0;
+    }
+
     if (out == NULL || max <= 0) {
         return 0;
     }
@@ -620,6 +657,10 @@ int flight_source_snapshot(aircraft_t *out, int max, route_t *routes, int max_ro
 
 route_status_t flight_source_route_status(const char *callsign)
 {
+    if (!source_ready()) {
+        return ROUTE_STATUS_RESOLVING;
+    }
+
     if (callsign == NULL) {
         return ROUTE_STATUS_RESOLVING;
     }
@@ -632,6 +673,10 @@ route_status_t flight_source_route_status(const char *callsign)
 
 int flight_source_consecutive_failures(void)
 {
+    if (!source_ready()) {
+        return 0;
+    }
+
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     int f = s.consec_failures;
     xSemaphoreGive(s.mutex);
@@ -640,6 +685,9 @@ int flight_source_consecutive_failures(void)
 
 const char *flight_source_current_source_name(void)
 {
+    if (!source_ready()) {
+        return source_name(source_next_enabled((source_id_t)(SRC_COUNT - 1)));
+    }
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     source_id_t src = s.active_source;
     xSemaphoreGive(s.mutex);
@@ -648,6 +696,9 @@ const char *flight_source_current_source_name(void)
 
 int64_t flight_source_last_success_ms(void)
 {
+    if (!source_ready()) {
+        return 0;
+    }
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     int64_t t = s.last_success_ms;
     xSemaphoreGive(s.mutex);
@@ -667,6 +718,10 @@ int64_t flight_source_last_success_age_ms(void)
 
 bool flight_source_is_stale(void)
 {
+    if (!source_ready()) {
+        return false;
+    }
+
     xSemaphoreTake(s.mutex, portMAX_DELAY);
     bool stale = s.consec_failures > 0;
     xSemaphoreGive(s.mutex);
