@@ -1,22 +1,23 @@
 # Implementation Plan
 
-> **Status, 2026-09-18.** M0–M3 are built and verified on the real unit.
-> **M3 — the payoff milestone — is done:** the panel answers "where is that plane
-> going" from real captured traffic, in German, with no interaction.
+> **Status, 2026-09-19.** M0–M3 are built and **verified against live traffic** on the
+> real unit. **M3 — the payoff milestone — is done:** the panel answers "where is that
+> plane going" in German, with no interaction.
 >
-> Verified by reading the panel's own framebuffer back over USB as a PNG
-> (`tools/grab_screen.py`), not by assertion. 1,965 host-side checks pass.
+> Proven end to end on real aircraft, not fixtures:
+> ```
+> PGT61V | A21N | Amsterdam -> Istanbul | 6.1 nm SW
+> EWG4FX | A319 | Stuttgart -> Stuttgart | 10.2 nm N
+> DMAVT  | ?    | no route              |  9.2 nm NE
+> ```
+> and on the panel: **Bodrum → London · Boeing 737 MAX 8 · 10.973 m · 16,7 km Süden**.
 >
-> **One step needs a human:** the device has no WiFi credentials, so nothing has
-> been confirmed against *live* traffic yet — only against the real 2026-09-18
-> capture replayed through the full chain. Press `w` on the serial console to
-> provision. See the note at the end of M2.
-
-Companion to [AGENTS.md](../AGENTS.md) (constraints, hardware, data architecture),
-[DESIGN.md](./DESIGN.md) (colour, type, screens, navigation) and
-[RESEARCH.md](./RESEARCH.md) (prior art, API survey).
-
-Screen references below (`§5.1`, `§5.2` …) point at the screen inventory in DESIGN.md §5.
+> Soak on a −72 dBm holiday-apartment link: **11 of 12 polls succeeded, 0 reboots,
+> 0 watchdog trips, memory flat**. Verified by reading the panel's own framebuffer back
+> over USB as a PNG (`tools/grab_screen.py`), not by assertion. 1,984 host-side checks pass.
+>
+> Five defects that only live traffic could find are written up in docs/DECISIONS.md D24 —
+> the sharpest being a routeset buffer smaller than a fixture already sitting in this repo.
 
 ## Sequencing principle
 
@@ -133,14 +134,17 @@ it is easy to debug.
 - [x] Route cache keyed on callsign, in memory for now
 - [x] **Host-side unit tests for both parsers** — capture real responses as fixtures
 - [x] Log the nearest aircraft every poll: callsign, type, route, distance, bearing
-      *(implemented; not yet seen against live traffic — no credentials)*
 
-> **The one human step in this build.** Credentials live in NVS, never in the repo
-> (AGENTS.md §10), so the device cannot join a network until someone provisions it once:
-> connect the USB cable, press `w` on the serial console, and type `SSID<TAB>password`.
-> Everything downstream of that has been exercised against the real captured response
-> instead — `1`/`2`/`3` on the console replay §5.1/§5.2/§5.3 from the 2026-09-18 traffic
-> through parse → German → render, which is the whole chain bar the socket.
+> **Provisioning** is the one step that needs a human, because credentials live in NVS and
+> never in the repo (AGENTS.md §10): run `python3 tools/provision.py`. It picks a free slot,
+> so setting up a holiday network does not erase the one that gets him home, and it
+> reconnects immediately instead of sitting out a backoff. Done for real on 2026-09-19,
+> from Gloggnitz to a holiday apartment, which is precisely the case AGENTS.md §6 designs
+> for.
+>
+> `1`/`2`/`3` on the console still replay §5.1/§5.2/§5.3 from the captured 2026-09-18
+> traffic, which is how a specific state gets summoned on demand instead of waiting for the
+> sky to produce one.
 
 **Done when:** `idf.py monitor` prints the raw truth —
 `AUA453 | A320 | Vienna -> London | 12.4 nm NE` — on a real flight, for ten minutes without

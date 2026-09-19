@@ -240,6 +240,23 @@ int main(void)
         }
     }
 
+    GROUP("emitter category A0 means 'no information', not a category");
+    {
+        /* Observed live: D-MAVT over Gloggnitz, 54 kt at 2125 ft, with no type,
+         * no registration and category "A0". A0 is ICAO for "no ADS-B emitter
+         * category information" — so it must NOT resolve. Everything about that
+         * aircraft says light aircraft, and saying so would be inventing data
+         * the feed explicitly declined to give. The hero says
+         * "Unbekanntes Flugzeug" instead, which is honest. */
+        CHECK(ac_category_de("A0") == NULL);
+        CHECK(ac_category_de("") == NULL);
+        CHECK(ac_category_de(NULL) == NULL);
+        /* The ones that do carry information still must. */
+        CHECK_STR(ac_category_de("A1"), "Leichtflugzeug");
+        CHECK_STR(ac_category_de("A7"), "Hubschrauber");
+        CHECK_STR(ac_category_de("B1"), "Segelflugzeug");
+    }
+
     GROUP("unknown keys return NULL, never a garbage pointer");
     {
         CHECK(airport_de("ZZZZ") == NULL);
