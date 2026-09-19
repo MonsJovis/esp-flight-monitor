@@ -10,6 +10,9 @@ dependencies.lock
 test/host/build/
 test/host/*.dSYM/
 
+# Tooling
+tools/__pycache__/
+
 # Font pipeline
 tools/node_modules/
 tools/fonts/*.ttf
