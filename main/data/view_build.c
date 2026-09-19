@@ -37,7 +37,7 @@ static void copy_trunc(char *dst, size_t dst_sz, const char *src)
     dst[n] = '\0';
 }
 
-/* ---- chrome: clock, date, traffic count, online flag -------------------- */
+/* ---- chrome: clock, date, traffic count, network state ------------------ */
 
 /* Before SNTP has ever answered, the clock reads 1970 — and "Donnerstag,
  * 1. Jänner 1970" in 100 px type is precisely what a device looks like when it
@@ -49,7 +49,7 @@ static bool clock_is_set(const struct tm *now)
     return now != NULL && now->tm_year >= 120;
 }
 
-static void fill_chrome(view_model_t *out, const struct tm *now, int traffic_count, bool online)
+static void fill_chrome(view_model_t *out, const struct tm *now, int traffic_count, net_state_t net)
 {
     out->clock_valid = clock_is_set(now);
     if (out->clock_valid) {
@@ -60,7 +60,7 @@ static void fill_chrome(view_model_t *out, const struct tm *now, int traffic_cou
         copy_trunc(out->date_line, sizeof out->date_line, "");
     }
     out->traffic_count = traffic_count;
-    out->online = online;
+    out->net = net;
 }
 
 /* ---- city name resolution (rule 1: never a bare ICAO code) --------------- */
@@ -216,20 +216,20 @@ static void fill_airline(const route_t *route, view_model_t *out)
 /* ---- public API ----------------------------------------------------------- */
 
 void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now,
-                int traffic_count, bool online, view_model_t *out)
+                int traffic_count, net_state_t net, view_model_t *out)
 {
-    view_build_ex(ac, route, false, now, traffic_count, online, out);
+    view_build_ex(ac, route, false, now, traffic_count, net, out);
 }
 
 void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_searching,
-                   const struct tm *now, int traffic_count, bool online,
+                   const struct tm *now, int traffic_count, net_state_t net,
                    view_model_t *out)
 {
     if (out == NULL) {
         return;
     }
     memset(out, 0, sizeof(*out));
-    fill_chrome(out, now, traffic_count, online);
+    fill_chrome(out, now, traffic_count, net);
 
     if (ac == NULL) {
         out->state = VIEW_EMPTY_SKY;
@@ -274,14 +274,14 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
     }
 }
 
-void view_build_empty(const struct tm *now, const aircraft_t *last_seen, bool online,
+void view_build_empty(const struct tm *now, const aircraft_t *last_seen, net_state_t net,
                        view_model_t *out)
 {
     if (out == NULL) {
         return;
     }
     memset(out, 0, sizeof(*out));
-    fill_chrome(out, now, 0, online);
+    fill_chrome(out, now, 0, net);
     out->state = VIEW_EMPTY_SKY;
 
     /* No clock yet means the device has never reached the network. Say that,

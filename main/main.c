@@ -362,11 +362,17 @@ static void ui_task(void *arg)
          * a weak link drops one now and then and the screen keeps showing the
          * last aircraft, which is the designed behaviour anyway.
          *
-         * TODO(M4): split these into two messages. "no network" and "the data
-         * source is not answering" are different problems with different fixes,
-         * and right now they share a label. */
-        bool net_ok = wifi_is_connected() &&
-                      flight_source_consecutive_failures() < 3;
+         * Split into two labels in M8. They are different problems with
+         * different fixes — one he can walk over and solve, one he cannot —
+         * and sharing a label sent him to check a router that was working. */
+        net_state_t net;
+        if (!wifi_is_connected()) {
+            net = NET_NO_WIFI;
+        } else if (flight_source_consecutive_failures() >= 3) {
+            net = NET_NO_DATA;
+        } else {
+            net = NET_OK;
+        }
 
         /* A row he tapped stays the subject while it is still up there. Once it
          * leaves the ring the device goes back to answering "what is overhead
@@ -389,10 +395,10 @@ static void ui_task(void *arg)
             bool searching =
                 flight_source_route_status(ac[subject].flight) == ROUTE_STATUS_RESOLVING;
             view_build_ex(&ac[subject], route_find(rt, n, ac[subject].flight),
-                          searching, &now, n, net_ok, &vm);
+                          searching, &now, n, net, &vm);
         } else {
             view_build_empty(&now, have_last_seen ? &last_seen : NULL,
-                             net_ok, &vm);
+                             net, &vm);
         }
 
         display_lock(0);

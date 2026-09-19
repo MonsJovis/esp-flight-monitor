@@ -78,8 +78,18 @@
  * (PLAN.md M4, the 2E0LXY lesson). */
 #define STR_ROUTE_SEARCHING    "ROUTE WIRD GESUCHT"
 
-/* Chrome caution, shown only when the device is not online. */
+/* Two cautions, because there are two problems and only one of them is his.
+ *
+ * KEIN NETZ  — not associated with any WiFi. He can walk over and look at the
+ *              router, and that is worth telling him.
+ * KEINE DATEN — associated, but the flight-data source has stopped answering.
+ *              Nothing he can do, and it is still better than a panel quietly
+ *              showing an empty sky as though it could see one.
+ *
+ * Both were "KEIN NETZ" until M8, which sent him to check a router that was
+ * working perfectly. */
 #define STR_NO_NETWORK_TAG     "KEIN NETZ"
+#define STR_NO_DATA_TAG        "KEINE DATEN"
 
 /* §5.3 caption above the last aircraft seen, so an empty sky still has
  * something true on it. */

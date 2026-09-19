@@ -107,13 +107,13 @@ static void test_empty_sky_no_history(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build_empty(&now, NULL, false, &vm);
+    view_build_empty(&now, NULL, NET_NO_WIFI, &vm);
 
     CHECK_INT(vm.state, VIEW_EMPTY_SKY);
     CHECK_STR(vm.clock, "09:47");
     CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
     CHECK_INT(vm.traffic_count, 0);
-    CHECK(vm.online == false);
+    CHECK(vm.net == NET_NO_WIFI);
 
     /* Never render "(null)" or leave stray garbage even with no aircraft. */
     CHECK(strstr(vm.hero, "null") == NULL);
@@ -136,11 +136,11 @@ static void test_empty_sky_with_history(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build_empty(&now, &last_seen, true, &vm);
+    view_build_empty(&now, &last_seen, NET_OK, &vm);
 
     CHECK_INT(vm.state, VIEW_EMPTY_SKY);
     CHECK_STR(vm.clock, "09:47");
-    CHECK(vm.online == true);
+    CHECK(vm.net == NET_OK);
     CHECK_INT(vm.traffic_count, 0);
 
     CHECK_STR(vm.hero, "Diamond DV20 Katana");             /* plain-language type, per §5.2's rule */
@@ -161,13 +161,13 @@ static void test_view_build_null_aircraft(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build(NULL, NULL, &now, 5, true, &vm);
+    view_build(NULL, NULL, &now, 5, NET_OK, &vm);
 
     CHECK_INT(vm.state, VIEW_EMPTY_SKY);
     CHECK_STR(vm.clock, "09:47");
     CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
     CHECK_INT(vm.traffic_count, 5);
-    CHECK(vm.online == true);
+    CHECK(vm.net == NET_OK);
 }
 
 /* ---- ALT_GROUND / ALT_UNKNOWN end to end ---------------------------------- */
@@ -190,11 +190,11 @@ static void test_altitude_ground_and_unknown(void)
     view_model_t vm;
 
     if (grnd != NULL) {
-        view_build(grnd, NULL, &now, 1, true, &vm);
+        view_build(grnd, NULL, &now, 1, NET_OK, &vm);
         CHECK_STR(vm.altitude, "am Boden");
     }
     if (unk != NULL) {
-        view_build(unk, NULL, &now, 1, true, &vm);
+        view_build(unk, NULL, &now, 1, NET_OK, &vm);
         CHECK_STR(vm.altitude, "\xE2\x80\x94");
     }
 
@@ -225,7 +225,7 @@ static void test_dst_unknown_end_to_end(void)
 
         struct tm now = make_now();
         view_model_t vm;
-        view_build(nodst, NULL, &now, 1, true, &vm);
+        view_build(nodst, NULL, &now, 1, NET_OK, &vm);
 
         CHECK_STR(vm.distance, "\xE2\x80\x94");
         CHECK_STR(vm.direction_word, "");
@@ -244,7 +244,7 @@ static void test_dst_unknown_end_to_end(void)
 
         struct tm now = make_now();
         view_model_t vm;
-        view_build(hasdst, NULL, &now, 1, true, &vm);
+        view_build(hasdst, NULL, &now, 1, NET_OK, &vm);
         check_numeric_fields(hasdst, &vm);
     }
 
@@ -292,7 +292,7 @@ static void test_overhead_dlh1jn_munich_via_klausenburg(void)
 
         struct tm now = make_now();
         view_model_t vm;
-        view_build(dlh, rt, &now, 13, true, &vm);
+        view_build(dlh, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_OVERHEAD);
         /* airport_de(LRCL) = "Klausenburg" — checked against the table
@@ -336,7 +336,7 @@ static void test_overhead_aua_flights(void)
         const route_t *rt = route_find(routes, nrt, aua76pz->flight);
         struct tm now = make_now();
         view_model_t vm;
-        view_build(aua76pz, rt, &now, 13, true, &vm);
+        view_build(aua76pz, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_OVERHEAD);
         CHECK_STR(vm.hero, "Wien");
@@ -354,7 +354,7 @@ static void test_overhead_aua_flights(void)
         const route_t *rt = route_find(routes, nrt, aua695j->flight);
         struct tm now = make_now();
         view_model_t vm;
-        view_build(aua695j, rt, &now, 13, true, &vm);
+        view_build(aua695j, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_OVERHEAD);
         CHECK_STR(vm.hero, "Bukarest");
@@ -390,7 +390,7 @@ static void test_no_route_private_dv20s(void)
 
         struct tm now = make_now();
         view_model_t vm;
-        view_build(ac, rt, &now, 13, true, &vm);
+        view_build(ac, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         CHECK_STR(vm.hero, "Diamond DV20 Katana");
@@ -427,7 +427,7 @@ static void test_no_route_helicopter_ec35(void)
         const route_t *rt = route_find(routes, nrt, ec35->flight);
         struct tm now = make_now();
         view_model_t vm;
-        view_build(ec35, rt, &now, 13, true, &vm);
+        view_build(ec35, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         CHECK_STR(vm.hero, "Airbus H135");
@@ -465,7 +465,7 @@ static void test_no_route_airliner_route_unavailable(void)
 
         struct tm now = make_now();
         view_model_t vm;
-        view_build(ryr, rt, &now, 13, true, &vm);
+        view_build(ryr, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         CHECK_STR(vm.hero, "Boeing 737 MAX 8");
@@ -501,7 +501,7 @@ static void test_no_route_unknown_no_type_info(void)
         const route_t *rt = route_find(routes, nrt, oevso->flight);
         struct tm now = make_now();
         view_model_t vm;
-        view_build(oevso, rt, &now, 13, true, &vm);
+        view_build(oevso, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         CHECK_STR(vm.reason, REASON_UNKNOWN);
@@ -537,7 +537,7 @@ static void test_no_route_private_g2ca(void)
         const route_t *rt = route_find(routes, nrt, g2ca->flight);
         struct tm now = make_now();
         view_model_t vm;
-        view_build(g2ca, rt, &now, 13, true, &vm);
+        view_build(g2ca, rt, &now, 13, NET_OK, &vm);
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         /* A Guimbal Cabri G2 — a training helicopter, per its own A7 emitter
@@ -585,7 +585,7 @@ static void test_nearest_aircraft_field_by_field(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build(nearest, rt, &now, nac, true, &vm);
+    view_build(nearest, rt, &now, nac, NET_OK, &vm);
 
     CHECK_INT(vm.state, VIEW_NO_ROUTE);
     CHECK_STR(vm.hero, "Airbus H135");
@@ -600,7 +600,7 @@ static void test_nearest_aircraft_field_by_field(void)
     CHECK_STR(vm.clock, "09:47");
     CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
     CHECK_INT(vm.traffic_count, 12);
-    CHECK(vm.online == true);
+    CHECK(vm.net == NET_OK);
     check_numeric_fields(nearest, &vm);
 
     remember_for_scan("nearest (FFMSNE)", &vm);
@@ -639,7 +639,7 @@ static void test_synthetic_unmapped_airport_falls_back_to_api_city(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build(&ac, &rt, &now, 1, true, &vm);
+    view_build(&ac, &rt, &now, 1, NET_OK, &vm);
 
     CHECK_INT(vm.state, VIEW_OVERHEAD);
     CHECK_STR(vm.origin, "Zaragoza");     /* table miss -> API fallback */
@@ -671,7 +671,7 @@ static void test_synthetic_military_reason(void)
 
     struct tm now = make_now();
     view_model_t vm;
-    view_build(&ac, NULL, &now, 1, true, &vm);
+    view_build(&ac, NULL, &now, 1, NET_OK, &vm);
 
     CHECK_INT(vm.state, VIEW_NO_ROUTE);
     CHECK_STR(vm.hero, "General Dynamics F-16 Fighting Falcon");
@@ -679,6 +679,46 @@ static void test_synthetic_military_reason(void)
     CHECK_STR(vm.callsign, "");
     CHECK_STR(vm.registration, "");
     remember_for_scan("synthetic military no-route", &vm);
+}
+
+/* ---- the three network states stay three -------------------------------- */
+
+static void test_net_state_round_trip(void)
+{
+    GROUP("view_build: NET_OK / NET_NO_WIFI / NET_NO_DATA are distinct");
+
+    /* They were one bool until M8, and the panel therefore said "KEIN NETZ"
+     * for a data source that had stopped answering over a WiFi link that was
+     * working — sending him to look at a router with nothing wrong with it.
+     * A caution he cannot act on correctly is worse than no caution, so the
+     * two have to survive the trip through the view model separately. */
+    static const net_state_t states[] = { NET_OK, NET_NO_WIFI, NET_NO_DATA };
+
+    for (size_t i = 0; i < sizeof states / sizeof states[0]; i++) {
+        time_t now = 1789000000;
+
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "3c4b26");
+        snprintf(ac.type, sizeof ac.type, "A20N");
+        ac.alt_ft = 30000;
+        ac.dst_nm = 6.0f;
+
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, states[i], &vm);
+        CHECK(vm.net == states[i]);
+
+        view_build_empty(&now, NULL, states[i], &vm);
+        CHECK(vm.net == states[i]);
+    }
+
+    GROUP("view_build: only NET_OK means 'no caution'");
+    /* The screen hides the caution on == NET_OK, so a fourth state added
+     * later must not accidentally read as healthy. */
+    CHECK(NET_OK == 0);
+    CHECK(NET_NO_WIFI != NET_OK);
+    CHECK(NET_NO_DATA != NET_OK);
+    CHECK(NET_NO_DATA != NET_NO_WIFI);
 }
 
 /* ---- the gate: a raw ICAO designator may never be the hero ---------------- */
@@ -712,7 +752,7 @@ static void test_hero_is_never_a_bare_code(void)
 
         time_t now = 1789000000;
         view_model_t vm;
-        view_build(&ac, NULL, &now, 1, true, &vm);
+        view_build(&ac, NULL, &now, 1, NET_OK, &vm);
 
         /* The hero must not BE the code, must not START with it, and must not
          * contain it: "C177" alone, "C177 Flugzeug" and "Typ C177" are all the
@@ -742,7 +782,7 @@ static void test_hero_is_never_a_bare_code(void)
         ac.dst_nm = 9.0f;
         time_t now = 1789000000;
         view_model_t vm;
-        view_build(&ac, NULL, &now, 1, true, &vm);
+        view_build(&ac, NULL, &now, 1, NET_OK, &vm);
         CHECK(strcmp(vm.hero, "Unbekanntes Flugzeug") != 0);
         CHECK(strstr(vm.hero, "A20N") == NULL);
         CHECK(strstr(vm.hero, "Airbus") != NULL);
@@ -847,6 +887,7 @@ int main(void)
     test_synthetic_military_reason();
 
     /* Must run last: it scans every model remember_for_scan() collected above. */
+    test_net_state_round_trip();
     test_hero_is_never_a_bare_code();
     test_no_english_leaks_anywhere();
 
@@ -861,18 +902,18 @@ int main(void)
         epoch.tm_hour = 1; epoch.tm_min = 5;
 
         view_model_t vm;
-        view_build_empty(&epoch, NULL, false, &vm);
+        view_build_empty(&epoch, NULL, NET_NO_WIFI, &vm);
         CHECK_INT(vm.state, VIEW_EMPTY_SKY);
         CHECK_STR(vm.hero, "Kein Netz");
         CHECK_STR(vm.clock, "--:--");
         CHECK(strstr(vm.date_line, "1970") == NULL);
         CHECK(strstr(vm.date_line, "Jänner") == NULL);
         CHECK(vm.date_line[0] != '\0');          /* never blank */
-        CHECK(vm.online == false);
+        CHECK(vm.net == NET_NO_WIFI);
 
         /* A real clock must still behave exactly as before. */
         struct tm good = make_now();
-        view_build_empty(&good, NULL, true, &vm);
+        view_build_empty(&good, NULL, NET_OK, &vm);
         CHECK_STR(vm.clock, "09:47");
         CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
         CHECK(strcmp(vm.hero, "Kein Netz") != 0);

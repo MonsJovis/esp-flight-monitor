@@ -861,3 +861,30 @@ Clipping is now impossible by construction rather than by test: `y_band` is comp
 from the bottom edge and never increased. The hero itself is deliberately not droppable, and
 cannot reach the band — `pick_hero_font()` only selects the 100 px and 76 px faces for text
 that fits on one line, so only the 56 px rung can wrap, and two lines of it end well clear.
+
+## D49 — "KEIN NETZ" for a working router
+
+**Decision:** `view_model_t.online` (a bool) becomes `net` (a three-state enum). The panel
+shows **KEIN NETZ** when it is not associated and **KEINE DATEN** when it is associated but
+the flight-data source has stopped answering.
+
+**Why:** the code carried its own indictment as a `TODO(M4)` — *"'no network' and 'the data
+source is not answering' are different problems with different fixes, and right now they
+share a label."* They do, and the shared label is the actionable one, so a source outage sent
+him to look at a router with nothing wrong with it. The comment immediately above that TODO
+already had the principle: **a caution he cannot act on correctly is worse than none.**
+
+A bool cannot carry three states, which is why the TODO survived four milestones: the fix
+looks like a one-line change and is actually a type change through `view_build`,
+`view_build_empty`, the view model, the screen and twenty-four test call sites. Doing it
+properly is still cheaper than the alternative, which is him learning that the panel's
+warnings do not mean anything.
+
+The hysteresis is unchanged: three consecutive failed polls before saying anything, because
+a weak link drops one now and then and the screen keeps showing the last aircraft, which is
+the designed behaviour anyway. Not being associated at all shows immediately, because that
+is the one he can fix.
+
+One detail that would have been a bug: the caution is right-aligned to the content edge, and
+"KEINE DATEN" is wider than "KEIN NETZ". The text has to be set before the position is
+recomputed, or the longer string hangs off the edge it is aligned to.

@@ -68,7 +68,7 @@ static lv_obj_t *s_cont;
 
 /* Chrome band */
 static lv_obj_t *s_lbl_clock;
-static lv_obj_t *s_lbl_offline; /* STR_NO_NETWORK_TAG, shown only when !vm->online */
+static lv_obj_t *s_lbl_offline; /* the network caution; hidden when vm->net == NET_OK */
 
 /* Compass tape band */
 static lv_obj_t *s_compass;
@@ -167,10 +167,10 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_pos(s_lbl_clock, PAD, Y_CHROME);
 
     s_lbl_offline = make_label(s_cont, &plex_mono_13, THEME_AMBER);
-    lv_label_set_text(s_lbl_offline, STR_NO_NETWORK_TAG);
+    lv_label_set_text(s_lbl_offline, STR_NO_NETWORK_TAG);   /* text set per update */
     lv_obj_update_layout(s_lbl_offline);
     lv_obj_set_pos(s_lbl_offline, PAD + CONTENT_W - lv_obj_get_width(s_lbl_offline), Y_CHROME);
-    lv_obj_set_hidden(s_lbl_offline, true); /* shown only when !vm->online */
+    lv_obj_set_hidden(s_lbl_offline, true); /* shown only when vm->net != NET_OK */
 
     /* --- Compass tape band --- */
     /* Built here, not stored as a file-scope table, because compass_de_abbr()
@@ -234,7 +234,18 @@ void screen_overhead_update(const view_model_t *vm)
      * than as chrome. Hide it there. */
     lv_label_set_text(s_lbl_clock, vm->clock);
     set_hidden(s_lbl_clock, vm->state == VIEW_EMPTY_SKY);
-    set_hidden(s_lbl_offline, vm->online);
+    /* Right-aligned, so the text has to be set BEFORE the position is
+     * recomputed — "KEINE DATEN" is three glyphs wider than "KEIN NETZ" and
+     * would otherwise hang off the edge it is aligned to. */
+    set_hidden(s_lbl_offline, vm->net == NET_OK);
+    if (vm->net != NET_OK) {
+        lv_label_set_text(s_lbl_offline,
+                          (vm->net == NET_NO_WIFI) ? STR_NO_NETWORK_TAG
+                                                   : STR_NO_DATA_TAG);
+        lv_obj_update_layout(s_lbl_offline);
+        lv_obj_set_pos(s_lbl_offline,
+                       PAD + CONTENT_W - lv_obj_get_width(s_lbl_offline), Y_CHROME);
+    }
 
     /* --- Compass tape -- nothing to point at when the sky is empty --- */
     set_hidden(s_compass, empty_sky);

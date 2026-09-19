@@ -48,11 +48,11 @@ extern "C" {
  * routeset API and no answer has come back yet — NOT when the answer was
  * "this aircraft has no flight plan". */
 void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_searching,
-                   const struct tm *now, int traffic_count, bool online,
+                   const struct tm *now, int traffic_count, net_state_t net,
                    view_model_t *out);
 
 void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now,
-                 int traffic_count, bool online, view_model_t *out);
+                 int traffic_count, net_state_t net, view_model_t *out);
 
 /* Builds the view for DESIGN.md §5.3 "Himmel frei" — no aircraft currently
  * in range. Always VIEW_EMPTY_SKY. `last_seen` is optional (NULL when
@@ -61,7 +61,7 @@ void view_build(const aircraft_t *ac, const route_t *route, const struct tm *now
  * something rather than only showing the clock. `traffic_count` is always 0
  * by construction (an empty sky has none in range).
  */
-void view_build_empty(const struct tm *now, const aircraft_t *last_seen, bool online,
+void view_build_empty(const struct tm *now, const aircraft_t *last_seen, net_state_t net,
                        view_model_t *out);
 
 #ifdef __cplusplus

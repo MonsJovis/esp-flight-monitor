@@ -25,6 +25,17 @@ typedef enum {
     VIEW_EMPTY_SKY,
 } view_state_t;
 
+/* Why the panel may not be showing current traffic. A bool could not tell the
+ * two failures apart, and they are not the same problem: one he can walk over
+ * and fix, the other he cannot do anything about at all. Labelling both "KEIN
+ * NETZ" sent him to look at a router that was working — and a caution he
+ * cannot act on correctly is worse than no caution. (TODO(M4), closed.) */
+typedef enum {
+    NET_OK = 0,     /* associated, and the data source is answering */
+    NET_NO_WIFI,    /* not associated — the one he can actually fix */
+    NET_NO_DATA,    /* associated, but the source has missed several polls */
+} net_state_t;
+
 #define VIEW_HERO_LEN   48
 #define VIEW_LINE_LEN   64
 #define VIEW_REASON_LEN 96
@@ -75,5 +86,5 @@ typedef struct {
     bool clock_valid;
     char date_line[VIEW_LINE_LEN];/* "Freitag, 18. September 2026"                */
     int  traffic_count;           /* aircraft currently in range                  */
-    bool online;                  /* false => amber network caution               */
+    net_state_t net;              /* NET_OK, or which caution to show              */
 } view_model_t;
