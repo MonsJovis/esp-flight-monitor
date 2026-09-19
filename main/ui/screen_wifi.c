@@ -199,7 +199,7 @@ static void apply_status_text(const char *text, lv_color_t color)
 static void set_status_connecting(const char *ssid)
 {
     char buf[64];
-    snprintf(buf, sizeof buf, "%s%s%s", STR_WIFI_CONNECTING_PFX, ssid, STR_WIFI_CONNECTING_SFX);
+    snprintf(buf, sizeof buf, FMT_WIFI_CONNECTING, ssid);
     apply_status_text(buf, THEME_TEXT_LABEL);
 }
 
@@ -216,7 +216,7 @@ void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scann
     }
     if (connected) {
         if (ssid_or_null && ssid_or_null[0] != '\0') {
-            snprintf(buf, sizeof buf, "%s%s", STR_WIFI_CONNECTED_PFX, ssid_or_null);
+            snprintf(buf, sizeof buf, FMT_WIFI_CONNECTED, ssid_or_null);
             apply_status_text(buf, THEME_GREEN);
         } else {
             apply_status_text(STR_WIFI_CONNECTED_GEN, THEME_GREEN);
@@ -224,7 +224,7 @@ void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scann
         return;
     }
     if (ssid_or_null && ssid_or_null[0] != '\0') {
-        snprintf(buf, sizeof buf, "%s%s", STR_WIFI_FAILED_PFX, ssid_or_null);
+        snprintf(buf, sizeof buf, FMT_WIFI_FAILED, ssid_or_null);
         apply_status_text(buf, THEME_AMBER);
         return;
     }
@@ -396,7 +396,7 @@ static void open_password_step(const char *ssid)
     safe_copy_ssid(s_pw_ssid, ssid);
 
     char line[16 + SCREEN_WIFI_SSID_LEN];
-    snprintf(line, sizeof line, "%s%s", STR_WIFI_PW_NETWORK_PFX, s_pw_ssid);
+    snprintf(line, sizeof line, FMT_WIFI_PW_NETWORK, s_pw_ssid);
     lv_label_set_text(s_pw_lbl_network, line);
 
     lv_textarea_set_text(s_pw_ta, "");
@@ -570,7 +570,7 @@ void screen_wifi_create(lv_obj_t *parent)
     s_pw_lbl_network = make_label(s_pw, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     lv_obj_set_width(s_pw_lbl_network, CONTENT_W);
     lv_label_set_long_mode(s_pw_lbl_network, LV_LABEL_LONG_MODE_WRAP);
-    lv_label_set_text(s_pw_lbl_network, STR_WIFI_PW_NETWORK_PFX); /* placeholder for this layout pass; open_password_step() overwrites it per network */
+    lv_label_set_text(s_pw_lbl_network, STR_WIFI_IDLE); /* placeholder for this layout pass; open_password_step() overwrites it per network */
     lv_obj_set_pos(s_pw_lbl_network, PAD, PAD);
     lv_obj_update_layout(s_pw_lbl_network);
     int32_t py = PAD + lv_obj_get_height(s_pw_lbl_network) + GAP_MD;

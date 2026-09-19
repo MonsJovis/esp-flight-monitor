@@ -169,17 +169,23 @@
  * U+2026 HORIZONTAL ELLIPSIS. A real "…" would render as nothing at all, so
  * every "..." here is three ASCII periods on purpose. Do not "fix" them. */
 #define STR_WIFI_SCANNING          "Suche Netzwerke..."
-#define STR_WIFI_CONNECTED_PFX     "Verbunden mit "              /* + ssid */
+/* WHOLE SENTENCES with a %s where the network name goes, not a prefix and a
+ * suffix to be glued together at the call site. Both spellings work on the
+ * panel; only one of them works on the page. `check_strings.py --list` prints
+ * this file for a native speaker to read down, and a fragment like " wird
+ * hergestellt..." — or, worse, a lone "..." — tells that reader nothing about
+ * the sentence he is being asked to judge. A translation unit that cannot be
+ * read aloud is not serving the purpose it was gathered for (PLAN.md M7). */
+#define FMT_WIFI_CONNECTED         "Verbunden mit %s"
 #define STR_WIFI_CONNECTED_GEN     "Verbunden"                   /* connected, no ssid to name */
-#define STR_WIFI_FAILED_PFX        "Verbindung fehlgeschlagen: " /* + ssid */
+#define FMT_WIFI_FAILED            "Verbindung fehlgeschlagen: %s"
 #define STR_WIFI_IDLE              "Nicht verbunden"
 /* "Verbinde mit X...", not "Verbindung zu X wird hergestellt..." — the
  * screen above it already says "Suche Netzwerke...", so the passive form
  * put two different voices on one screen: a machine reporting on itself,
  * and the device talking to him. It talks to him everywhere else on this
  * device ("Ich suche ein bekanntes WLAN"), so it talks to him here. */
-#define STR_WIFI_CONNECTING_PFX    "Verbinde mit "               /* + ssid + _SFX */
-#define STR_WIFI_CONNECTING_SFX    "..."
+#define FMT_WIFI_CONNECTING        "Verbinde mit %s..."
 
 /* DO-257A: colour is never the only carrier of meaning, so the word ships
  * beside the green tick rather than instead of it. */
@@ -188,7 +194,7 @@
 #define STR_WIFI_LIST_EMPTY        "Keine Netzwerke gefunden"
 #define STR_WIFI_BTN_RESCAN        "Suchen"
 
-#define STR_WIFI_PW_NETWORK_PFX    "Verbindung mit "  /* + ssid, so he can see what he is joining */
+#define FMT_WIFI_PW_NETWORK        "Verbindung mit %s"  /* so he can see what he is joining */
 #define STR_WIFI_PW_PLACEHOLDER    "Passwort"
 #define STR_WIFI_PW_SHOW           "Anzeigen"         /* while hidden — names the action the tap performs */
 #define STR_WIFI_PW_HIDE           "Verbergen"        /* while visible */
