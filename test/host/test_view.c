@@ -732,11 +732,14 @@ static void test_hero_is_never_a_bare_code(void)
      * in the hero at 76 px — the bare designator AGENTS.md §1 forbids, and
      * the bug D36 removed from the list while leaving it standing here.
      *
-     * The designators below are deliberately NOT in the table: the point is
-     * the behaviour when lookup fails, so adding any of them to the table
-     * later must not quietly disarm this test. */
+     * C177 is deliberately NOT in the list below, even though it is the
+     * designator that caused this. It was, for about an hour, and then the
+     * type table grew and the test started failing for the RIGHT reason:
+     * "Cessna 177 Cardinal" is now the correct answer. A regression test
+     * whose fixture the product is expected to fix is a test that disarms
+     * itself. These are designators no table will ever legitimately hold. */
     static const char *const unknown_types[] = {
-        "C177", "ZZZZ", "QQ12", "X", "AB", "7777", "----",
+        "ZZZZ", "QQ12", "X", "AB", "7777", "----", "!!", "0000",
     };
 
     for (size_t i = 0; i < sizeof unknown_types / sizeof unknown_types[0]; i++) {

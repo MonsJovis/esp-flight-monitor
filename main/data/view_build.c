@@ -124,7 +124,20 @@ static void hero_from_type(const ac_type_t *t, const char *icao_type,
      * forbids and precisely the bug D36 removed from screen_list.c. The same
      * mistake, surviving in the other file, because D36 fixed the duplication
      * in the list and left this tail standing. A type nobody can name is
-     * "Unbekanntes Flugzeug"; a type nobody can name is not "C177". */
+     * "Unbekanntes Flugzeug"; a type nobody can name is not "C177".
+     *
+     * Loud, for the same reason resolve_city() is loud about a missing
+     * airport (D43): "Unbekanntes Flugzeug" is honest but it is not the
+     * answer, and the only way anyone learns WHICH designator to add to
+     * tbl_actype.c is if the device says so. A live capture over Gloggnitz
+     * had SF25 — a Scheibe Falke motorglider on an Austrian registration,
+     * which is precisely the traffic he hears — reading as "Unbekanntes
+     * Flugzeug" twice in one list. Leave the board on a console for an
+     * afternoon and it names the rows it is missing. */
+    if (icao_type != NULL && icao_type[0] != '\0') {
+        ESP_LOGW("view", "type %s not in tbl_actype.c, and category \"%s\" says nothing",
+                 icao_type, (icao_category != NULL) ? icao_category : "");
+    }
     copy_trunc(out, outsz, STR_UNKNOWN_AIRCRAFT);
 }
 
