@@ -15,6 +15,16 @@
  * two. The count header stays pinned above the scrolling column, so the
  * number of aircraft is on screen wherever he has scrolled to.
  *
+ * A row is two lines. Line 1 is the destination when the route resolved and
+ * the plain-language aircraft type when it did not; line 2 is the distance
+ * and bearing on the left, and on the right, in chrome-tier type, the
+ * aircraft's identity — its flight number, or its registration when it has no
+ * flight number, plus the model where the title above is not already the
+ * model. That last element is the only thing on the row that can disappear:
+ * it is measured against the room the distance leaves and gives up the model,
+ * then the whole line, rather than crowd the distance or grow the row.
+ * main/data/identity.h composes the string; screen_list.c has the fit rule.
+ *
  * Like screen_overhead.c and screen_wifi.c, the widget tree (chrome line,
  * the row pool, the empty-sky sentence) is built ONCE and only ever moved,
  * shown/hidden and re-texted afterwards — no widget is created or destroyed
@@ -69,7 +79,9 @@ void screen_list_create(lv_obj_t *parent);
  *                 A row whose callsign has no usable route (route_find()
  *                 returns NULL, or `resolved`/`plausible` is false — true for
  *                 roughly half of real traffic, DESIGN.md §5, not an edge
- *                 case) falls back to the aircraft's plain-language type.
+ *                 case) falls back to the aircraft's plain-language type, and
+ *                 its identity line then omits the model, which that title is
+ *                 already carrying.
  *
  * Caller MUST hold display_lock() (display.h) for the entire call — this
  * function makes LVGL calls directly and takes no lock of its own.

@@ -31,6 +31,15 @@
  * column. It sits on the non-scrolling root above it, so the one number
  * that says how much there is to scroll through cannot itself scroll away.
  *
+ * WHERE THE FLIGHT NUMBER WENT. He asked for the flight number and the
+ * aircraft model to be visible in every view. A row is still two lines and
+ * still 82 px: the identity goes in the half of line 2 the distance was
+ * never using, right-aligned and in chrome-tier type, and it yields — model
+ * first, then the whole line — rather than push the distance around or make
+ * the row taller. resolve_identity_text() carries the full reasoning; the
+ * string itself is main/data/identity.c's, shared with the Radar and the
+ * hero so that three screens cannot name the same aircraft three ways.
+ *
  * ============================================================================
  * WHY THE ROW POOL IS A SLIDING WINDOW AND NOT ONE ROW PER AIRCRAFT
  * ============================================================================
@@ -80,6 +89,7 @@
 #include "theme.h"
 #include "fonts/fonts.h"
 #include "data/fmt_de.h"
+#include "data/identity.h"
 #include "data/tables.h"
 #include "net/route_parse.h"
 #include "strings_de.h"
@@ -113,6 +123,13 @@
  * smaller, which it does not for plex_sans_cond_25 (see this file's report
  * note: 2*8 + 2*31 + 4 = 82 px, already above the floor). */
 #define ROW_MIN_H  72
+
+/* The narrowest clear channel allowed between the distance and the identity
+ * that shares line 2 with it. Three base units, wider than the 12 px
+ * screen_radar.c leaves between its two captions, because these two are not a
+ * pair: one is 25 px body text and the other is 13 px chrome, and at that size
+ * difference a tight gap reads as the small text hanging off the big one. */
+#define IDENT_GAP  (3 * THEME_BASE_UNIT)
 
 /* nav.c paints the three page-indicator dots on the SCREEN ROOT, i.e. on top
  * of this page, at y = THEME_SCREEN_HEIGHT - 16 and 8 px tall. The scrolling
@@ -158,6 +175,9 @@
 #define ROW_PRIMARY_LEN   48
 #define ROW_SECONDARY_LEN 24  /* "12,4 km NNO" and friends; fmt_de.c already
                                 * bounds fmt_distance_km() to well under this */
+/* "AUA1234" + " \xC2\xB7 " + the longest name in main/data/tbl_actype.c
+ * ("General Dynamics F-16 Fighting Falcon", 37) = 49 bytes and a NUL. */
+#define ROW_IDENT_LEN     56
 #define HEADER_BUF_LEN    40
 
 /* ============================================================================
@@ -187,6 +207,10 @@ typedef struct {
     lv_obj_t *row;
     lv_obj_t *lbl_primary;   /* destination (German) or plain-language type */
     lv_obj_t *lbl_secondary; /* "12,4 km NO" */
+    lv_obj_t *lbl_ident;     /* "BAW123 · Boeing 777-300ER", right-aligned on
+                              * line 2 beside the distance; hidden when the
+                              * feed named the aircraft neither way, and when
+                              * even the bare identifier will not fit */
 } list_row_t;
 
 static list_row_t s_rows[POOL_ROWS];
@@ -211,6 +235,14 @@ static int32_t s_pitch;
 static aircraft_t s_ac[MAX_AIRCRAFT];
 static char       s_primary[MAX_AIRCRAFT][ROW_PRIMARY_LEN];
 static char       s_secondary[MAX_AIRCRAFT][ROW_SECONDARY_LEN];
+/* The identity line and the x it was measured to sit at, both resolved once
+ * per update rather than per recycled slot. The x is not decoration: the fit
+ * rule below has to measure the string anyway to decide whether the model
+ * survives, and throwing that measurement away would mean re-running it on
+ * every scroll frame that slides the window by a row. An empty string is the
+ * hidden state, and then the x means nothing. ~1.4 KiB of .bss. */
+static char       s_ident[MAX_AIRCRAFT][ROW_IDENT_LEN];
+static int32_t    s_ident_x[MAX_AIRCRAFT];
 static int        s_n;            /* aircraft currently listed */
 static int        s_window_first; /* data index in slot 0; -1 when nothing is shown */
 
@@ -271,8 +303,15 @@ static void safe_copy(char *dst, size_t dst_sz, const char *src)
  * headline he actually wants — task brief); otherwise the plain-language
  * aircraft type, which DESIGN.md §5 is explicit is not an edge case (routes
  * resolve for airline traffic only, ~92% of it — private/GA traffic, the
- * loud low aircraft he actually hears, never has one and never will). */
-static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, int n_routes,
+ * loud low aircraft he actually hears, never has one and never will).
+ *
+ * Returns TRUE when the title it wrote is the destination city, i.e. when the
+ * route resolved — which is also exactly the question "may the identity line
+ * below this title repeat the aircraft model?". A row already headed
+ * "Cessna 208 Caravan" must not then say "· Cessna 208 Caravan" underneath
+ * itself (identity.h), and every path here that falls through to the type name
+ * returns false, including the resolved-but-city-less one. */
+static bool resolve_primary_text(const aircraft_t *ac, const route_t *routes, int n_routes,
                                  char *out, size_t outsz)
 {
     const route_t *route = route_find(routes, n_routes, ac->flight);
@@ -280,7 +319,7 @@ static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, in
         const char *de = airport_de(route->dest_icao);
         if (de != NULL && de[0] != '\0') {
             safe_copy(out, outsz, de);
-            return;
+            return true;
         }
         if (route->dest_city[0] != '\0') {
             /* No German table entry: the API's own (English) name beats a
@@ -288,7 +327,7 @@ static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, in
              * view_build.c's resolve_city(), which this file cannot call
              * directly (file-static there) but mirrors deliberately. */
             safe_copy(out, outsz, route->dest_city);
-            return;
+            return true;
         }
         /* A route that claims to be resolved and plausible but carries no
          * city name at all is not one adsb.im/routeset is documented to
@@ -305,6 +344,7 @@ static void resolve_primary_text(const aircraft_t *ac, const route_t *routes, in
      * Plain language over codes (AGENTS.md §1). */
     const char *name = actype_display_name(ac->type, ac->category);
     safe_copy(out, outsz, (name != NULL) ? name : STR_UNKNOWN_AIRCRAFT);
+    return false;
 }
 
 /* "12,4 km NO" — distance converted and rendered by fmt_distance_km(), the
@@ -323,6 +363,82 @@ static void resolve_secondary_text(const aircraft_t *ac, char *out, size_t outsz
     char dist[24];
     fmt_distance_km(ac->dst_nm, dist, sizeof dist);
     snprintf(out, outsz, "%s %s", dist, compass_de_abbr(ac->dir_deg));
+}
+
+/* Width of a string as it would be drawn on one line. Unwrapped, because a
+ * wrapped label reports the width it was GIVEN and not the width it wants —
+ * the same call and the same reason as screen_radar.c and screen_overhead.c.
+ */
+static int32_t text_w(const char *text, const lv_font_t *font)
+{
+    lv_point_t size;
+    lv_text_get_size(&size, text, font, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+    return size.x;
+}
+
+/* The identity line: "BAW123 · Boeing 777-300ER", right-aligned on line 2.
+ *
+ * WHERE IT GOES AND WHY IT IS NOT A THIRD LINE. The flight number is what he
+ * needs if he wants to look the aircraft up afterwards, and until now it was
+ * on no screen at all. It could have had a line of its own — at the cost of a
+ * taller row, and a taller row means fewer aircraft visible at a glance, which
+ * is the one thing the Liste is for. Line 2 was already paying for its full
+ * width and using less than half of it ("16,9 km NNO"), so the line goes in
+ * the space that was there rather than in space taken from the count.
+ *
+ * WHY IT IS 13 px CHROME NEXT TO 25 px BODY. DESIGN.md §2 reserves
+ * text-tertiary for "values that sit beside a brighter one", which is this
+ * exactly: it has to be findable when he goes looking and must never compete
+ * with the distance, the only thing on line 2 he reads at a glance. Mono
+ * because it is at least half a code, and every code on this device is set in
+ * mono. It is deliberately BELOW §3's 24 px near floor, which is the one place
+ * this screen departs from that floor — the floor governs text that answers a
+ * question, and this line answers none: it is the enrichment, and the rule
+ * immediately below is what keeps it honest about that.
+ *
+ * THE YIELD RULE, AND WHAT IT YIELDS TO. Measured against the room left over
+ * once the distance and a clear channel have taken theirs. Too wide and the
+ * model is dropped and it tries again as the bare identifier; too wide even
+ * then and it is hidden outright. The distance never moves and is never
+ * measured against the identity, because the answer outranks the enrichment —
+ * the same priority D48 and D50 already settled for the hero and the radar
+ * caption. Nothing is ellipsised: half a registration is not a registration,
+ * and nothing shrinks below 13 px, which is the floor for chrome.
+ *
+ * Measured over the whole of main/data/tbl_actype.c at the default 30 nm
+ * radius, the model survives on 88 % of airliner types and the identifier on
+ * 100 % of everything: the third rung needs a distance string half the row
+ * wide and no formatter here emits one. */
+static void resolve_identity_text(const aircraft_t *ac, bool with_model,
+                                  const char *secondary,
+                                  char *out, size_t outsz, int32_t *out_x)
+{
+    *out_x = 0;
+
+    /* What line 2 has left once the distance beside it has taken its share.
+     * The distance is measured from its TEXT and not from lv_obj_get_width():
+     * the secondary label is a fixed-width, dots-mode label, so its widget
+     * width is the whole row and says nothing about how much ink is in it. */
+    int32_t room = CONTENT_W - 2 * ROW_INSET - text_w(secondary, &plex_sans_cond_25) - IDENT_GAP;
+
+    aircraft_identity(ac, with_model, out, outsz);
+    if (out[0] == '\0') {
+        return; /* neither a callsign nor a registration: nothing to say */
+    }
+    int32_t want = text_w(out, &plex_mono_13);
+
+    if (want > room && with_model) {
+        /* First thing overboard is the model — it is the part of this line he
+         * can also read off the row's own title, off the Radar and off the
+         * hero. The identifier is the part that exists nowhere else. */
+        aircraft_identity(ac, false, out, outsz);
+        want = text_w(out, &plex_mono_13);
+    }
+    if (want > room) {
+        out[0] = '\0'; /* hidden, not squeezed */
+        return;
+    }
+    *out_x = CONTENT_W - ROW_INSET - want;
 }
 
 /* ============================================================================
@@ -374,8 +490,11 @@ static void style_slot0(bool nearest)
     set_hidden(s_lbl_nearest_tag, !nearest);
     /* The primary line shares its row with the tag when the tag is there, so
      * it must not run under it; without the tag it has the full width. The
-     * secondary line always has the full width — only the tag's own line
-     * needs to make room for it. */
+     * secondary line always has the full width — the tag is on line 1, and
+     * the only other thing on line 2 is the identity, which is measured
+     * against the distance and moves out of ITS way rather than the other way
+     * round (resolve_identity_text()). Nothing on line 2 has to be reserved
+     * for here, on slot 0 or anywhere else. */
     lv_obj_set_width(r->lbl_primary,
                      nearest ? CONTENT_W - 2 * ROW_INSET - s_tag_w - GAP_SM
                              : CONTENT_W - 2 * ROW_INSET);
@@ -418,6 +537,16 @@ static void apply_slot(int k, int idx)
      * losing the ellipsis on a long city name is a visible regression. */
     lv_label_set_text(r->lbl_primary, s_primary[idx]);
     lv_label_set_text(r->lbl_secondary, s_secondary[idx]);
+    /* Hidden rather than set to "": an empty label is still a laid-out,
+     * invalidated child, and this one is decided per aircraft, so on a quiet
+     * sky most of them would be that. Both the text and the x were settled in
+     * screen_list_update() — a slot only carries them across. */
+    bool has_ident = (s_ident[idx][0] != '\0');
+    if (has_ident) {
+        lv_label_set_text(r->lbl_ident, s_ident[idx]);
+        lv_obj_set_x(r->lbl_ident, s_ident_x[idx]);
+    }
+    set_hidden(r->lbl_ident, !has_ident);
     if (k == 0) {
         style_slot0(idx == 0);
     }
@@ -624,7 +753,7 @@ static void row_event_cb(lv_event_t *e)
  * object through every non-scrollable ancestor that has scroll_chain set,
  * and lv_obj_constructor() sets scroll_chain_hor/ver on every object with a
  * parent, so a drag started on a row is handed to s_list. */
-static void create_row(lv_obj_t *parent, int idx, int32_t body_lh)
+static void create_row(lv_obj_t *parent, int idx, int32_t body_lh, int32_t ident_y)
 {
     list_row_t *r = &s_rows[idx];
 
@@ -666,6 +795,20 @@ static void create_row(lv_obj_t *parent, int idx, int32_t body_lh)
     lv_label_set_long_mode(r->lbl_secondary, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_width(r->lbl_secondary, CONTENT_W - 2 * ROW_INSET);
     lv_obj_set_pos(r->lbl_secondary, ROW_INSET, ROW_PAD_V + body_lh + GAP_INNER);
+
+    /* The identity, sharing line 2 with the distance. No width is set, so the
+     * label is exactly as wide as its text and the x written per aircraft is
+     * its LEFT edge, computed from the measured width — which is what makes it
+     * right-aligned on the same edge as slot 0's "ÜBER DIR" tag a line above,
+     * rather than four pixels off it. CLIP, not DOTS: nothing here is ever
+     * allowed to be ellipsised, so the mode that would do it is not fitted.
+     * The y is baseline alignment with the distance, not top alignment — two
+     * faces this far apart in size share a line only if they sit on the same
+     * line (screen_list_create() does the arithmetic). */
+    r->lbl_ident = make_label(r->row, &plex_mono_13, THEME_TEXT_TERTIARY);
+    lv_label_set_long_mode(r->lbl_ident, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_pos(r->lbl_ident, ROW_INSET, ident_y);
+    set_hidden(r->lbl_ident, true);
 
     if (idx == 0) {
         s_lbl_nearest_tag = make_label(r->row, &plex_sans_cond_25, THEME_GREEN);
@@ -772,8 +915,19 @@ void screen_list_create(lv_obj_t *parent)
     s_row_h = LV_MAX(ROW_MIN_H, 2 * ROW_PAD_V + GAP_INNER + 2 * body_lh);
     s_pitch = s_row_h + GAP_SM;
 
+    /* Where the identity line sits so that it shares a BASELINE with the
+     * distance rather than a top edge. An LVGL label's y is the top of its
+     * line box, and the baseline sits (line_height - base_line) below that, so
+     * a 13 px face aligned top-to-top with a 25 px one floats visibly high.
+     * Measured, not tabulated: 43 + (31-6) - (18-4) = 54 px with the fonts as
+     * generated today, and the row is 82 px, so the 18 px line box clears the
+     * bottom inset with room to spare. */
+    int32_t ident_y = ROW_PAD_V + body_lh + GAP_INNER
+                      + (body_lh - plex_sans_cond_25.base_line)
+                      - (lv_font_get_line_height(&plex_mono_13) - plex_mono_13.base_line);
+
     for (int i = 0; i < POOL_ROWS; i++) {
-        create_row(s_list, i, body_lh);
+        create_row(s_list, i, body_lh, ident_y);
     }
     s_window_first = -1;
 
@@ -822,8 +976,14 @@ void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int 
      * (screen_list.h, task brief: "render them in that order"). --- */
     for (int i = 0; i < n; i++) {
         s_ac[i] = ac[i]; /* value copy — see s_ac's own comment */
-        resolve_primary_text(&ac[i], routes, n_routes, s_primary[i], ROW_PRIMARY_LEN);
+        bool titled_by_route = resolve_primary_text(&ac[i], routes, n_routes,
+                                                    s_primary[i], ROW_PRIMARY_LEN);
         resolve_secondary_text(&ac[i], s_secondary[i], ROW_SECONDARY_LEN);
+        /* Last, because what fits depends on what the distance beside it took,
+         * and whether the model may appear at all depends on whether the title
+         * above it is already the model. */
+        resolve_identity_text(&ac[i], titled_by_route, s_secondary[i],
+                              s_ident[i], ROW_IDENT_LEN, &s_ident_x[i]);
     }
     s_n = n;
 
