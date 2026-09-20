@@ -34,6 +34,12 @@ typedef struct {
 /* Builds the deck. Caller holds display_lock(). `pages` must outlive the call. */
 void nav_create(const nav_page_t *pages, int n_pages);
 
+/* Prints what the touch layer has actually seen, to the serial console.
+ * Exists because the long press cannot be triggered from the build host, so
+ * "he did not press" and "the press never arrived" are otherwise the same
+ * observation. */
+void nav_touch_report(void);
+
 int  nav_page(void);
 void nav_go_to(int page, bool animate);
 

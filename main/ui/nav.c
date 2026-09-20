@@ -1,4 +1,5 @@
 #include "nav.h"
+#include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -48,6 +49,13 @@ static int64_t  s_last_touch_ms;
  * something. Both reset on every new press. */
 static int64_t  s_press_start_ms;
 static bool     s_longpress_fired;
+
+/* Touch bookkeeping, for the console. The long press cannot be exercised
+ * from the build host, so the only way to tell "he did not press" from "the
+ * press never arrived" is to have the device remember. */
+static uint32_t s_press_seen;
+static uint32_t s_longpress_seen;
+static int64_t  s_longpress_last_ms;
 
 static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 
@@ -111,6 +119,7 @@ static void on_press(lv_event_t *e)
     s_last_touch_ms   = now_ms();
     s_press_start_ms  = s_last_touch_ms;
     s_longpress_fired = false;
+    s_press_seen++;
 }
 
 /* Bound to BOTH long-press events, and neither of them is the threshold.
@@ -136,9 +145,35 @@ static void on_longpress(lv_event_t *e)
     if (s_longpress_fired || t - s_press_start_ms < LONGPRESS_MS) {
         return;
     }
-    s_longpress_fired = true;
+    s_longpress_fired    = true;
+    s_longpress_seen++;
+    s_longpress_last_ms  = t - s_press_start_ms;
     if (s_longpress_cb && !nav_overlay_open()) {
         s_longpress_cb();
+    }
+}
+
+/* Marks every purely decorative descendant as "pass it on".
+ *
+ * lv_obj_get_event_count() is the test: zero means nothing was ever wired to
+ * this object, so it exists to be looked at. Recursion stops at anything
+ * that does have a callback — that object owns its touches, and so does
+ * everything inside it.
+ *
+ * Bubbled events stop at the tile: nav_create() deliberately does not set
+ * this flag on s_page[i] itself, so a scroll inside a page cannot reach
+ * lv_tileview's own LV_EVENT_SCROLL_END handler and snap the deck to another
+ * page. */
+static void bubble_decorative(lv_obj_t *parent)
+{
+    uint32_t n = lv_obj_get_child_count(parent);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *child = lv_obj_get_child(parent, i);
+        if (lv_obj_get_event_count(child) != 0) {
+            continue;
+        }
+        lv_obj_set_event_bubble(child, true);
+        bubble_decorative(child);
     }
 }
 
@@ -179,6 +214,39 @@ void nav_create(const nav_page_t *pages, int n_pages)
         if (pages[i].create) {
             pages[i].create(s_page[i]);
         }
+
+        bubble_decorative(s_page[i]);
+
+        /* WHY THE LONG PRESS NEEDS THIS.
+         *
+         * The handlers above are on the tileview, which is underneath every
+         * page. In LVGL 9 the lv_obj constructor sets obj->clickable = 1, so
+         * the full-page container each screen creates (screen_radar.c:447,
+         * screen_list.c:832) is a hit target in its own right — and LVGL does
+         * not pass an event to a parent unless the child asks it to. So every
+         * press landed on the page's own background and stopped there, and
+         * the long press to Einstellungen has never once worked by finger.
+         * Swiping kept working because scrolling searches UP the parent chain
+         * for a scrollable ancestor; clicking does not.
+         *
+         * bubble_decorative() decides who passes a touch on: an object with no
+         * event callback of its own is scenery, and scenery has no business
+         * eating a press. An object that DOES have one — an aircraft caption,
+         * a list row — owns its taps and is left alone, along with everything
+         * under it, so a long press on a row cannot open the detail view and
+         * the settings on top of it.
+         *
+         * One level of bubbling was tried first and was not enough: the radar
+         * draws its range rings as lv_obj_create() circles whose bounding
+         * boxes cover most of the scope, two levels below the tile, so nearly
+         * every press inside the ring landed on scenery and stopped there.
+         *
+         * The handlers are added to the tile as well as the tileview, because
+         * one level of bubbling is exactly one level: the event reaches the
+         * tile and stops. */
+        lv_obj_add_event_cb(s_page[i], on_press, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(s_page[i], on_longpress, LV_EVENT_LONG_PRESSED, NULL);
+        lv_obj_add_event_cb(s_page[i], on_longpress, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
 
         s_dot[i] = lv_obj_create(root);
         lv_obj_set_size(s_dot[i], DOT_SIZE, DOT_SIZE);
@@ -227,6 +295,16 @@ void nav_set_badge(const char *text, bool caution)
     lv_label_set_text(s_badge, text);
     lv_obj_set_style_text_color(s_badge, caution ? THEME_AMBER : THEME_TEXT_LABEL, 0);
     lv_obj_set_hidden(s_badge, false);
+}
+
+void nav_touch_report(void)
+{
+    printf("\ntouch\n");
+    printf("  presses reaching the deck : %u\n", (unsigned)s_press_seen);
+    printf("  long presses recognised   : %u\n", (unsigned)s_longpress_seen);
+    printf("  last one held for         : %lld ms (threshold %d)\n",
+           (long long)s_longpress_last_ms, LONGPRESS_MS);
+    printf("  overlay open right now    : %s\n", nav_overlay_open() ? "yes" : "no");
 }
 
 int nav_page(void) { return s_page_idx; }

@@ -332,6 +332,18 @@ not read a manual. Design for that:
   face costs **zero** FPS; at one it costs 6%. The full font set is 735 KiB and buys back
   nothing by shrinking. Do not re-open this without a new measurement.
 
+- **In LVGL 9 every `lv_obj_create()` is a touch target, and no event ever bubbles.**
+  The `lv_obj` constructor sets `obj->clickable = 1` (labels are the exception — theirs
+  sets it false), and LVGL passes an event to a parent only if the child carries
+  `LV_OBJ_FLAG_EVENT_BUBBLE`. So a full-screen container a screen creates for layout
+  silently eats every press aimed at anything underneath it, and a decorative
+  `lv_obj_create()` circle eats every press inside its bounding box — which for the radar's
+  range rings is most of the panel. Scrolling is not affected, because scrolling searches
+  UP the parent chain for a scrollable ancestor; clicking does not. This cost the long press
+  into Einstellungen its entire life (D62). `nav.c`'s `bubble_decorative()` is the rule that
+  came out of it: an object with no event callback of its own is scenery and passes touches
+  on.
+
 **Power and the battery**
 - **The BSP does not touch the AXP2101 at all** — `grep -i axp` over the Waveshare component
   returns nothing. Everything about charging is `main/power/axp2101.c`, and before it existed

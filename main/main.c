@@ -18,6 +18,7 @@
  *   n  network status and a scan of what is in range
  *   p  probe the link (DNS, then a raw GET by IP)
  *   y  battery: the judged status and the PMIC registers under it
+ *   x  what the touch layer has seen (presses, long presses, the last hold)
  *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
  *      the amber caution and the backlight cap can be seen without one
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
@@ -1075,6 +1076,7 @@ static void on_cmd(char c)
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
     else if (c == 'y') battery_console();
     else if (c == 'Y') battery_sim_cycle();
+    else if (c == 'x') nav_touch_report();
 }
 
 void app_main(void)
@@ -1150,7 +1152,7 @@ void app_main(void)
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
     ota_start();
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku x=touch o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
      * freshly written image is on probation until it says otherwise, and the

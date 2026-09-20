@@ -1405,3 +1405,48 @@ longer pending work and the runtime measurement no longer blocks anything. Pract
 worth keeping: foam tape, not cyanoacrylate, which attacks the pouch; no clamping or
 folding; slack in the lead so the plug is not carrying the cell; and low on the back rather
 than centred, where 10 mm of cell leans the panel back instead of letting it rock.
+
+## D62 — The long press into Einstellungen had never worked
+
+**What was wrong:** you could not reach the settings screen by touching the panel. Not
+since the screen was built. The only way in was the serial console's 'e' key, which is why
+nobody noticed — every check of that screen in this repo went through the build host.
+
+**Why.** The long-press handlers are bound to the tileview, which sits *underneath* every
+page. In LVGL 9 the `lv_obj` constructor sets `obj->clickable = 1`, so the full-screen
+container each screen creates for its own layout (`screen_radar.c:447`,
+`screen_list.c:832`) is a hit target in its own right — and LVGL passes an event to a
+parent only when the child carries `LV_OBJ_FLAG_EVENT_BUBBLE`. Every press landed on the
+page's own background and stopped there. Swiping between pages kept working the whole time,
+which is exactly why this looked like a threshold problem rather than a plumbing one:
+scrolling searches UP the parent chain for a scrollable ancestor, clicking does not.
+
+**The first fix was too timid, and the device said so.** Bubbling one level — the page's
+direct children — still did not work, because the radar draws its range rings as
+`lv_obj_create()` circles and a 400 px ring's bounding box covers most of the scope. Almost
+every press "inside the circle" landed on scenery two levels down.
+
+**The rule that came out of it:** `lv_obj_get_event_count() == 0` means nothing was ever
+wired to this object, so it is scenery, and scenery passes touches on. `bubble_decorative()`
+walks the page and sets the flag on those, stopping at anything that does have a callback —
+an aircraft caption, a list row — which keeps its own taps along with everything inside it.
+Bubbled events stop at the tile: the flag is deliberately NOT set on the tile itself, so a
+scroll inside a page can never reach `lv_tileview`'s own `LV_EVENT_SCROLL_END` handler
+(`lv_tileview.c:147`) and snap the deck to another page.
+
+**`nav_touch_report()` on the 'x' key exists because of how long this took to see.** A long
+press cannot be triggered from the build host, so "he did not press" and "the press never
+arrived" are the same observation, and I guessed at which one it was twice. The device now
+counts presses, long presses and how long the last one was held, so the question is settled
+by reading a counter rather than by asking someone to try again while I listen.
+
+**Verified by him, on the glass:** 4 presses reaching the deck, 2 long presses recognised,
+the last held 1260 ms against the 1200 ms threshold, and the overlay open when the counter
+was read. The counters were 0 immediately after the flash, so those are his fingers.
+
+**The part worth remembering.** The commit before this one fixed the long-press *threshold*
+— carefully, with reasoning about keyboards and scroll suppression — on a code path no
+finger has ever reached. When he said he still could not get in, the natural reading was
+"1.2 s is too long" and the correct reading was "no event arrives at all". AGENTS.md §11
+rule 1 is about comments that drift from code; this is its cousin: a handler bound to an
+object the hardware never hands anything to looks exactly like working code.
