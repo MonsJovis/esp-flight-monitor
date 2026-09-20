@@ -11,12 +11,17 @@
 > München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
 >
-> **19,518 host checks across seven suites, 0 failed**, plus two gates that run with them:
+> **27,134 host checks across eight suites, 0 failed**, plus two gates that run with them:
 > a font-coverage check (LVGL draws a missing glyph as *nothing*) and a string audit
 > (every German word must come from `main/strings_de.h`). Every screenshot in README.md is
 > the panel's own framebuffer read back over USB by `tools/grab_screen.py`.
 >
-> Fifty-one decisions are written up in docs/DECISIONS.md, including the ones that were
+> Past M8 the deck grew teeth: the radar marks are carried forward between polls so they
+> move instead of jumping (D59), both are tappable, and the Liste scrolls. Two latent
+> panics fell out of testing that — the WLAN screen never fitted in LVGL's fixed heap, and
+> the WiFi scan wrote into it after it was closed (D58).
+>
+> Fifty-nine decisions are written up in docs/DECISIONS.md, including the ones that were
 > wrong. The sharpest of the late ones: **consolidating every German string into one file
 > walked them out from under the font gate** (D39), which then passed for having nothing
 > left to check — a silent hole in the one tool whose entire job is catching silence.

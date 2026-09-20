@@ -1225,3 +1225,23 @@ determinism is the right instinct for this device. But it only pays if exhaustio
 handled, and LVGL's is not — it is a NULL dereference in a library function, with a
 backtrace pointing at whichever widget happened to be unlucky. Determinism that ends in a
 panic is not determinism.
+
+## D59 — The three touch features, confirmed by the person holding the device
+
+Everything in D58 and the radar work was shipped with an explicit caveat: the taps could not
+be verified from here. Confirmed working on 2026-09-20 by the user: tapping a mark
+re-points the caption, tapping the caption opens the full view, and the Liste scrolls.
+
+Worth recording rather than quietly dropping the caveat, because the split held up exactly
+as intended. What a machine could check, a machine checked — 17 of 19 radar marks measured
+moving 5–8 px per 10 s by diffing framebuffer captures, 0 crashes in 40 rapid overlay
+transitions, memory flat across a three-minute soak on live traffic. What needed a finger
+needed a finger. Neither substitutes for the other, and saying "verified" for the half I had
+not touched would have been the easy lie.
+
+**Where this leaves the deck.** Three pages, and now three ways in: the hero answers
+unprompted, the Liste scrolls to everything in range, and the Radar is a picture you can
+interrogate — tap a mark to ask "which one is that", tap the caption to commit. The caption
+tap reuses the selection path the list already had, so there is still exactly one "detail
+view" (§5.1) and no fourth layout to learn, which was the original argument in main.c and
+still holds.
