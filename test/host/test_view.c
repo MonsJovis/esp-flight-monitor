@@ -268,7 +268,7 @@ static void test_dst_unknown_end_to_end(void)
  * "> 0": a collector that truncates, or that stops being called from half the
  * tests, is invisible to "> 0". Adding a remember_for_scan() call means
  * bumping this by hand, on purpose -- that is the whole point of it. */
-#define N_SCAN_EXPECTED 17
+#define N_SCAN_EXPECTED 19
 
 static view_model_t g_scan_models[N_SCAN_MODELS];
 static const char  *g_scan_labels[N_SCAN_MODELS];
@@ -701,6 +701,95 @@ static void test_synthetic_military_reason(void)
     remember_for_scan("synthetic military no-route", &vm);
 }
 
+/* ---- the line that names the aircraft ----------------------------------- */
+
+static void test_identity_line(void)
+{
+    GROUP("view_build: identity never repeats the headline");
+
+    /* The flight number was in view_model_t from the beginning and drawn
+     * nowhere, which is why it took a user to notice. It is composed LAST,
+     * after the hero/type dedup, so on an aircraft whose hero IS its model the
+     * line must be the identifier alone. */
+    {
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "3c4b26");
+        snprintf(ac.reg, sizeof ac.reg, "OE-9515");
+        snprintf(ac.type, sizeof ac.type, "DIMO");
+        ac.alt_ft = 6000; ac.dst_nm = 4.0f;
+
+        struct tm now = make_now();
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, NET_OK, &vm);
+
+        /* No route: the hero is the model. */
+        CHECK(strstr(vm.hero, "Dimona") != NULL);
+        CHECK_STR(vm.identity, "OE-9515");
+        CHECK(strstr(vm.identity, "Dimona") == NULL);
+        remember_for_scan("glider identity", &vm);
+    }
+
+    GROUP("view_build: with a route, the identity carries the model");
+    {
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "4ca123");
+        snprintf(ac.flight, sizeof ac.flight, "AUA453");
+        snprintf(ac.reg, sizeof ac.reg, "OE-LBA");
+        snprintf(ac.type, sizeof ac.type, "A20N");
+        ac.alt_ft = 31000; ac.dst_nm = 8.0f;
+
+        route_t rt;
+        memset(&rt, 0, sizeof rt);
+        snprintf(rt.callsign, sizeof rt.callsign, "AUA453");
+        snprintf(rt.orig_icao, sizeof rt.orig_icao, "LOWW");
+        snprintf(rt.dest_icao, sizeof rt.dest_icao, "EGLL");
+        rt.resolved = true; rt.plausible = true;
+
+        struct tm now = make_now();
+        view_model_t vm;
+        view_build(&ac, &rt, &now, 1, NET_OK, &vm);
+
+        CHECK_STR(vm.hero, "London");
+        /* Flight number, not registration: an airliner has one and it is what
+         * he would type into his phone. Never both. */
+        CHECK(strstr(vm.identity, "AUA453") != NULL);
+        CHECK(strstr(vm.identity, "OE-LBA") == NULL);
+        CHECK(strstr(vm.identity, "Airbus") != NULL);
+        remember_for_scan("airliner identity", &vm);
+    }
+
+    GROUP("view_build: a raw ICAO designator may not reach the identity either");
+    {
+        /* The fourth place this could have come back. */
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "aaaa01");
+        snprintf(ac.flight, sizeof ac.flight, "TEST01");
+        snprintf(ac.type, sizeof ac.type, "ZZZZ");
+        ac.alt_ft = 5000; ac.dst_nm = 3.0f;
+
+        struct tm now = make_now();
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, NET_OK, &vm);
+        CHECK(strstr(vm.identity, "ZZZZ") == NULL);
+        CHECK_STR(vm.identity, "TEST01");
+    }
+
+    GROUP("view_build: nothing known means an empty line, not a placeholder");
+    {
+        aircraft_t ac;
+        memset(&ac, 0, sizeof ac);
+        snprintf(ac.hex, sizeof ac.hex, "aaaa02");
+        ac.alt_ft = 5000; ac.dst_nm = 3.0f;
+        struct tm now = make_now();
+        view_model_t vm;
+        view_build(&ac, NULL, &now, 1, NET_OK, &vm);
+        CHECK_STR(vm.identity, "");
+    }
+}
+
 /* ---- the three network states stay three -------------------------------- */
 
 static void test_net_state_round_trip(void)
@@ -967,6 +1056,7 @@ static void scan_model_for_english_leaks(const char *label, const view_model_t *
     check_field_no_english(label, "type_full", vm->type_full);
     check_field_no_english(label, "size_class", vm->size_class);
     check_field_no_english(label, "callsign", vm->callsign);
+    check_field_no_english(label, "identity", vm->identity);
     check_field_no_english(label, "registration", vm->registration);
     check_field_no_english(label, "altitude", vm->altitude);
     check_field_no_english(label, "distance", vm->distance);
@@ -1077,6 +1167,7 @@ int main(void)
     test_synthetic_military_reason();
 
     /* Must run last: it scans every model remember_for_scan() collected above. */
+    test_identity_line();
     test_net_state_round_trip();
     test_hero_is_never_a_bare_code();
     test_english_detector_itself();

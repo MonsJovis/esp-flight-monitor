@@ -22,6 +22,7 @@ set(SRCS
     "data/fmt_de.c"
     "data/view_build.c"
     "data/extrapolate.c"
+    "data/identity.c"
     "data/settings.c"
     "net/adsb_parse.c"
     "net/route_parse.c"

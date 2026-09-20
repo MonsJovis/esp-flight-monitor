@@ -79,7 +79,8 @@ static void back_tapped_cb(lv_event_t *e)
         s_back_cb();
     }
 }
-static lv_obj_t *s_lbl_offline; /* the network caution; hidden when vm->net == NET_OK */
+static lv_obj_t *s_lbl_offline;
+static lv_obj_t *s_lbl_identity;   /* "AUA453 · Airbus A320neo", chrome row, centred */ /* the network caution; hidden when vm->net == NET_OK */
 
 /* Compass tape band */
 static lv_obj_t *s_compass;
@@ -177,6 +178,20 @@ void screen_overhead_create(lv_obj_t *parent)
     s_lbl_clock = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
     lv_obj_set_pos(s_lbl_clock, PAD, Y_CHROME);
 
+    /* Which aircraft this is, in the empty middle of the chrome row.
+     *
+     * It goes here rather than into the body because the body is a ladder of
+     * priorities that already yields under pressure (D48) — and this line must
+     * not. It is the one he needs to look the aircraft up afterwards, it is
+     * the only place the flight number appears at all, and the hero shrinking
+     * from 100 px to 56 px must not take it away.
+     *
+     * Tertiary tier, centred between "Zurück" on the left and the network
+     * caution on the right: findable, never competing with the destination,
+     * and in the same place on every aircraft. */
+    s_lbl_identity = make_label(s_cont, &plex_mono_13, THEME_TEXT_TERTIARY);
+    lv_obj_set_hidden(s_lbl_identity, true);
+
     s_lbl_offline = make_label(s_cont, &plex_mono_13, THEME_AMBER);
     lv_label_set_text(s_lbl_offline, STR_NO_NETWORK_TAG);   /* text set per update */
     lv_obj_update_layout(s_lbl_offline);
@@ -258,6 +273,40 @@ void screen_overhead_update(const view_model_t *vm)
         lv_obj_update_layout(s_lbl_offline);
         lv_obj_set_pos(s_lbl_offline,
                        PAD + CONTENT_W - lv_obj_get_width(s_lbl_offline), Y_CHROME);
+    }
+
+    /* The identity line, centred in what the chrome row has left over. The
+     * two neighbours are fixed: "Zurück"/clock at PAD on the left, and the
+     * caution right-aligned. Placed AFTER the caution has been sized and
+     * shown or hidden for this frame, because it has to measure it: reading
+     * that state a line earlier would use last frame's answer, and be wrong
+     * for exactly one frame every time the network changes. If the gap will
+     * not hold the line, it hides rather than overlapping either — an identifier printed across a
+     * warning is worse than no identifier. */
+    {
+        bool show_id = vm->identity[0] != '\0';
+        if (show_id) {
+            lv_label_set_text(s_lbl_identity, vm->identity);
+            lv_obj_update_layout(s_lbl_identity);
+            lv_obj_update_layout(s_lbl_clock);
+            int32_t left  = PAD + lv_obj_get_width(s_lbl_clock) + GAP_MD;
+            int32_t right = PAD + CONTENT_W
+                          - (lv_obj_is_hidden(s_lbl_offline) ? 0
+                             : lv_obj_get_width(s_lbl_offline) + GAP_MD);
+            int32_t w = lv_obj_get_width(s_lbl_identity);
+            /* Centred on the SCREEN, not in the gap between its neighbours.
+             * Centring in the gap would move the line sideways every time the
+             * network caution appeared or went away — and a line that shifts
+             * when nothing about the aircraft changed reads as a glitch. It
+             * only has to not COLLIDE with them. */
+            int32_t x = (THEME_SCREEN_WIDTH - w) / 2;
+            if (x >= left && x + w <= right) {
+                lv_obj_set_pos(s_lbl_identity, x, Y_CHROME);
+            } else {
+                show_id = false;
+            }
+        }
+        set_hidden(s_lbl_identity, !show_id);
     }
 
     /* --- Compass tape -- nothing to point at when the sky is empty --- */

@@ -86,6 +86,7 @@
 #include "tables.h"
 #include "route_parse.h"
 #include "strings_de.h"
+#include "identity.h"
 
 /* ============================================================================
  * FIXED GERMAN STRINGS — audited block, one hard-coded copy in this file:
@@ -142,6 +143,7 @@
 
 /* Level with the range read-out in the opposite corner. */
 #define RADAR_CLOCK_Y     24
+#define GAP_ID            12   /* clearance the identity keeps from its neighbours */
 #define RADAR_CAPTION_GAP 12
 
 /* Invisible touch margin around each mark. A fingertip is ~10 mm; the mark is
@@ -167,6 +169,7 @@ static lv_obj_t *s_cont;
 static lv_obj_t *s_ring_inner, *s_ring_mid, *s_ring_outer;
 static lv_obj_t *s_lbl_km;
 static lv_obj_t *s_lbl_clock;
+static lv_obj_t *s_lbl_identity;   /* which aircraft the caption names */
 static lv_obj_t *s_lbl_cardinal[4];
 static lv_obj_t *s_home_outer, *s_home_inner;
 
@@ -199,6 +202,12 @@ static char s_caption_hex[sizeof ((aircraft_t *)0)->hex];
 static char s_cap_name[MAX_AIRCRAFT][40];
 static char s_cap_dist[MAX_AIRCRAFT][24];
 static char s_cap_hex[MAX_AIRCRAFT][sizeof ((aircraft_t *)0)->hex];
+/* The identity line is joined at PLACEMENT time, not here, because whether
+ * the model belongs in it depends on whether the caption below managed to
+ * show the name — and the caption only finds that out when it measures. */
+static char s_cap_who[MAX_AIRCRAFT][12];    /* callsign, or registration */
+static char s_cap_model[MAX_AIRCRAFT][36];
+static bool s_cap_routed[MAX_AIRCRAFT];
 static int  s_cap_count;
 
 static radar_select_cb s_select_cb;
@@ -459,6 +468,19 @@ void screen_radar_create(lv_obj_t *parent)
      * own to inherit the convention from otherwise. --- */
     s_lbl_km = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
 
+    /* Which aircraft the caption names, centred in the top row between the
+     * range read-out and the clock.
+     *
+     * It sits at the TOP while the caption it belongs to is at the bottom,
+     * which looks odd written down and is right on the panel: there is no
+     * room under the caption (the scope's S mark is directly above it and the
+     * page dots directly below — D50), and this is the same slot, the same
+     * size and the same colour the detail layer uses for the same sentence.
+     * One position means one thing across the whole device, which is worth
+     * more than the two lines being adjacent. */
+    s_lbl_identity = make_label(s_cont, &plex_mono_13, THEME_TEXT_TERTIARY);
+    lv_obj_set_hidden(s_lbl_identity, true);
+
     /* The clock, balancing the range read-out across the top. */
     s_lbl_clock = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
     lv_obj_set_hidden(s_lbl_clock, true);
@@ -579,11 +601,88 @@ static void build_caption(const aircraft_t *a, const route_t *routes, int n_rout
     }
 }
 
+/* Places the identity line centred in the top row, if it fits there.
+ *
+ * Its two neighbours are MEASURED rather than assumed: the range read-out is
+ * positioned by bearing and then clamped into the panel, so where it actually
+ * lands depends on the scope geometry, and the clock is only present once the
+ * time is known. Overlapping either would be worse than saying nothing.
+ */
+static void place_identity(const char *id);   /* defined just below */
+
+/* Joins and places the identity for aircraft `i`.
+ *
+ * `name_shown` is whether the caption below is currently displaying the
+ * aircraft's NAME. It decides whether the model belongs up here:
+ *
+ *   routed        -> the caption shows a destination, so the model is only
+ *                    ever up here. Include it.
+ *   not routed,
+ *   name shown    -> the caption IS the model. Omit it; saying it twice on
+ *                    one screen is what view_build's dedup exists to stop.
+ *   not routed,
+ *   name dropped  -> the caption gave the name up for width (D50), so the
+ *                    model is about to appear nowhere at all. Include it.
+ *                    Found on the panel: a glider captioned "6,0 km SSO"
+ *                    with "OE9515" on top and no clue what it was.
+ */
+static void place_identity_for(int i, bool name_shown)
+{
+    if (i < 0 || i >= s_cap_count) {
+        place_identity(NULL);
+        return;
+    }
+    bool with_model = s_cap_routed[i] || !name_shown;
+    char buf[52];
+    identity_compose(s_cap_who[i], with_model ? s_cap_model[i] : NULL,
+                     buf, sizeof buf);
+    place_identity(buf);
+}
+
+static void place_identity(const char *id)
+{
+    if (s_lbl_identity == NULL) {
+        return;
+    }
+    if (id == NULL || id[0] == '\0') {
+        lv_obj_set_hidden(s_lbl_identity, true);
+        return;
+    }
+    lv_label_set_text(s_lbl_identity, id);
+    lv_obj_update_layout(s_lbl_identity);
+
+    int32_t w = lv_obj_get_width(s_lbl_identity);
+    int32_t h = lv_obj_get_height(s_lbl_identity);
+    int32_t x = (THEME_SCREEN_WIDTH - w) / 2;
+    int32_t y = RADAR_CLOCK_Y;
+
+    lv_obj_t *const neighbours[] = { s_lbl_km, s_lbl_clock };
+    for (size_t i = 0; i < sizeof neighbours / sizeof neighbours[0]; i++) {
+        lv_obj_t *o = neighbours[i];
+        if (o == NULL || lv_obj_is_hidden(o)) {
+            continue;
+        }
+        lv_obj_update_layout(o);
+        int32_t ox = lv_obj_get_x(o), oy = lv_obj_get_y(o);
+        int32_t ow = lv_obj_get_width(o), oh = lv_obj_get_height(o);
+        bool overlaps = (x < ox + ow + GAP_ID) && (ox < x + w + GAP_ID) &&
+                        (y < oy + oh)          && (oy < y + h);
+        if (overlaps) {
+            lv_obj_set_hidden(s_lbl_identity, true);
+            return;
+        }
+    }
+    lv_obj_set_pos(s_lbl_identity, x, y);
+    lv_obj_set_hidden(s_lbl_identity, false);
+}
+
 /* Paints and positions the caption. Split out of screen_radar_update() so a
  * tap on a mark can repaint through exactly this path — a second copy of the
  * fit rule would be a second chance to get it wrong, and this one is already
  * subtle (see D50). */
-static void place_caption(const char *name, const char *dist)
+/* Returns whether the NAME ended up on screen — the identity line needs to
+ * know, see place_identity_for(). */
+static bool place_caption(const char *name, const char *dist)
 {
     lv_label_set_text(s_labels[0].name, name);
     lv_label_set_text(s_labels[0].dist, dist);
@@ -617,7 +716,7 @@ static void place_caption(const char *name, const char *dist)
         int32_t w = lv_obj_get_width(s_labels[0].dist);
         lv_obj_set_pos(s_labels[0].dist, (THEME_SCREEN_WIDTH - w) / 2,
                        RADAR_CAPTION_Y);
-        return;
+        return false;
     }
 
     /* Give the label the width the text actually wants. It was created with a
@@ -644,6 +743,7 @@ static void place_caption(const char *name, const char *dist)
     lv_obj_set_pos(s_labels[0].name, x, base + (dh > nh ? (dh - nh) / 2 : 0));
     lv_obj_set_pos(s_labels[0].dist, x + nw + RADAR_CAPTION_GAP,
                    base + (nh > dh ? (nh - dh) / 2 : 0));
+    return true;
 }
 
 
@@ -659,7 +759,7 @@ static void mark_clicked_cb(lv_event_t *e)
         return;
     }
     memcpy(s_caption_hex, s_cap_hex[i], sizeof s_caption_hex);
-    place_caption(s_cap_name[i], s_cap_dist[i]);
+    place_identity_for(i, place_caption(s_cap_name[i], s_cap_dist[i]));
 }
 
 /* A tap on the caption commits: it asks for the full view of whatever the
@@ -758,6 +858,7 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         if (i >= n || !s_calc[i].valid) {
             lv_obj_set_hidden(s_marks[i], true);
             s_cap_hex[i][0] = '\0';      /* hidden marks are not tappable */
+            s_cap_who[i][0] = '\0';
             continue;
         }
         radar_calc_t *c = &s_calc[i];
@@ -776,6 +877,14 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
                       s_cap_name[i], sizeof s_cap_name[i],
                       s_cap_dist[i], sizeof s_cap_dist[i]);
         snprintf(s_cap_hex[i], sizeof s_cap_hex[i], "%s", ac[i].hex);
+        {
+            const route_t *r = route_find(routes, n_routes, ac[i].flight);
+            s_cap_routed[i] = (r != NULL && r->resolved);
+            const char *who = (ac[i].flight[0] != '\0') ? ac[i].flight : ac[i].reg;
+            snprintf(s_cap_who[i], sizeof s_cap_who[i], "%s", who);
+            const char *model = actype_display_name(ac[i].type, ac[i].category);
+            snprintf(s_cap_model[i], sizeof s_cap_model[i], "%s", model ? model : "");
+        }
 
         lv_obj_set_pos(s_marks[i], (int32_t)(c->x - (float)RADAR_MARK_BOX / 2.0f),
                        (int32_t)(c->y - (float)RADAR_MARK_BOX / 2.0f));
@@ -810,6 +919,7 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     if (nearest_idx < 0) {
         lv_obj_set_hidden(s_labels[0].name, true);
         lv_obj_set_hidden(s_labels[0].dist, true);
+        place_identity(NULL);          /* nothing captioned, nothing to name */
         return;
     }
 
@@ -838,7 +948,7 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     char dist_buf[sizeof s_cap_dist[0]];
     build_caption(a, routes, n_routes, name_buf, sizeof name_buf,
                   dist_buf, sizeof dist_buf);
-    place_caption(name_buf, dist_buf);
+    place_identity_for(cap_idx, place_caption(name_buf, dist_buf));
 }
 
 void screen_radar_set_clock(const char *hhmm)

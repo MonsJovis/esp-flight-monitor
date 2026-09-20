@@ -53,6 +53,12 @@ typedef struct {
     char type_full[VIEW_LINE_LEN];/* "Airbus A320neo"                             */
     char size_class[VIEW_LINE_LEN];/* "Mittelstreckenjet"                         */
     char callsign[16];            /* "AUA453"                                     */
+    /* "AUA453 · Airbus A320neo" — which aircraft this is, as opposed to where
+     * it is going. The line he needs to look it up afterwards, and the only
+     * place the flight number appears at all. Composed here, after the
+     * hero/type dedup, so it can never repeat the headline. "" when the feed
+     * gave neither an identifier nor a type. */
+    char identity[VIEW_LINE_LEN];
     char registration[16];        /* "OE-LBA"; "" when blocked                    */
 
     /* Data band — values already carry their units */

@@ -15,6 +15,7 @@
 #include "fmt_de.h"
 #include "tables.h"
 #include "strings_de.h"
+#include "identity.h"
 #include "compat.h"
 
 /* ---- small local helper ------------------------------------------------
@@ -284,6 +285,17 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
      * new. A city hero never matches an aircraft type, so §5.1 keeps both. */
     if (out->hero[0] != '\0' && strstr(out->type_full, out->hero) != NULL) {
         out->type_full[0] = '\0';
+    }
+
+    /* Which aircraft this is, as opposed to where it is going. Composed LAST,
+     * from the fields as they finally stand, so it cannot repeat a headline
+     * the dedup above just removed: when the hero IS the model, type_full is
+     * blank by now and this line is the identifier alone. */
+    {
+        const char *who = (out->callsign[0] != '\0') ? out->callsign
+                        : (out->registration[0] != '\0') ? out->registration
+                        : "";
+        identity_compose(who, out->type_full, out->identity, sizeof out->identity);
     }
 }
 

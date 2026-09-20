@@ -69,6 +69,12 @@
 #define STR_BACK               "Zurück"
 #define STR_WLAN               "WLAN"
 
+/* U+00B7 MIDDLE DOT, with a space each side: the separator between an
+ * aircraft's identifier and its model ("RYR4MR · Boeing 737-800"). The same
+ * dot the attribution line and the list already use, so one punctuation mark
+ * means "and also" everywhere on this device. */
+#define STR_ID_SEP             " \xC2\xB7 "
+
 /* U+2014 EM DASH. "There is no value", never a blank slot: an empty space
  * reads as a broken device, a dash reads as a deliberate answer. */
 #define STR_EM_DASH            "\xE2\x80\x94"
