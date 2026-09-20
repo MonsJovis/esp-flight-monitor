@@ -33,6 +33,8 @@ set(SRCS
     "net/timesync.c"
     "net/ota_policy.c"
     "net/ota.c"
+    "power/axp2101.c"
+    "power/battery_policy.c"
 )
 
 # Generated font faces are globbed: they are build output with stable names,
@@ -45,8 +47,8 @@ idf_component_register(
     # a network. See main/debug/dbg_fixture.c.
     EMBED_TXTFILES "../test/fixtures/adsblol_gloggnitz_30nm.json"
                    "../test/fixtures/routeset_response.json"
-    INCLUDE_DIRS "." "ui" "data" "net" "debug" "ui/fonts"
-    REQUIRES esp_driver_usb_serial_jtag esp_lcd esp_timer
+    INCLUDE_DIRS "." "ui" "data" "net" "debug" "power" "ui/fonts"
+    REQUIRES esp_driver_usb_serial_jtag esp_driver_i2c esp_lcd esp_timer
              json esp_wifi esp_netif esp_event nvs_flash esp_http_client lwip
              app_update esp_https_ota esp-tls
              espressif__esp_lcd_touch espressif__esp_lvgl_port

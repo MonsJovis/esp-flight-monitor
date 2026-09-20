@@ -1290,3 +1290,118 @@ Also: `lvgl_mem_report()` was printing `lv_mem_monitor()`, which reports zeros n
 LVGL allocates through the system heap (D58). A diagnostic that answers every question with
 "0" is worse than none, because it looks like an answer. It reports the largest contiguous
 internal block instead — the number that actually decides whether the next keyboard fits.
+
+## D61 — A cell on the PH2.0 header, and why it lives in the stand
+
+**Decision:** the device supports a 3.7 V Li-ion cell as an uninterruptible supply. It is
+optional, it is off the critical path, and **it does not go inside the case.**
+
+**The case cannot hold one, and the back cover says so.** The enclosure is 86.5 × 86.5 ×
+**14 mm** with the display, the PCB, two USB-C sockets and a 2.0 mm expansion header inside
+it. The thinnest cell worth having is 4 mm, and it would sit pressed against the board with
+no airflow, held at full charge, behind glass, in a Thai living room — the exact conditions
+a pouch cell swells under. Waveshare's own dimension drawing shows a **cutout in the back
+cover exposing the PH2.0 socket**, so a cell plugs in from outside with the case still shut.
+That is the intended shape: the cell goes in `hardware/desk_stand.scad`, which has to be
+redesigned anyway and has never been printed, and 33 g in the base improves the tipping
+moment the stand already worries about.
+
+**What the hardware actually does, traced from the board schematic rather than assumed.**
+AXP2101 **DCDC1** (pins 23/22/21) is `VCC_3V3`, and `VCC_3V3` feeds the ESP32-S3, the panel,
+the GT911 and — this is the one that could have killed the idea — the **AP3032 backlight
+boost**. A backlight hung off the USB 5 V rail would have gone dark the moment the cable
+came out. It is not; it hangs off 3V3, and VSYS switches between VBUS and BAT by itself. So
+this is a power path, not a changeover switch: pulling the cable interrupts nothing.
+
+**The BSP does not touch the PMIC at all.** `grep -i axp` over the Waveshare component
+returns nothing, so charging was whatever the chip's power-on defaults and eFuse happened to
+say. That is fine while USB is the only supply and not fine afterwards — see TS, below.
+
+**Four settings, four reasons.**
+
+- **REG50[4] = 1, the TS pin out of the charger's decision.** The board wires TS to a plain
+  resistor to ground, not to a battery thermistor, and the reset value of that bit comes
+  from the chip's eFuse — so whether a cell charges out of the box was decided by a fuse
+  nobody here can read. Waveshare's own ESP-IDF example calls `disableTSPinMeasure()` with
+  the comment "otherwise it will cause abnormal charging". Without this line the likely
+  failure is a device that silently never charges.
+- **500 mA (REG62 = 0x0B), which is 0.25C on the 2000 mAh cell fitted.** Deliberately below
+  the cell's 0.5C recommendation. The device is on USB roughly 23.5 hours out of 24, so
+  charge time is the one variable here that genuinely does not matter, while heat inside a
+  sealed 14 mm box does.
+- **4.1 V, not 4.2 (REG64 = 0x02).** Costs about 15 % of capacity and buys back most of the
+  cell's calendar life. This cell will be held at full charge permanently and kept warm,
+  which is the condition that ages and swells them. Four hours minus 15 % is still six times
+  the half hour that was asked for.
+- **1500 mA input limit (REG16 = 0x04)**, which is also the power-on default — written out
+  so the value lives in this repository instead of in an eFuse. A weak charger is handled by
+  VINDPM backing the charge current off, not by starving the panel.
+
+**No automatic power-off when the cell runs out.** The tempting move is `REG10[0] = 1` at
+some low threshold. It is refused: a fuel gauge that has not learned the cell can read
+nonsense (see below), and the failure mode of acting on a wrong number is a device that
+switches itself off in front of him with USB plugged in, recoverable only by finding the
+PWRKEY on the side edge. The PMIC's own VOFF and the cell's protection board already end the
+discharge safely. Firmware warns, dims, and otherwise stays out of it.
+
+**The gauge is not trusted blindly.** AXP2101 has a fuel gauge that learns the cell, and
+until it has, REGA4 reports 0. Printing "0 %" beside a cell sitting at 3.9 V is the kind of
+wrong that makes every other number on the screen suspect, so 0 and anything above 100 are
+treated as *no answer* and an eleven-point open-circuit curve answers instead. A genuinely
+empty cell reads ~3.2 V and the curve says 0 too, so refusing to believe the register costs
+nothing at the bottom of the range.
+
+**The split is the usual one.** `main/power/axp2101.c` is registers and I²C; everything with
+judgement in it — the states, the thresholds, the hysteresis, the German — is
+`battery_policy.c`, which builds on the host. 4,165 checks, including a monotonicity sweep
+over the whole 2500–4400 mV range, because a curve that dips one percent in the middle makes
+a resting cell look like it is recovering charge.
+
+**Two UI decisions.** The badge sits in the chrome strip at the bottom right, in the 24 px
+band `screen_list.c` already keeps its rows out of, and it appears **only while actually
+running on the cell** — a badge that is always there is chrome he stops seeing, and this one
+has to be noticed the one time it matters. Grey down to 21 %, amber at 20 % and under; the number carries
+the meaning either way (DO-257A §2.1.6). It is not on the hero layer, which answers the
+question the device exists for and does not need a fifth thing on it. And Einstellungen
+gains an **Akku** line, which reads "Kein Akku" on a device with no cell — that line is the
+whole reason the section exists, because on the day a battery is first fitted it is the only
+thing on the device that can say whether the plug went in and whether the charger took it,
+without a laptop and a serial cable.
+
+**A cold start from battery alone needs the PWRKEY.** Datasheet §6.5.2: with only a battery
+present the BATFET is off until the key is pressed or an adapter appears. Unplugging a
+running device is seamless; starting a flat one is not, and no register changes that.
+
+**Verified on the unit, 2026-09-20, with no cell fitted.** Every configured register read
+back correct over the console (`y`): REG50 = 0x12 (TS ignored), REG62 = 0x0B, REG64 = 0x02,
+REG16 = 0x04, REG18 = 0x0A, REG30 = 0x0D, REG68 = 0x01, and REG03 = 0x4A — the AXP2101 chip
+ID, which is the identification this driver logs and deliberately does not gate on. REG00 =
+0x20 and REG01 = 0x15 read as "VBUS good, no battery, not charging", and the policy reports
+`-1 %` and "Kein Akku" rather than inventing a zero. The panel stayed up across the whole
+configuration write. 40 rapid Einstellungen/WLAN navigations with the poll running: zero
+crash markers (AGENTS.md §11 rule 3). Suspend to a fixture and resume rebuilds the badge —
+confirmed by counting amber pixels in the framebuffer, because "it looked right" is not a
+measurement.
+
+**A pretended battery, on the 'Y' key.** The badge, the amber caution and the backlight cap
+can otherwise only be seen by flattening a real cell, which takes hours and could not be
+done at all before one existed. That is D41's argument exactly — a screen reachable only by
+an hours-long physical event is a screen nobody checks — and this one is a warning, the
+single element on the device that has to be right the first time it ever appears. It cycles
+60 %, 18 %, 5 %, off; nothing persists it and a reboot clears it.
+
+**What is NOT verified: the cell itself.** No battery has been connected to this board. The
+charge current, the 4.1 V termination, the runtime and the gauge's behaviour on a real cell
+are all still calculated numbers, and AGENTS.md §2's power figures are derived from the
+schematic (200 mV over the 5.1 Ω sense resistor, so 39 mA through the backlight string), not
+measured. The firmware logs one line a minute while discharging so the first unplugging
+produces the real curve without anyone having to remember to measure it.
+
+**Amended the same day, by the owner: no desk stand.** The cell is taped to the back of the
+case with double-sided foam tape and plugged into the cutout the back cover already has. The
+argument above is unaffected — it was never "a stand is needed", it was "the cell cannot go
+*inside* the case", and that stands. What changes is that `hardware/desk_stand.scad` is no
+longer pending work and the runtime measurement no longer blocks anything. Practical notes
+worth keeping: foam tape, not cyanoacrylate, which attacks the pouch; no clamping or
+folding; slack in the lead so the plug is not carrying the cell; and low on the back rather
+than centred, where 10 mm of cell leans the panel back instead of letting it rock.

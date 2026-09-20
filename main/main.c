@@ -17,6 +17,9 @@
  *   w  provision WiFi (typed in over serial, stored in NVS — never in the repo)
  *   n  network status and a scan of what is in range
  *   p  probe the link (DNS, then a raw GET by IP)
+ *   y  battery: the judged status and the PMIC registers under it
+ *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
+ *      the amber caution and the backlight cap can be seen without one
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
  *   3  §5.3 Himmel frei                    4  longest destination (shrink ladder)
  *
@@ -64,6 +67,8 @@
 #include "ui/screen_radar.h"
 #include "data/view_build.h"
 #include "net/route_parse.h"
+#include "power/axp2101.h"
+#include "power/battery_policy.h"
 #include "debug/dbg_fixture.h"
 #include <time.h>
 
@@ -150,6 +155,196 @@ static void bench_suite(void)
  * because he must never have to set a clock or type a coordinate. */
 static settings_t g_settings;
 
+/* ---- battery ------------------------------------------------------------
+ *
+ * The cell is optional and always will be: this device spends 23-and-a-half
+ * hours of every day on USB, and the half hour it does not is the whole
+ * feature. Everything below therefore has to be a no-op on a device with no
+ * battery in it, which is every device until one is fitted.
+ *
+ * NOT ZERO-INITIALISED, and that is not style. A zeroed battery_status_t has
+ * brightness_cap_pct == 0, and apply_brightness() takes the MINIMUM of the
+ * schedule and the cap — so a plain `static battery_status_t s_battery;`
+ * turns the backlight off at the first tick of a device that has no battery
+ * at all. */
+static battery_status_t s_battery = {
+    .state              = BAT_ABSENT,
+    .percent            = -1,
+    .brightness_cap_pct = BAT_CAP_NORMAL_PCT,
+};
+
+/* Every reason the panel has to change brightness, in one place: the night
+ * schedule he set, and the ceiling a low battery imposes on it. Both are
+ * recomputed from scratch on every call, so whoever calls it last is right
+ * and nothing has to remember to undo anything.
+ *
+ * The memo is the brightness itself rather than the hour, because the hour
+ * is no longer the only input. Re-setting the LEDC duty every two seconds
+ * would be pointless traffic; re-setting it when the answer changes is the
+ * whole job. */
+static int s_brightness_applied = -1;
+
+static void apply_brightness(void)
+{
+    time_t raw = time(NULL);
+    struct tm lt;
+    localtime_r(&raw, &lt);
+
+    int want = settings_brightness_for_hour(&g_settings, lt.tm_hour);
+    if (s_battery.brightness_cap_pct < want) {
+        want = s_battery.brightness_cap_pct;
+    }
+    if (want == s_brightness_applied) {
+        return;
+    }
+    s_brightness_applied = want;
+    bsp_display_brightness_set(want);
+}
+
+/* What the panel is currently showing about the battery, so that a poll which
+ * changes nothing costs no LVGL work at all. File scope rather than function
+ * statics because ui_resume() has to be able to forget it: it rebuilds the
+ * whole deck, which destroys the badge, and a memo that still believes the
+ * badge is on screen would leave him with no badge at all. */
+static char s_badge_shown[24];
+static char s_line_shown[64];
+static bool s_badge_caution;
+
+static void power_forget_ui(void)
+{
+    s_badge_shown[0] = '\0';
+    s_line_shown[0]  = '\0';
+    s_badge_caution  = false;
+}
+
+/* A pretended battery, for the build host.
+ *
+ * The badge, the amber caution and the backlight cap can otherwise only be
+ * seen by flattening a real cell, which takes hours and cannot be done
+ * before one exists. That is the same argument D41 makes for 'g', 'e' and
+ * 'k': a screen that can only be reached by an hours-long physical event is
+ * a screen nobody checks, and this one is a warning — the single element on
+ * the device that has to be right the first time it ever appears.
+ *
+ * -1 is off, and off is the only state a real device is ever in: nothing
+ * persists it, nothing sets it but the 'Y' key on the serial console, and a
+ * reboot clears it. */
+static int s_battery_sim = -1;
+
+static void battery_sim_cycle(void)
+{
+    static const int k_steps[] = { 60, 18, 5, -1 };
+    static int next;
+    s_battery_sim = k_steps[next];
+    next = (next + 1) % (int)(sizeof k_steps / sizeof k_steps[0]);
+    printf("\nsimulated battery: %s\n",
+           s_battery_sim < 0 ? "off (real PMIC again)" : "on");
+    if (s_battery_sim >= 0) {
+        printf("  pretending: on battery, %d %%\n", s_battery_sim);
+    }
+}
+
+/* One PMIC poll and everything that follows from it.
+ *
+ * Every early return leaves s_battery exactly as it was, which is the right
+ * answer for a transient I2C fault: the bus is shared with the touch
+ * controller, esp_lvgl_port_touch.c panics the device on a single fault of
+ * its own (D47), and a battery percentage is not worth adding to that. */
+static void power_tick(void)
+{
+    battery_raw_t raw;
+    if (s_battery_sim >= 0) {
+        /* Everything downstream of here is the real code path — the same
+         * eval, the same German, the same badge, the same backlight cap. */
+        raw = (battery_raw_t){
+            .present    = true,
+            .vbus_good  = false,
+            .chg_status = BAT_CHG_STOP,
+            .mv         = 3700,
+            .gauge_pct  = s_battery_sim,
+        };
+    } else if (!axp2101_present()) {
+        /* No PMIC, and there never will be one on this boot — so this is not
+         * the transient case the early return below is for. It has to go
+         * through the same path as everything else, because it is what takes
+         * the simulated badge and the simulated backlight cap back off again
+         * when 'Y' cycles round to "off" on exactly the bench device the
+         * simulation exists for. */
+        raw = (battery_raw_t){ .present = false };
+    } else if (axp2101_read(&raw) != ESP_OK) {
+        return;
+    }
+
+    battery_status_t st;
+    battery_eval(&raw, &s_battery, &st);
+    s_battery = st;
+
+    char badge[sizeof s_badge_shown];
+    char line[sizeof s_line_shown];
+    battery_badge_text(&s_battery, badge, sizeof badge);
+    battery_line_text(&s_battery, line, sizeof line);
+
+    bool badge_changed = strcmp(badge, s_badge_shown) != 0 ||
+                         s_battery.low != s_badge_caution;
+    bool line_changed  = strcmp(line, s_line_shown) != 0;
+
+    /* Re-checked here, not only by the caller, and re-checked INSIDE the
+     * lock rather than before it.
+     *
+     * ui_suspend() sets the flag and waits 120 ms for whatever the UI task is
+     * doing to finish. The PMIC read above can outlast that on a sick bus —
+     * 200 ms for the driver mutex plus four transactions at a 100 ms timeout
+     * each — so by the time this code runs a debug view may already have
+     * called lv_obj_clean() and freed the badge nav.c points at.
+     *
+     * Testing the flag before taking the lock narrows that window but does
+     * not close it: the test could pass, the debug view could then take the
+     * lock and clean the screen, and this task would block, acquire the lock
+     * afterwards and write into freed heap anyway. Every lv_obj_clean() in
+     * main/debug/ happens under this same lock, so asking the question after
+     * acquiring it is the version that cannot lose the race.
+     *
+     * The reading itself is kept either way; only the widgets are skipped,
+     * and the memo is left stale on purpose so the next poll repaints —
+     * ui_resume() clears it as well. */
+    if (badge_changed || line_changed) {
+        display_lock(0);
+        bool painted = !s_ui_suspended;
+        if (painted) {
+            if (badge_changed) {
+                nav_set_badge(badge, s_battery.low);
+            }
+            if (line_changed) {
+                screen_settings_set_battery(line);
+            }
+        }
+        display_unlock();
+
+        if (painted) {
+            snprintf(s_badge_shown, sizeof s_badge_shown, "%s", badge);
+            snprintf(s_line_shown,  sizeof s_line_shown,  "%s", line);
+            s_badge_caution = s_battery.low;
+        }
+    }
+
+    /* The discharge curve, for free, the first time he ever unplugs it.
+     *
+     * AGENTS.md §2 carries a CALCULATED figure for how long this device runs
+     * on a cell — 1.2 to 1.9 W, so four hours from 2000 mAh — and this
+     * project does not leave calculated numbers standing when the hardware
+     * can be asked. One line a minute while discharging is the measurement,
+     * and it costs nothing on a device that is plugged in. */
+    static int64_t last_log_ms;
+    int64_t now = esp_timer_get_time() / 1000;
+    if (s_battery.state != BAT_ON_BATTERY) {
+        last_log_ms = 0;
+    } else if (last_log_ms == 0 || now - last_log_ms >= 60000) {
+        last_log_ms = now;
+        ESP_LOGW(TAG, "battery: %d %% %d mV on battery, backlight capped at %d %%",
+                 s_battery.percent, s_battery.mv, s_battery.brightness_cap_pct);
+    }
+}
+
 /* Applies the whole of g_settings to the running system: the poll location, the
  * timezone that follows it, and the backlight. Safe to call whenever something
  * changed. */
@@ -160,10 +355,7 @@ static void apply_settings(void)
     flight_source_set_location(lat, lon, g_settings.radius_nm);
     timesync_set_tz(location_tz(g_settings.preset));
 
-    time_t raw = time(NULL);
-    struct tm now;
-    localtime_r(&raw, &now);
-    bsp_display_brightness_set(settings_brightness_for_hour(&g_settings, now.tm_hour));
+    apply_brightness();
     /* The OTA task installs only inside the night window, so it needs to hear
      * about a change to that window at the same moment the dimmer does. */
     ota_settings_update(&g_settings);
@@ -313,7 +505,7 @@ static void ui_task(void *arg)
     static bool       have_last_seen = false;
 
     bool sntp_started = false;
-    int  applied_hour = -1;
+    int  power_ticks  = 0;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -324,18 +516,11 @@ static void ui_task(void *arg)
          * types a password in a holiday apartment. */
         /* Auto-dim. DESIGN.md §7: a glowing dark panel in a dim living room at
          * 22:00 is glare, and the clock is already right, so a schedule is
-         * enough. Only acted on when the hour actually changes — re-setting the
-         * LEDC duty every two seconds would be pointless traffic. */
-        {
-            time_t raw = time(NULL);
-            struct tm lt;
-            localtime_r(&raw, &lt);
-            if (lt.tm_hour != applied_hour) {
-                applied_hour = lt.tm_hour;
-                bsp_display_brightness_set(
-                    settings_brightness_for_hour(&g_settings, lt.tm_hour));
-            }
-        }
+         * enough. Cheap to call every tick — it only touches the backlight
+         * when the answer it computes actually changes, and since the battery
+         * cap joined the night schedule as an input, "the hour changed" is no
+         * longer the only reason that answer moves. */
+        apply_brightness();
 
         if (!sntp_started && wifi_is_connected()) {
             if (timesync_start(location_tz(g_settings.preset)) == ESP_OK) {
@@ -344,6 +529,23 @@ static void ui_task(void *arg)
         }
         if (s_ui_suspended) {
             continue;   /* a replayed screen stays up until dismissed */
+        }
+
+        /* The PMIC, every fifth tick. Ten seconds is already faster than
+         * anything about a battery changes, and each poll is four register
+         * reads on the I2C bus the touch controller is also using.
+         *
+         * BELOW the suspend check, not above it, and that is the difference
+         * between a feature and a panic: every debug view calls
+         * lv_obj_clean(), which deletes the badge nav.c holds a pointer to.
+         * A poll that ran while a fixture was on screen would write through
+         * it. apply_brightness() above is deliberately on the other side of
+         * the check — it touches the backlight, never a widget, and the
+         * night schedule has no business stopping because someone pressed
+         * '1'. */
+        if (++power_ticks >= 5) {
+            power_ticks = 0;
+            power_tick();
         }
 
         int n = flight_source_snapshot(ac, MAX_AIRCRAFT, rt, MAX_AIRCRAFT);
@@ -699,6 +901,9 @@ static void ui_resume(void)
     screen_list_set_select_cb(on_list_select);
     screen_radar_set_select_cb(on_radar_select);
     display_unlock();
+    /* The deck was rebuilt, so the badge that was on it is gone. Forget what
+     * we believed was showing or the next poll will decide nothing changed. */
+    power_forget_ui();
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
 }
@@ -786,6 +991,42 @@ static void update_console(void)
     }
 }
 
+/* The battery, on demand, with the registers behind it.
+ *
+ * Reads the PMIC live rather than printing the cached status: on the morning
+ * a cell is first plugged in, the question is not "what does the device
+ * think" but "what does the chip say", and those are only the same thing
+ * when everything already works. */
+static void battery_console(void)
+{
+    printf("\nbattery\n");
+    if (!axp2101_present()) {
+        printf("  no AXP2101 configured — this device is USB-only\n");
+        return;
+    }
+    battery_raw_t raw;
+    esp_err_t err = axp2101_read(&raw);
+    if (err != ESP_OK) {
+        printf("  PMIC read failed: %s\n", esp_err_to_name(err));
+        return;
+    }
+    battery_status_t st;
+    battery_eval(&raw, &s_battery, &st);
+    char line[64];
+    battery_line_text(&st, line, sizeof line);
+
+    printf("  cell present  : %s\n", raw.present ? "yes" : "no");
+    printf("  vbus          : %s, %d mV\n",
+           raw.vbus_good ? "good" : "absent", axp2101_vbus_mv());
+    printf("  charger state : %u (2=CC 3=CV 4=done 5=not charging)\n",
+           (unsigned)raw.chg_status);
+    printf("  cell          : %d mV, gauge %d %%, shown %d %%\n",
+           raw.mv, raw.gauge_pct, st.percent);
+    printf("  backlight cap : %d %%\n", st.brightness_cap_pct);
+    printf("  panel shows   : %s\n", line);
+    axp2101_dump();
+}
+
 /* Where LVGL's widgets actually come from.
  *
  * It used to print lv_mem_monitor(), which was the right thing while LVGL had
@@ -832,6 +1073,8 @@ static void on_cmd(char c)
     else if (c == 'v') lvgl_mem_report("on demand");
     else if (c == 'i') { if (s_detail_open) close_detail(); else open_detail(); }
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
+    else if (c == 'y') battery_console();
+    else if (c == 'Y') battery_sim_cycle();
 }
 
 void app_main(void)
@@ -850,6 +1093,12 @@ void app_main(void)
      * re-configures GPIO4 and logs an LEDC conflict. The BSP drives this
      * backlight active-low, so "flipped 0%" in the log means FULL brightness. */
     bsp_display_backlight_on();
+
+    /* The PMIC, once the BSP has brought the I2C bus up with the display.
+     * Never fatal, and a no-op on a device with no cell fitted — but the one
+     * thing it does that nothing else can is stop the TS pin gating the
+     * charger, so a battery plugged in later charges without a reflash. */
+    (void)axp2101_init();
 
     log_memory_budget("after display init (framebuffer up)");
 
@@ -901,7 +1150,7 @@ void app_main(void)
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
     ota_start();
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
      * freshly written image is on probation until it says otherwise, and the

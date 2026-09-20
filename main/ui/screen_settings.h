@@ -56,6 +56,24 @@ void screen_settings_create(lv_obj_t *parent);
  */
 void screen_settings_update(const settings_t *s);
 
+/* Sets the one line under the "Akku" heading — finished German, built by
+ * battery_line_text() (main/power/battery_policy.h). Separate from
+ * screen_settings_update() because the battery is not part of settings_t and
+ * has no business making a settings round-trip look like a user change.
+ *
+ * NULL or an empty string leaves whatever is there alone: a transient I2C
+ * fault on the PMIC must not blank a line he is reading.
+ *
+ * SAFE TO CALL WHILE THE SCREEN IS CLOSED, unlike screen_settings_update().
+ * The text is kept in this module and painted onto the label the next time
+ * one exists — which matters because the poll behind it runs every ten
+ * seconds and this screen is an overlay that spends nearly all of its life
+ * deleted.
+ *
+ * Caller MUST hold display_lock().
+ */
+void screen_settings_set_battery(const char *line);
+
 /* Fired once per completed user change: a location card tap, the auto-dim
  * switch toggling, or a slider drag ENDING — deliberately not once per pixel
  * dragged. AGENTS.md §7's flash-tearing bug is provoked by NVS commits, and

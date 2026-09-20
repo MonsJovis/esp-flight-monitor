@@ -11,6 +11,11 @@ static const char *TAG = "nav";
 #define DOT_SIZE      8
 #define DOT_GAP       10
 #define DOT_Y         (THEME_SCREEN_HEIGHT - 16)
+/* The badge's baseline gap from the panel edge. Four px less than the
+ * dots' own band so a 17 px face sits inside the same strip rather than
+ * hanging off the bottom of it. */
+#define BADGE_BOTTOM  4
+
 /* DESIGN.md §6: only from §5.3, and only after 30 s without a touch. */
 #define AUTO_RETURN_MS 30000
 /* A long-press that is too short fires while he is just resting a finger;
@@ -30,6 +35,7 @@ static const char *TAG = "nav";
 static lv_obj_t *s_tiles;
 static lv_obj_t *s_page[NAV_MAX_PAGES];
 static lv_obj_t *s_dot[NAV_MAX_PAGES];
+static lv_obj_t *s_badge;
 static int       s_n_pages;
 static int       s_page_idx;
 
@@ -181,6 +187,22 @@ void nav_create(const nav_page_t *pages, int n_pages)
         lv_obj_set_scrollbar_mode(s_dot[i], LV_SCROLLBAR_MODE_OFF);
     }
 
+    /* The device-level badge (nav.h). Created after the dots so it draws over
+     * them if it ever grows wide enough to reach the middle, and before any
+     * overlay so that Einstellungen covers it rather than the other way
+     * round.
+     *
+     * Right-aligned with lv_obj_align() rather than by measuring the label:
+     * lv_obj_get_width() returns the width from the last layout pass, which
+     * is exactly the trap dot_width() above exists to avoid, and this label's
+     * width changes every time the percentage does. */
+    s_badge = lv_label_create(root);
+    lv_obj_set_style_text_font(s_badge, &plex_mono_17, 0);
+    lv_obj_set_style_text_color(s_badge, THEME_TEXT_LABEL, 0);
+    lv_label_set_text(s_badge, "");
+    lv_obj_align(s_badge, LV_ALIGN_BOTTOM_RIGHT, -THEME_SIDE_PADDING, -BADGE_BOTTOM);
+    lv_obj_set_hidden(s_badge, true);
+
     /* One page is not a deck — hide the indicator rather than show a lone dot
      * that suggests there is somewhere else to go. */
     if (n_pages < 2) {
@@ -191,6 +213,20 @@ void nav_create(const nav_page_t *pages, int n_pages)
 
     s_last_touch_ms = now_ms();
     ESP_LOGI(TAG, "deck built with %d page(s)", n_pages);
+}
+
+void nav_set_badge(const char *text, bool caution)
+{
+    if (s_badge == NULL) {
+        return;
+    }
+    if (text == NULL || text[0] == '\0') {
+        lv_obj_set_hidden(s_badge, true);
+        return;
+    }
+    lv_label_set_text(s_badge, text);
+    lv_obj_set_style_text_color(s_badge, caution ? THEME_AMBER : THEME_TEXT_LABEL, 0);
+    lv_obj_set_hidden(s_badge, false);
 }
 
 int nav_page(void) { return s_page_idx; }

@@ -155,6 +155,41 @@
  * device. */
 #define STR_ATTRIBUTION            "Flugdaten adsb.lol (ODbL) \xC2\xB7 Routen adsb.im"
 
+/* ---- Akku (main/power/battery_policy.c) ------------------------------- */
+
+/* "Akku", never "Batterie". In Austrian everyday speech a Batterie is the
+ * kind you throw away and an Akku is the kind that charges, and this one
+ * charges. */
+#define STR_HEADING_AKKU       "Akku"
+
+/* The honest answer on a device with no cell fitted, which is every device
+ * until one is. It is also the line that answers "did the plug go in
+ * properly?" on the day one is, which is why the row exists at all. */
+#define STR_BATTERY_NONE       "Kein Akku"
+
+/* WHOLE LINES with the percentage in them, for the same reason the WLAN
+ * block above is written that way: a fragment like " wird geladen" tells the
+ * native speaker reading this file down nothing about the sentence he is
+ * being asked to judge.
+ *
+ * U+00B7 MIDDLE DOT as the separator, the same "and also" this device uses
+ * everywhere else. The space before the percent sign is German typography
+ * and matches the Helligkeit read-out on the settings screen. */
+#define FMT_BATTERY_CHARGING   "%d %% \xC2\xB7 wird geladen"
+#define FMT_BATTERY_FULL       "%d %% \xC2\xB7 voll geladen"
+#define FMT_BATTERY_RUNNING    "%d %% \xC2\xB7 läuft mit Akku"
+
+/* Plugged in, a cell fitted, and the charger doing nothing. Deliberately
+ * blunt rather than reassuring: this is what a blocked charger looks like,
+ * and a device that quietly never charges is the failure this line exists
+ * to make impossible to miss. */
+#define FMT_BATTERY_IDLE       "%d %% \xC2\xB7 wird nicht geladen"
+
+/* The chrome badge, shown only while he is actually running on the cell.
+ * Upper case like every other tag on this device (KEIN NETZ, ÜBER DIR) —
+ * those are the device reporting a condition, and so is this. */
+#define FMT_BATTERY_BADGE      "AKKU %d %%"
+
 /* ---- Einheiten und Datum (main/data/fmt_de.c) ------------------------- */
 
 /* The unit WORDS. The numbers they hang off are built by fmt_dec1_de() and

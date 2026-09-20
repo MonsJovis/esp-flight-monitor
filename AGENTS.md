@@ -14,8 +14,10 @@ Operating manual for AI agents working in this repo. Read this before touching c
 > them; where it did, it says so inline. Do not "restore" an amended rule to what it used
 > to say.
 >
-> **Two things are still unexercised:** OTA's image download and slot switch (the manifest
-> path is proven on device), and the printed desk stand.
+> **Three things are still unexercised:** OTA's image download and slot switch (the manifest
+> path is proven on device), the printed desk stand, and the battery — the PMIC driver is
+> written and every register reads back correct on the unit, but no cell has been connected
+> to this board yet (D61, PLAN.md M9).
 
 ## 1. What this is
 
@@ -104,10 +106,35 @@ Module is `ESP32-S3-WROOM-1-N16R8`. PSRAM is **8 MB octal**; flash is 16 MB quad
 **Not on this board** (reseller listings get this wrong): no relays, no mains input, no
 PoE, **no microSD**, no buzzer, no RGB LED, no CAN/RS485/Ethernet.
 
-**Power:** 2× USB-C, or PH2.0 Li-ion, or `5V_IN` on the rear header. **This build is a desk
-stand, so USB-C is the supply** — the side-edge port placement is fine and the rear header is
-not needed. (It would only matter for a flush wall install, where the side ports become
-unreachable.)
+**Power:** 2× USB-C, or PH2.0 Li-ion, or `5V_IN` on the rear header. **USB-C is the supply**
+— the side-edge port placement is fine for a desk unit and the rear header is not needed.
+(It would only matter for a flush wall install, where the side ports become unreachable.)
+
+**A PH2.0 cell is supported as a UPS** since D61, and these are schematic facts, not
+assumptions:
+
+- **AXP2101 DCDC1 (pins 23/22/21) is `VCC_3V3`**, which feeds the ESP32-S3, the panel, the
+  GT911 *and the AP3032 backlight boost*. VSYS switches between VBUS and BAT by itself, so
+  unplugging USB interrupts nothing and the backlight stays lit. It is a power path, not a
+  changeover switch.
+- **J1 is the battery header: pin 1 GND, pin 2 VBAT1**, silkscreened `+`/`-`. Cell vendors
+  are not consistent about which pin gets the red wire. **Meter it.** Reversed is a dead
+  PMIC.
+- **The back cover has a cutout over that socket**, so a cell plugs in without opening the
+  case — which is just as well, because at 14 mm total depth nothing fits inside it. **The
+  cell is stuck to the back of the case** (owner's call, D61 amendment): double-sided foam
+  tape, never cyanoacrylate on the pouch, no clamping or folding, and leave slack in the
+  lead so the plug is not what holds the cell on. Low on the back rather than centred — a
+  10 mm block at the bottom edge leans the panel back a few degrees instead of making it
+  rock.
+- **The PMIC's IRQ pin does not reach an ESP32 GPIO** (pull-up, no second occurrence in the
+  schematic), so the battery is polled, like the GT911.
+- **A cold start on battery alone needs a PWRKEY press** — datasheet §6.5.2, the BATFET is
+  off until the key is pressed or an adapter appears. Unplugging a *running* device is
+  seamless.
+- Draw is **1.2–1.9 W calculated** (39 mA through the backlight string: 200 mV over R30's
+  5.1 Ω into the AP3032), so roughly four hours from 2000 mAh. **Calculated, not measured**
+  — the firmware logs the discharge once a minute so the first unplugging settles it.
 
 **GPIO budget is effectively zero.** The RGB bus consumes nearly everything. Expansion
 goes over I²C, or by repurposing TCA9554 EXIO pins after init.
@@ -152,6 +179,7 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 - `g` next page — `i` toggle the detail layer — `e` settings — `k` WLAN — `d` scroll to end
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
+- `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
 - `b` benchmark — `t` tearing test — `f` font card — `m` hero metrics
 
 Driving a screen from the host and reading its framebuffer back is what turns "does it look
@@ -304,6 +332,22 @@ not read a manual. Design for that:
   face costs **zero** FPS; at one it costs 6%. The full font set is 735 KiB and buys back
   nothing by shrinking. Do not re-open this without a new measurement.
 
+**Power and the battery**
+- **The BSP does not touch the AXP2101 at all** — `grep -i axp` over the Waveshare component
+  returns nothing. Everything about charging is `main/power/axp2101.c`, and before it existed
+  the charger ran on whatever the chip's eFuse said.
+- **REG50[4] must be set or the cell may never charge.** The TS pin is wired to a plain
+  resistor to ground, not a thermistor, and that bit's reset value comes from the eFuse.
+  Waveshare's own example disables it with the comment "otherwise it will cause abnormal
+  charging". The symptom is a device that looks fine and quietly stays flat — the Akku line
+  in Einstellungen says "wird nicht geladen" for exactly this case.
+- **Never write a rail.** REG80/REG90 and friends turn the panel or the ESP32 off, and the
+  only way back is the PWRKEY on the side edge. The driver touches the charger, the ADC and
+  the gauge, nothing else.
+- **A zeroed `battery_status_t` means a black screen.** Its `brightness_cap_pct` is 0 and the
+  dimmer takes the minimum of the schedule and the cap, so the one in main.c is initialised
+  explicitly. Copy that if you ever add another.
+
 **Fonts and text**
 - **`lv_font_conv` does not apply OpenType features.** A font whose tabular figures exist
   only behind the `tnum` feature will render digits that visibly jitter on every refresh.
@@ -346,7 +390,9 @@ not read a manual. Design for that:
   Condensed, dark ground. Full system and screens in [docs/DESIGN.md](./docs/DESIGN.md).
 - **UI language: German.** See §1 for the font and place-name consequences.
 - **Form factor: desk stand**, powered over USB-C. The rear `5V_IN` header is not needed.
-  It also means the device travels between the two locations — see §6.
+  It also means the device travels between the two locations — see §6. **Amended by D61:**
+  a PH2.0 cell now rides along as a UPS for about four hours off the cable. It is taped to
+  the back of the case, and it is optional — every code path is a no-op without one.
 - **Two framebuffers, anti-tearing on** — measured on the unit, not guessed. Two is
   both faster than one (28.5 vs 21.4 FPS) and tear-free; three buys nothing. Numbers in
   PLAN.md M1.
@@ -369,9 +415,11 @@ not read a manual. Design for that:
 1. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
    settled and shipped; a second full theme is not.
 2. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
-3. **Stand / enclosure** — `hardware/desk_stand.scad` exists but **has never been printed**.
-   Its dimensions come from the datasheet, not from calipers, so print `part = "fittest"`
-   first and check it against the board before printing the whole thing.
+3. ~~**Stand / enclosure**~~ — **closed by the owner, 2026-09-20: there will be no printed
+   stand.** The cell is taped to the back of the case instead (§2). `hardware/desk_stand.scad`
+   stays in the tree as an unprinted, unmeasured sketch; do not treat it as pending work and
+   do not spend a milestone on it. If it is ever printed, its dimensions still come from the
+   datasheet rather than from calipers, so `part = "fittest"` first.
 4. **Is the 13 px identity line findable from his chair?** It is deliberately dimmed to
    `THEME_TEXT_TERTIARY` so it cannot crowd out the answer. Only his eye can settle that;
    the question is with him and unanswered.

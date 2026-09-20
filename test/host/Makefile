@@ -14,7 +14,8 @@ CJSON_DIR := $(IDF_PATH)/components/json/cJSON
 MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) \
                $(wildcard $(ROOT)/main/net/*_parse.c) \
                $(wildcard $(ROOT)/main/net/source_logic.c) \
-               $(wildcard $(ROOT)/main/net/ota_policy.c)
+               $(wildcard $(ROOT)/main/net/ota_policy.c) \
+               $(wildcard $(ROOT)/main/power/*_policy.c)
 SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c
 
 TESTS   := $(patsubst %.c,%,$(wildcard test_*.c))
@@ -22,6 +23,7 @@ BINDIR  := build
 
 CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -I$(ROOT)/main -I$(ROOT)/main/data -I$(ROOT)/main/net -I$(ROOT)/main/ui \
+           -I$(ROOT)/main/power \
            -I$(CJSON_DIR) -I. \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm

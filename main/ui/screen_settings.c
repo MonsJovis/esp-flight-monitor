@@ -85,6 +85,28 @@ static lv_obj_t *s_bright_slider;
 static lv_obj_t *s_dim_switch;
 static lv_obj_t *s_dim_window;
 
+/* The battery line. Written by screen_settings_set_battery() rather than by
+ * screen_settings_update(), because it does not come from settings_t and has
+ * no business making the settings round-trip look dirty.
+ *
+ * TWO STATICS FOR ONE LINE, and the second is the important one. This screen
+ * is an overlay: nav_close_overlay() DELETES the whole widget tree when he
+ * taps Zurück, and the PMIC poll that feeds this line runs every ten seconds
+ * on the UI task whether the screen is open or not. Writing through the
+ * label pointer afterwards is the D58 panic exactly — the WiFi scan task
+ * writing into a screen that had been deleted — so the pointer is cleared by
+ * LVGL itself on LV_EVENT_DELETE (screen_wifi.c's on_main_deleted is the
+ * precedent), and the TEXT is kept here instead, where it outlives the tree
+ * and is waiting the next time the screen is built. */
+static lv_obj_t *s_akku_value;
+static char      s_akku_line[64];
+
+static void on_cont_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_akku_value = NULL;
+}
+
 /* This screen's own working copy of the settings — every card tap, slider
  * release and switch toggle mutates one field of this and hands it to the
  * callback; screen_settings_update() replaces the whole thing wholesale with
@@ -314,6 +336,9 @@ void screen_settings_create(lv_obj_t *parent)
      * happens, which the top-down layout below gives for free. */
     lv_obj_set_scroll_dir(s_cont, LV_DIR_VER);
     lv_obj_set_scroll_momentum(s_cont, true);
+    /* See s_akku_value: LVGL clears the pointer when the overlay is torn
+     * down, so nothing outside this file has to remember to. */
+    lv_obj_add_event_cb(s_cont, on_cont_deleted, LV_EVENT_DELETE, NULL);
 
     /* Line heights, measured once — every position below is derived from
      * these rather than guessed, matching screen_overhead.c's convention. */
@@ -473,7 +498,31 @@ void screen_settings_create(lv_obj_t *parent)
 
     y += TOUCH_ROW_H + GAP_SECTION;
 
-    /* ================= 6. Zurück ================= */
+    /* ================= 6. Akku =================
+     * Deliberately NOT a bordered row: every bordered row on this screen is
+     * tappable and this one is not, and a row that looks tappable and does
+     * nothing is how a non-technical user decides the device is broken. A
+     * heading with a line under it is the same shape as Nachtabsenkung.
+     *
+     * It is always here, including on a device with no cell, where it reads
+     * "Kein Akku". That line is the whole reason this section exists: on the
+     * day a battery is first plugged in, it is the only thing on the device
+     * that can say whether the plug went in and whether the charger took it,
+     * without a laptop and a serial cable. */
+    lv_obj_t *h_akku = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
+    lv_label_set_text(h_akku, STR_HEADING_AKKU);
+    lv_obj_set_pos(h_akku, PAD, y);
+    y += heading_lh + GAP_LABEL;
+
+    s_akku_value = make_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    /* Whatever the last poll said, not the default: this screen is rebuilt
+     * every time it is opened, and "Kein Akku" on a device with a cell in it
+     * would be a lie for as long as it took the next poll to arrive. */
+    lv_label_set_text(s_akku_value, s_akku_line[0] ? s_akku_line : STR_BATTERY_NONE);
+    lv_obj_set_pos(s_akku_value, PAD, y);
+    y += body_lh + GAP_SECTION;
+
+    /* ================= 7. Zurück ================= */
     lv_obj_t *back_row = make_row(s_cont, y, TOUCH_ROW_H);
     lv_obj_set_style_bg_color(back_row, THEME_GROUND, 0);
     lv_obj_set_style_border_color(back_row, THEME_BORDER_IDLE, 0);
@@ -488,7 +537,7 @@ void screen_settings_create(lv_obj_t *parent)
 
     y += TOUCH_ROW_H + GAP_SECTION;
 
-    /* ================= 7. Datenquellen =================
+    /* ================= 8. Datenquellen =================
      * A licence obligation, not a credit line we chose to show: adsb.lol's
      * position data is ODbL 1.0 and adsb.im supplies the routes (AGENTS.md,
      * "Data licences"). It goes at the foot of the one screen he reaches
@@ -505,6 +554,17 @@ void screen_settings_create(lv_obj_t *parent)
     lv_label_set_text(attrib, STR_ATTRIBUTION);
     lv_obj_update_layout(attrib);
     lv_obj_set_pos(attrib, PAD + (CONTENT_W - lv_obj_get_width(attrib)) / 2, y);
+}
+
+void screen_settings_set_battery(const char *line)
+{
+    if (line == NULL || line[0] == '\0') {
+        return;
+    }
+    snprintf(s_akku_line, sizeof s_akku_line, "%s", line);
+    if (s_akku_value != NULL) {
+        lv_label_set_text(s_akku_value, s_akku_line);
+    }
 }
 
 void screen_settings_update(const settings_t *s)

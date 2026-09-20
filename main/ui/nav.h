@@ -43,6 +43,22 @@ void nav_open_overlay(void (*create)(lv_obj_t *parent), const char *name);
 void nav_close_overlay(void);
 bool nav_overlay_open(void);
 
+/* One line of chrome in the bottom strip, right-aligned beside the page dots,
+ * for a condition that belongs to the DEVICE rather than to any one screen —
+ * today that means the battery, and nothing else.
+ *
+ * `text` NULL or empty hides it again. `caution` paints it amber instead of
+ * grey; the words carry the meaning either way, so colour only reinforces
+ * (DO-257A §2.1.6, the same rule the "Aktiv" word follows).
+ *
+ * It sits in the 24 px band the dots already own — screen_list.c keeps its
+ * rows out of it (DOTS_CLEARANCE) and the radar caption stops above it — so
+ * nothing on either page has to move to make room. Overlays are created on
+ * the root AFTER this label, so Einstellungen and WLAN cover it, which is
+ * correct: Einstellungen has a battery row of its own.
+ */
+void nav_set_badge(const char *text, bool caution);
+
 /* Long-press opens Einstellungen (DESIGN.md §6).
  *
  * ANYWHERE on the deck page, not just the chrome strip: the handler is bound

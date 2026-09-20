@@ -365,6 +365,44 @@ not finish.
 
 ---
 
+## M9 — Akku (a cell in the stand)
+
+Not in the original plan: it came from the owner wanting to pick the panel up and carry it
+outside for half an hour. Full reasoning in docs/DECISIONS.md D61.
+
+- [x] `main/power/axp2101.c` — the PMIC the BSP never touches. TS pin taken out of the
+      charger's decision (without it, the likely behaviour is a device that silently never
+      charges), 500 mA to **4.1 V**, gauge and ADC on, and nothing anywhere near a rail.
+- [x] `main/power/battery_policy.c` — states, thresholds, hysteresis, backlight cap and the
+      German, all host-testable. **4,165 checks**, including a monotonicity sweep of the
+      open-circuit curve over 2500–4400 mV.
+- [x] The badge in the chrome strip (only while discharging; grey, then amber under 20 %)
+      and the **Akku** line in Einstellungen (reads "Kein Akku" with no cell fitted).
+- [x] Backlight capped at 40 % when low and 25 % when critical — a saving and a signal.
+      Nothing is capped while the cell is healthy: four hours is already eight times what
+      was asked for, and a panel that dims the moment it is unplugged reads as a fault.
+- [x] `y` prints the judged status and the registers under it; `Y` pretends to be a battery
+      so the badge and the cap can be seen without flattening a real cell.
+- [ ] **A cell.** Ordered, arriving 2026-09-26: 3.7 V 2000 mAh 103450, JST-PH 2.0. Check the
+      polarity against the board's `+`/`-` silkscreen before plugging it in — J1 pin 1 is
+      GND, and cell vendors are not consistent about which pin gets the red wire.
+- [x] ~~A pocket in the desk stand.~~ **Dropped, 2026-09-20, by the owner: no stand will be
+      printed.** The cell goes on the back of the case with foam tape, plugged into the
+      socket the back cover already exposes. That removes the last thing the runtime
+      measurement was blocking, and `hardware/desk_stand.scad` is now a sketch nobody owns.
+- [ ] **The runtime, measured.** The firmware logs percentage and millivolts once a minute
+      while discharging, so the first time it is unplugged it produces its own discharge
+      curve. AGENTS.md §2's 1.2–1.9 W is calculated from the schematic and stands only
+      until that log exists. Nothing is blocked on the answer any more — it is now just a
+      number this repo would rather have measured than calculated.
+
+**Verified on the unit with no cell fitted** (2026-09-20): every configured register reads
+back correct, the panel survives the configuration write, 40 rapid overlay navigations
+produce zero crashes with the poll running, and the badge is rebuilt after a fixture
+suspend/resume. The one thing not verified is the battery.
+
+---
+
 ## Accelerators
 
 - **The screens already exist.** Seven artboards built from real 2026-09-18 traffic:
