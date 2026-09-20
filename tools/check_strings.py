@@ -204,7 +204,8 @@ _NON_UI_LITERALS = {
         # network_status(): both go into one ESP_LOGW argument via snprintf.
         "never", "%lld ms ago",
         # nav page ids, stored and compared — see nav_open_overlay above.
-        "ueber-dir", "liste", "radar",
+        # "ueber-dir" is gone: that page became the detail layer (D60).
+        "liste", "radar",
     ),
 }
 

@@ -25,7 +25,8 @@ static const char *TAG = "fontcard";
  * with the glyphs that are NOT in the default ASCII subset. If the subsetting
  * is wrong these render as blanks, and blanks are the whole point of the check.
  * Magenta sits directly beside white and cyan because AC 25-11A flags that pair
- * specifically — the open question in AGENTS.md §8.2. */
+ * specifically. This card is what answered it: AGENTS.md §8 now lists
+ * magenta-on-black as settled, on the strength of this screenshot. */
 void dbg_font_card(void)
 {
     display_lock(0);

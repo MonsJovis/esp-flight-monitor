@@ -122,7 +122,7 @@ with no copy. This product is render-bound; flash is not scarce.
 ## D12 — Two framebuffers, anti-tearing on
 
 **Decision:** `CONFIG_BSP_LCD_RGB_BUFFER_NUMS=2`, `AVOID_TEAR=y`, `DIRECT_MODE=y`.
-Settles AGENTS.md §8 open question 1.
+Settles the framebuffer question, now listed as settled in AGENTS.md §8.
 
 **Why:** measured, not assumed — and the assumption was wrong. More framebuffers was
 framed as a bandwidth *cost* to be traded against tearing. In fact two is **faster** than

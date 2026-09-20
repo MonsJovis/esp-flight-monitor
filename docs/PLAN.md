@@ -260,6 +260,8 @@ intervention and no rate-limit ban.
 - [x] **Build the screen graph** — DESIGN.md §6. Three swipe pages
       (Über dir · Liste · Radar); Einstellungen behind a long-press on the chrome bar and
       *not* in the deck. The page indicator shows three dots because there are three pages.
+      **Superseded after M8 (D60):** the deck is now two pages, Radar then Liste, and
+      Über dir became a detail layer underneath both. Two dots, not three.
 - [x] **§5.4 Liste** — nearby aircraft sorted by distance (`dst` is pre-computed)
 - [x] Tap a row → its detail card
 - [x] **Type pass on §5.4 and §5.5 before building them.** As drawn they sit below even the
@@ -402,7 +404,8 @@ does not matter at this workload.
 
 **Two framebuffers is strictly better than one**, which was not the assumed trade-off: it is
 both *faster* (28.5 vs 21.4 FPS) and tear-free, for 735 KB of PSRAM we have to spare. Three
-buys nothing measurable. AGENTS.md §8 open question 1 is settled by measurement.
+buys nothing measurable. The framebuffer question in AGENTS.md §8 is settled by
+measurement.
 
 **28.5 FPS is a ceiling, not a load limit** — all three faces hit exactly 28.50 at two
 framebuffers, which is the vsync-locked rate in direct mode, with CPU at 1%. The benchmark

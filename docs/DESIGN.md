@@ -288,14 +288,20 @@ Three swipe pages, one deck:
 
 ## 7. Open
 
-1. **Magenta on black** — see §2. Measured at 6.5:1 and flagged by AC 25-11A as a
-   high-confusion pair. Needs eyes on the real panel; scheduled in PLAN.md M1.
-2. **Light theme.** The evidence on polarity is genuinely split: Piepenbrock et al. (2013)
+*Closed since this list was written, kept here so nobody re-opens them:* **magenta on
+black** was checked on the panel in M1 and reads as clearly distinct beside white and cyan
+at ≥ 56 px, and **the §5.4 / §5.5 type pass** was done before those screens were built
+(PLAN.md M5). Both are now listed as settled in AGENTS.md §8.
+
+1. **Light theme.** The evidence on polarity is genuinely split: Piepenbrock et al. (2013)
    favours dark-on-light for all ages; Wang et al. (2024, n=134 incl. 66 aged 60+) found
    neither polarity consistently better and recommends shipping both. **Auto-dim is settled
-   and scheduled (M6); a full light theme is not.**
-3. **The §5.4 / §5.5 type pass** — see the warning in §3. Tracked in PLAN.md M5.
-4. **Aircraft photos** — still deferred (AGENTS.md §8).
+   and shipped; a full light theme is not.**
+2. **Aircraft photos** — still deferred (AGENTS.md §8).
+3. **Is the 13 px identity line findable from his chair?** The flight number and model sit
+   at `THEME_TEXT_TERTIARY` in every view, deliberately quiet so they cannot crowd out the
+   answer. Whether "quiet" has become "invisible" at 2.5 m is a question only his eye can
+   settle, and it is with him.
 
 ## Sources
 

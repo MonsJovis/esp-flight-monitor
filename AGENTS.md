@@ -2,6 +2,21 @@
 
 Operating manual for AI agents working in this repo. Read this before touching code.
 
+> **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
+> live traffic and running. M0–M8 and the touch work after them are closed
+> ([docs/PLAN.md](./docs/PLAN.md)); sixty decisions are written up with their reasoning and
+> their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is **28,069
+> checks across nine suites, 0 failed**.
+>
+> Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
+> measured facts** about the hardware, the APIs and the places — still current, do not
+> re-derive them. **Sections 1, 7, 8 and 10 are rules**, and the build amended several of
+> them; where it did, it says so inline. Do not "restore" an amended rule to what it used
+> to say.
+>
+> **Two things are still unexercised:** OTA's image download and slot switch (the manifest
+> path is proven on device), and the printed desk stand.
+
 ## 1. What this is
 
 A wall-mounted flight radar on a 4-inch touch panel. It answers the question its user
@@ -22,8 +37,14 @@ or it has failed. Two usage modes drive every design decision:
 - **Route is the headline, not a detail.** `VIE → LHR` rendered as *Wien → London* is the
   single most important thing on screen. Most hobby flight radars bury this. Do not.
 - **Plain language over codes.** "Airbus A320neo", not `A20N`. "Austrian Airlines", not `AUA`.
-- **No interaction required for the primary answer.** The default screen must already show
-  the most relevant aircraft. Tapping is for browsing, never for the main use case.
+- **No interaction required for the primary answer — amended by the owner (D60).** This
+  was the founding rule and it is now *one tap*. The **Radar** is the default screen, the
+  **Liste** sits beside it, and the answer in words lives on a **detail layer underneath**
+  either of them, reached by tapping an aircraft or the caption. Markus asked for exactly
+  that after living with the device. The spirit survives — the radar answers *where* and
+  *how many* with no interaction, and the nearest aircraft is already captioned along the
+  bottom edge — but do not move the hero back to the default screen. It was not a
+  regression.
 - **Never show an empty screen.** If the sky is clear, show the last aircraft seen, or a
   clock. A blank panel reads as "broken" to a non-technical user.
 - **German UI — confirmed.** He is Austrian. Keep all user-facing strings in one
@@ -36,6 +57,13 @@ or it has failed. Two usage modes drive every design decision:
     Zürich, Prag, Mailand, Athen, Kopenhagen, Warschau …) and fall back to the API's own
     name when there is no entry. Without this the headline reads "Vienna → London" to a
     man sitting in Austria.
+
+  The one translation unit is **`main/strings_de.h`**, and "keep the strings in one place"
+  is no longer a convention you can quietly break: `tools/check_strings.py` fails the build
+  when a German string appears anywhere else, and `tools/check_font_coverage.py` fails it
+  when a character in there has no glyph. Both run with the host tests. The aviation
+  vocabulary was checked against ICAO Doc 9871 / RTCA DO-260B and read aloud by a native
+  speaker — read D51, D56 and D57 before you change a word of it.
 
 The visual system — colours, type scale, size floors, navigation — is in
 **[docs/DESIGN.md](./docs/DESIGN.md)**. Read it before building any screen. The build
@@ -97,6 +125,38 @@ idf.py build
 idf.py -p /dev/cu.usbmodem1101 flash monitor
 ```
 
+The serial port is **not a fixed name**: the board re-enumerates as `usbmodem1101` or
+`usbmodem101` depending on how it was last plugged (D26). Everything in `tools/` discovers
+it; `idf.py -p` does not, so `ls /dev/cu.usbmodem*` first.
+
+### The loop you actually work in
+
+Almost none of this needs the board. Run this before and after every change — under ten
+seconds from a clean tree:
+
+```bash
+make -C test/host        # 28,069 checks, plus the font and string gates
+```
+
+For anything visual, the panel reports on itself; you do not have to be in the room:
+
+```bash
+python3 tools/grab_screen.py shot.png    # the real RGB565 framebuffer, read back over USB
+python3 tools/provision.py               # WiFi credentials → NVS, never through you
+```
+
+The firmware takes single command bytes on the same serial link (`on_cmd()` in
+`main/main.c`, plus `s` handled in `main/debug/dbg_screen.c`):
+
+- `s` screenshot — `1`–`4` show a captured fixture — `0` back to live
+- `g` next page — `i` toggle the detail layer — `e` settings — `k` WLAN — `d` scroll to end
+- `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
+- `u` update console — `v` LVGL heap report
+- `b` benchmark — `t` tearing test — `f` font card — `m` hero metrics
+
+Driving a screen from the host and reading its framebuffer back is what turns "does it look
+right" into a measurable question. Use it rather than asking Markus to look (D4, D41).
+
 Do **not** use Arduino for this project. Arduino_GFX works on this panel but hardcodes
 `num_fbs = 1`, falls back to a 12 MHz pixel clock (vs 16), and offers no anti-tearing or
 FreeRTOS-aware LVGL integration. Start from the official `02_lvgl_demo_v9` example.
@@ -113,7 +173,7 @@ free community HTTP APIs. Every endpoint below was live-tested on 2026-09-18.
 ```
 Positions  →  GET  http://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}
 Routes     →  POST http://adsb.im/api/0/routeset            (batched!)
-Type names →  static PROGMEM table: ICAO code → "Airbus A320neo"
+Type names →  const table in flash: ICAO code → "Airbus A320neo"
 ```
 
 ### Why this combination
@@ -127,7 +187,9 @@ Type names →  static PROGMEM table: ICAO code → "Airbus A320neo"
   of N TLS handshakes. It also returns city names and a `plausible` flag that filters
   nonsense matches. Verified: `AUA453` → `LOWW-EGLL` / Vienna → London.
 - **Type names belong in flash, not on the network.** `adsb.lol` gives `t` = `A20N`; a
-  ~200-entry table costs a few KB and removes a whole API dependency.
+  ~200-entry table costs a few KB and removes a whole API dependency. Built:
+  `main/data/tbl_actype.c`, `tbl_airline.c`, `tbl_airport.c` — all three were resized
+  against real traffic rather than guessed at (D43, D51).
 
 ### Fallbacks
 
@@ -231,13 +293,16 @@ not read a manual. Design for that:
   field failure mode for RGB panels. Keep network work off the render path.
 - **Strapping pins are on the RGB bus**: GPIO3 (VSYNC), GPIO45 (G3), GPIO46 (HSYNC), and
   GPIO0 is BOOT. Do not back-drive these during reset.
-- Anti-tearing is **off** by default (`BSP_LCD_RGB_BUFFER_NUMS=1`). 8 MB PSRAM has room
-  for 2–3 framebuffers at 450 KiB each, but each one costs bandwidth. Measure.
+- Anti-tearing is **off** in the BSP default (`BSP_LCD_RGB_BUFFER_NUMS=1`); **we set 2**,
+  and that is measured, not assumed. Two is both *faster* than one (28.5 vs 21.4 FPS) and
+  tear-free; three buys nothing (D12, PLAN M1).
 - **Large fonts land in PSRAM, not flash.** `CONFIG_SPIRAM_RODATA=y` — mandated at the top of
   this block as the tearing mitigation — relocates `.rodata`, and LVGL fonts *are* `.rodata`.
   So the 100 px hero face and its shrink ladder compete with the framebuffer for PSRAM
   bandwidth: the project's #1 risk and its most distinctive design choice pulling on the
-  same bus. Measure it in PLAN.md M1, before seven screens are built on the assumption.
+  same bus. **Measured in M1, and it did not materialise:** at two framebuffers the 100 px
+  face costs **zero** FPS; at one it costs 6%. The full font set is 735 KiB and buys back
+  nothing by shrinking. Do not re-open this without a new measurement.
 
 **Fonts and text**
 - **`lv_font_conv` does not apply OpenType features.** A font whose tabular figures exist
@@ -264,10 +329,15 @@ not read a manual. Design for that:
   ground. Parsing it as an int will break.
 - **`r` (registration) and `t` (type) can be absent** — military, blocked, and TIS-B
   targets. Always null-check.
-- **Use ArduinoJson's filter feature** (or equivalent). You need ~6 of 50+ fields per
-  aircraft; filtering a 4 KB response keeps the document around 1 KB.
-- Send a **descriptive User-Agent with contact info** on every request. planespotters.net
-  rejects generic ones outright, and it is the courteous thing to do with free services.
+- **Parse with cJSON, not ArduinoJson.** This is ESP-IDF; cJSON already ships with it, and
+  that is what lets the *same* parser link into the host tests (D6, D7). You need ~6 of 50+
+  fields per aircraft: pull those into the fixed-size struct and free the document, rather
+  than keeping it alive.
+- Send a **descriptive User-Agent** on every request — planespotters.net rejects generic
+  ones outright, and it is the courteous thing to do with free services. It identifies the
+  project by **repo URL, not by email**: `HTTP_USER_AGENT` in `main/net/http_get.h`. The
+  address in the git history is for authorship; it does not get handed to a third party.
+  This was deliberate — do not "improve" the UA by putting contact details back in.
 
 ## 8. Decisions
 
@@ -285,15 +355,26 @@ not read a manual. Design for that:
   An on-panel network list with `lv_keyboard` costs one screen and lets him fix it standing
   in front of it. See DESIGN.md §5.7 and PLAN.md M6.
 
+**Settled since, by building it:**
+- **Magenta on black works** — settled by measurement, not by argument. `#FF3FDA` reads
+  as clearly distinct from the white above it and the cyan below it at ≥ 56 px on this
+  panel (PLAN M1). It has been on screen ever since and nothing has argued against it.
+- **Navigation: radar first, the answer one layer down** — the owner's own call after
+  using the device. See §1 and D60.
+- **Over-the-air updates exist and ship off** — no URL stored, so a new device contacts
+  nothing until someone sets one; `https://` only, enforced in code and in sdkconfig;
+  rollback armed. A feature that ships off must cost nothing while it is off (D44, D52).
+
 **Still open — ask Markus, do not guess:**
-1. **Magenta on black** — semantically exact under AC 25-11A, but a documented
-   high-confusion pair and 6.5:1 against our 7:1 target. If it reads badly on the panel the
-   colour system changes, so it is checked in PLAN M1, not discovered in M3.
-2. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
-   settled and scheduled in M6; a second full theme is not.
-3. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
-4. **Stand / enclosure** — the board ships as a flush 86-type faceplate, 86.5 × 86.5 × 14 mm.
-   A desk stand has to be printed or sourced.
+1. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
+   settled and shipped; a second full theme is not.
+2. **Aircraft photos** — nice touch, but costs flash, RAM and a third-party dependency.
+3. **Stand / enclosure** — `hardware/desk_stand.scad` exists but **has never been printed**.
+   Its dimensions come from the datasheet, not from calipers, so print `part = "fittest"`
+   first and check it against the board before printing the whole thing.
+4. **Is the 13 px identity line findable from his chair?** It is deliberately dimmed to
+   `THEME_TEXT_TERTIARY` so it cannot crowd out the answer. Only his eye can settle that;
+   the question is with him and unanswered.
 
 Design-side open questions live in DESIGN.md §7 and are mirrored here. One list, not two.
 
@@ -316,14 +397,75 @@ database**. Show an attribution line in the UI.
 
 ## 10. Conventions
 
-- Keep all user-facing strings in one translation unit.
+Most of these used to be requests. Three of them now have gates, and the gates are there
+because the convention was broken once each.
+
+- **Every user-facing German string lives in `main/strings_de.h`.** Enforced by
+  `tools/check_strings.py`. Four exceptions are documented at the top of that header —
+  the indexed tables in `fmt_de.c`, `settings.c`, `tbl_airport.c` and `tbl_actype.c`, all
+  of which `check_strings.py --list` still dumps for review. There is no fifth.
+- **Every character used must have a glyph.** Enforced by `tools/check_font_coverage.py`.
+  LVGL draws a missing glyph as *nothing at all*, with no error anywhere (D32).
 - **No colour literals outside `main/ui/theme.h`.** Every token is named there, from
   DESIGN.md §2. It is the only way the DO-257A six-colour ceiling stays enforceable once
   there are seven screens and three people editing them.
+- **One rule names an aircraft**, and it lives in `main/data/identity.c`: callsign first,
+  registration where there is no flight number, never both, and never the raw ICAO
+  designator in front of him (D36, D46).
+- **The UI formats nothing.** `view_model_t` carries final display text — German, correct
+  units, correctly grouped numbers. Screens position strings and pick colours. That split
+  is what lets the whole language layer be tested on the host in milliseconds.
 - Network work lives on its own FreeRTOS task; **all LVGL calls happen on the display
   task** behind a mutex. This split is non-negotiable on this hardware.
-- Prefer fixed-size `char` arrays over `String` in aircraft structs — see MatixYo's 40-byte
-  `Aircraft` struct.
-- Write host-side unit tests for parsers (see `kovaacs/sky_overhead` `tools/` for the
-  pattern). Parsing bugs are the most common failure and the easiest to test off-device.
-- Secrets (WiFi credentials) go in NVS, never in the repo.
+- Prefer fixed-size `char` arrays over dynamic strings in aircraft structs — see MatixYo's
+  40-byte `Aircraft` struct.
+- **Anything host-testable is host-tested.** `test/host/` needs no board and no network.
+  Parsers, formatters, tables, settings, failover, backoff and the OTA policy all run
+  there. If a bug can be reproduced off-device, reproduce it off-device first.
+
+### Privacy and secrets — not negotiable
+
+- **WiFi credentials go in NVS, never in the repo, and never through a transcript.**
+  `tools/provision.py` prompts locally (`getpass`, or a hidden-answer macOS dialog when
+  stdin is not a TTY), sends the password straight down the serial link and keeps nothing.
+  `wifi_creds_list()` returns SSIDs only. No code path logs a password. Do not add one,
+  and do not ask Markus to type a password into a chat window.
+- **The repo is private on purpose.** §6 of this file lists three residential addresses and
+  the README says who lives at them. Do not make it public, do not paste §6 into an issue,
+  a commit message or a third-party service, and do not push it anywhere new without
+  asking.
+- **OTA is `https://` only** — refused in `ota_set_url()` and again by
+  `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=n`. It ships with no URL stored, so a fresh device
+  contacts nothing.
+
+## 11. How this repo has actually failed
+
+Sixty decisions are a lot to read. These three patterns caused most of the real bugs, and
+they will catch you too.
+
+**1. The comment had drifted from the code, and the review believed the comment.**
+`.disable_auto_redirect` "for GitHub releases" was inert on the code path it sat in. A
+clamp that "does not wrap" was non-monotonic. A size check "to reject an obviously wrong
+image" checked nothing of the sort. Each one was read, believed and shipped. **Verify the
+claim a comment makes against the code under it**, especially when the comment sounds
+confident.
+
+**2. A gate can quietly stop checking.** `check_font_coverage.py` scanned `main/ui` and
+`main/data`; `main/strings_de.h` sits one directory above both, so the day every German
+string moved into it the gate went on passing with nothing left in its scan path (D39).
+It had a second silent hole in the same breath: it compared *source spellings*, so a
+deliberate `"\xE2\x80\x94"` read as plain ASCII. `check_strings.py` then shipped with the
+exact bug it was written to catch (D55). Both now assert a **floor on how many files they
+saw**. When you touch a gate, prove it still bites — inject a violation, watch it fail,
+and only then trust a pass.
+
+**3. Stress-navigating finds what careful tapping never will.** Both WLAN panics needed
+rapid repeated navigation to appear: LVGL's fixed heap could not fit the keyboard, and the
+WiFi scan task wrote into a screen that had been deleted (D58). Twelve failures in forty
+navigations, zero in forty careful ones. **Open and close a new screen forty times before
+you call it done.**
+
+One more, which is not a pattern but is worth knowing: `esp_lvgl_port_touch.c` wraps its
+I²C reads in `ESP_ERROR_CHECK`, so a single transient bus fault panics the device. It is a
+managed component and deliberately unpatched (D47) — but it is the first place to look at
+any unexplained reboot.
