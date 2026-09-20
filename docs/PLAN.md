@@ -11,7 +11,7 @@
 > München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
 >
-> **27,134 host checks across eight suites, 0 failed**, plus two gates that run with them:
+> **32,380 host checks across eleven suites, 0 failed**, plus two gates that run with them:
 > a font-coverage check (LVGL draws a missing glyph as *nothing*) and a string audit
 > (every German word must come from `main/strings_de.h`). Every screenshot in README.md is
 > the panel's own framebuffer read back over USB by `tools/grab_screen.py`.
@@ -458,7 +458,85 @@ lookup had already landed. **A harness bug reads exactly like a passing test.**
 **Not verified on the glass:** the WLAN password step's keyboard, and only that. It is the
 same one-line fix as the Ortssuche keyboard and the same shared styling, but reaching that
 step needs a finger on an *unknown* network — which is exactly why the bug lived there for
-four milestones. One tap settles it.
+four milestones. One tap settles it. **Closed in M11** — from the build host, not with a
+finger.
+
+---
+
+## M11 — Umlauts, and the one moving thing
+
+Two open items from M10 plus a request: make the waiting states look like something.
+
+- [x] **A German QWERTZ keyboard** (`main/ui/widget_input.c`). ü right of p, ö ä right of l,
+      ß on the bottom row — where a German keyboard has always had them. LVGL's stock
+      layout is US QWERTY with `_ - . , :` filling the bottom letter row: five keys he will
+      never press, and the two he needs missing entirely. Four rows, every row adding up to
+      11 units so the columns line up down the whole keyboard (LVGL's own rows come to 52,
+      40, 12 and 14, and the ragged grid is visible at 480 px). Cursor keys and the
+      close-keyboard glyph dropped — both screens have a 64 px Zurück/Abbrechen in words
+      above the keyboard, and `lv_textarea` moves the cursor when he taps into the text.
+- [x] **Two faces on one keyboard, because neither can draw it alone.** LVGL's built-in
+      Montserrat has no umlauts (`-r 0x20-0x7F,0xB0,0x2022`, read off the generated file);
+      Plex has no `LV_SYMBOL_*`. Letters get `plex_sans_cond_34`, control keys get
+      Montserrat 24, split by `LV_PART_ITEMS | LV_STATE_CHECKED` — which works because
+      `lv_buttonmatrix` re-reads that part's label style per button with that button's own
+      state. Not a documented feature; a read of `draw_main`, then measured on the panel.
+- [x] **`main/ui/widget_busy.c`** — the sweeping bar and the ghost rows, shared by all three
+      waiting screens for the same reason `widget_input.c` is shared: three copies would be
+      three decorations instead of one idea. DESIGN.md §4 "Motion" is the rule.
+- [x] Wired into **Ortssuche** (bar + 3 ghost rows), **WLAN** (bar + 4 ghost cards, ghosts
+      only when the list is empty), and **§5.2's route lookup** (bar under the amber tag,
+      sized to the tag). §5.3's *Kein Netz* deliberately gets none — see §4, a wait with an
+      end gets a bar, a standing condition gets a sentence.
+- [x] `tools/check_strings.py` grew **one rule, not thirty exemptions**: a literal that is a
+      single letter is the alphabet, not prose. Proved it still bites by injecting `"ja"`
+      as a key cap (caught) and `ő` as one (caught by the font gate).
+
+**Verified on the unit, 2026-09-20**, by driving it from the build host and reading the
+framebuffer back (D4, D41):
+
+| | |
+|---|---|
+| The German keyboard | ü ö ä ß all render, columns line up, no blank keys. |
+| All three layers | abc → ABC → 1# → abc, pressed through `lv_keyboard_def_event_cb` and photographed. The search field stayed empty, which is the actual check: a wrong layer token types its own cap instead of switching. |
+| **The WLAN password keyboard** | **On the glass.** M10's last open item, closed. |
+| The three Ortssuche states | Waiting has 556 cyan bar pixels and 517 ghost samples; "Kein Ort" and "Die Suche hat nicht geantwortet" have **0 and 0**. |
+| §5.2's two amber tags | 424 bar pixels under "ROUTE WIRD GESUCHT", **0** under "KEIN FLUGPLAN", 0 with a route. |
+| The sweep | Measured across six frames: segment constant at 138 px and never off the track. The first version was one-way and exited right — two of three frames caught it with **one pixel showing**, because an ease-in-out is slowest at the ends of its travel. A quarter of every cycle looking blank is the one thing this indicator must not do. |
+
+**Stress-navigated**, 25 cycles × 3 teardowns = **75 screens torn down while a bar was
+animating on them, 0 crashes**, 50 Ortssuche states drawn and 0 landing on a dead screen.
+Internal heap fragmentation measured against the committed build on the same 20-cycle
+overlay churn: **largest free block 31,744 → 7,168 on both**. The churn is pre-existing;
+the loading states cost nothing.
+
+**One caveat, stated rather than glossed:** the network at the current location blocks
+outbound HTTP, so the live hit list could not be re-photographed — only the two failure
+answers, which reach the screen through the same entry point and both show a cleared bar.
+And `K` reported `FORCED`: the only network in range is already saved, so the password step
+was opened directly and the row-tap that normally leads there was not exercised.
+
+**Two crashes found by the stress run, both pre-existing, both console-only, both fixed:**
+
+- `nav_create()` never cleared `s_overlay`. Every caller has just run `lv_obj_clean()` on
+  the active screen, which deletes an open overlay with everything else — so the pointer
+  was left dangling and the next `nav_open_overlay()` handled it by calling
+  `lv_obj_delete()` on freed memory. LoadProhibited in `lv_obj_get_parent()`. Reachable
+  today: open any overlay from the console, press `0`, open one again.
+- `screen_overhead.c` had no `s_alive` guard, the one `screen_wifi.c` and `screen_geo.c`
+  both carry. It is only ever built as the detail layer, so the same `lv_obj_clean()` left
+  every pointer in the file dangling and `dbg_fixture_show()` then called
+  `lv_label_set_text()` on a freed label.
+
+**And a third harness bug of the shape M10 records twice** — the check ran, reported
+nothing, and had not looked. `tools/grab_screen.py` reads frame buffer 0 of two, so a
+screenshot of a screen that had just changed and then gone still showed the state BEFORE
+it. It only bites a static screen, which is why the animating loading states photographed
+correctly while the fixture beside them lied twice. `dbg_screen.c` now invalidates the
+screen once per buffer before capturing. A fourth, mine, in the same session: the first
+version of `geo_demo_states()` asked `nav_overlay_open()` — "is SOME overlay up" — which is
+the exact question M10 records `geo_demo_search()` getting wrong, so it now asks
+`screen_geo_is_up()` and logs `SCREEN NOT UP` when the answer is no.
 
 ---
 

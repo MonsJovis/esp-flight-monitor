@@ -105,6 +105,38 @@ void screen_geo_set_pick_cb(geo_pick_cb cb);
 typedef void (*geo_exit_cb)(void);
 void screen_geo_set_exit_cb(geo_exit_cb cb);
 
+/* Puts the screen into the state it holds while a search is on the wire —
+ * the sentence, the sweeping bar and the ghost rows — without sending a
+ * request.
+ *
+ * A debug entry point, and it exists because this state cannot otherwise be
+ * photographed: Open-Meteo answers in about 250 ms (PLAN.md M10), which is
+ * faster than a screenshot command can be typed, sent and acted on. Every
+ * attempt to catch the real wait arrives after it. A loading state that
+ * cannot be read back off the panel is a loading state nobody has checked,
+ * and this codebase measures rather than assumes (D4, D41).
+ *
+ * It is the real state, not a mock-up: it calls the same begin_search() the
+ * Suchen button does, one line above the network call.
+ *
+ * Caller holds display_lock().
+ */
+void screen_geo_debug_searching(void);
+
+/* True while this screen's widgets exist — i.e. while it is the overlay that
+ * is up. Debug callers need it because nav.c can say THAT an overlay is open
+ * but not WHICH one, and "an overlay is open" is not the same question: a
+ * console command that treats Einstellungen as good enough quietly does
+ * nothing and reports success, which is precisely the harness bug PLAN.md
+ * M10 records against the first version of geo_demo_search(). */
+bool screen_geo_is_up(void);
+
+/* Steps this screen's keyboard to the next layer — see
+ * widget_keyboard_debug_layer() in widget_input.h, which is where the
+ * reasoning lives. Returns false if the screen is not up. Caller holds
+ * display_lock(). */
+bool screen_geo_debug_layer(void);
+
 /* Sends LV_EVENT_CLICKED to hit row `idx`, exactly as a fingertip would.
  *
  * A debug entry point, and it earns its place: tapping a hit is the one step

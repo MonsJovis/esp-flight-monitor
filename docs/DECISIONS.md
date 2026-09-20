@@ -1597,3 +1597,163 @@ The 'q', 'Q', 'z' and 'Z' console commands exist because of it. The Ortssuche sc
 result list, its two failure states and the whole pick-a-place-and-move-the-device path can
 all be driven from the build host now — D4 and D41's rule applied to a screen whose
 interesting states otherwise need a finger and a broken network.
+
+---
+
+## D65 — The keyboard is German, and it takes two fonts to draw it
+
+**2026-09-20.** M10 shipped a place search with LVGL's stock keyboard on it: US QWERTY,
+with `_ - . , :` filling the bottom letter row. For a man searching for the town he lives
+near, that is five keys he will never press and two he needs — ö and ä — that are not
+there at all. `Munchen` does find München (measured: Open-Meteo folds accents), so this was
+a nice-to-have rather than a defect, and it was offered and asked for.
+
+**The layout.** German QWERTZ, umlauts where a German keyboard has always had them: ü right
+of p, ö ä right of l, ß on the bottom row. Four rows, **every row adding up to 11 units**,
+so the columns line up down the whole keyboard — LVGL's own rows come to 52, 40, 12 and 14,
+and at 480 px the ragged grid is visible. The cursor keys and the close-keyboard glyph are
+gone: both screens carry a 64 px Zurück/Abbrechen **in words** above the keyboard, which is
+an easier target than a key and cannot be mistaken for the tick beside it, and `lv_textarea`
+moves the cursor when he taps into the text. That bought the width for a bottom row of
+three large targets. The `1#` layer is left as LVGL's own, because a WPA passphrase is
+arbitrary ASCII and that layer is what makes it typeable.
+
+**Neither font can draw this keyboard.** LVGL's built-in Montserrat is generated with
+`-r 0x20-0x7F,0xB0,0x2022` plus FontAwesome — read off the top of the generated file, not
+assumed — so it has **no umlauts**, and a `ü` key drawn in it is a key with nothing on it.
+The Plex subset has the umlauts and none of the `LV_SYMBOL_*` private-use codepoints, so a
+backspace drawn in Plex is a key with nothing on it either. The same AGENTS.md §7 trap from
+both directions, and in both directions the key still works when pressed; only the label is
+missing.
+
+The way through is a per-state font. `lv_buttonmatrix` re-initialises `LV_PART_ITEMS`'s
+label descriptor **per button, with that button's own state** (`lv_buttonmatrix.c`,
+`draw_main`), and every control key carries `LV_BUTTONMATRIX_CTRL_CHECKED`. So
+`LV_PART_ITEMS` gets `plex_sans_cond_34` and `LV_PART_ITEMS | LV_STATE_CHECKED` gets
+Montserrat 24, and each key is drawn by the face that has its glyph. That is not a
+documented feature; it is a read of the draw loop, and then a photograph.
+
+**Two things about it are fragile, and both are checked rather than trusted.**
+
+`lv_keyboard_set_map()` is **process-wide**: it writes into a file-scope table inside
+`lv_keyboard.c` that every keyboard reads at redraw. Two keyboards cannot have two layouts
+in this LVGL. Here that is exactly what is wanted — widget_input.h's whole argument is that
+the WLAN keyboard and the Ortssuche keyboard must be the same keyboard — so the installer
+is called from the styling function and the two can never come apart.
+
+And the three layer keys are a **contract with LVGL spelled by hand**:
+`lv_keyboard_def_event_cb()` decides whether a key switches layer by comparing its cap text
+against `LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER` / `_UPPER` / `_SPECIAL`, macros
+`lv_keyboard.c` keeps to itself. Get one wrong and nothing warns: the key stops switching
+and starts typing `ABC` into the search field. So `widget_keyboard_debug_layer()` presses
+each of the three through the real event path and the `a` console key photographs the
+result — abc → ABC → 1# → abc, with the search field staying empty, which is the actual
+check.
+
+**The string gate got a rule, not thirty exemptions.** Thirty of the thirty-six key caps
+are a single letter, four of them umlauts. Putting them in `main/strings_de.h` would bury
+the sentences in the lexicon that `--list` exists to print for a native speaker, and would
+dress up `"q"` as a translation decision. `is_single_letter()` says: exactly one character,
+and it is a letter. No German word is one letter long. Proved it still bites by injecting
+`"ja"` as a key cap (caught) and `ő` as one (caught by the font gate instead). It also made
+four `_NON_UI_LITERALS` entries stale — `"N"`, `"E"`, `"S"`, `"W"` — and the stale-exemption
+warning said so out loud, which is what that warning is for.
+
+---
+
+## D66 — One moving thing, and the states it is not for
+
+**2026-09-20.** Three screens wait on the network in front of him, and all three said so in
+words alone: *Suche Netzwerke…*, *Suche Orte…*, *ROUTE WIRD GESUCHT*. A sentence says what
+is happening. It cannot say that anything **still is**: static text looks identical two
+seconds in and twenty seconds in, so a slow answer and a dead device are the same picture,
+and he taps again. AGENTS.md §1 says never a silent panel; a frozen sentence meets that on
+the letter and misses the point.
+
+So: **one 4 px cyan line, the same one everywhere, and nothing else on this device moves.**
+On a panel where nothing else ever animates, movement does not have to be labelled. The
+rule is DESIGN.md §4 "Motion"; the implementation is `main/ui/widget_busy.c`, shared for the
+same reason `widget_input.c` is — three copies would be three decorations instead of one
+idea.
+
+**It sweeps inside the track and never leaves it.** The first version did what a phone
+does: one-way from off the left edge to past the right one, eased, repeating. Measured
+across three frames, **two of them caught the segment at x=439 of 440, with one pixel
+showing.** That is not a sampling fluke — an ease-in-out is slowest at the ends of its
+travel, and at that end most of the segment is outside the track, so for roughly a quarter
+of every cycle the bar is a blank line. Which is the one thing a "still working" indicator
+must never look like, and precisely the impression it exists to prevent. Travelling
+`0 → track_w - ind_w` with a reverse leg keeps the whole segment on the track at every
+instant and removes the jump back to the start as well.
+
+**Skeleton rows say where, the bar says whether.** On a list that is empty because the
+answer has not arrived, ghost rows stand exactly where the real ones will, same height,
+uneven widths — three bars of equal length read as a finished graphic rather than as text
+that has not come yet. Nothing pulses or shimmers: the bar is the one moving thing, and a
+skeleton that breathes turns a calm wait into a busy one. They are for an **empty** list
+only; a rescan over networks he can already read keeps them and shows the bar alone,
+because replacing a list he is reading with grey bars throws away what he has and tells him
+nothing.
+
+**The bar goes in the gap that was already there.** On the Ortssuche the hit list is sized
+so that three rows and a sliver of a fourth are visible, and that sliver is the only thing
+telling him the list continues past the fold. Twelve pixels spent on a bar of its own would
+have bought a list that ends on a clean row edge and looks complete when it is not. Four
+pixels inside a sixteen-pixel gap costs nothing.
+
+**And it is for a wait with an end, never for a condition.** §5.3's *Kein Netz — Ich suche
+ein bekanntes WLAN* deliberately has no bar. That state can last all night, and a bar that
+sweeps until morning stops meaning "still working" and starts meaning "this device
+animates" — besides burning a redraw a frame on a panel that dims itself at 22:00 to save
+power. One request in flight gets a bar. A standing condition gets a sentence.
+
+---
+
+## D67 — The stress run found two crashes and the camera was lying
+
+**2026-09-20.** Three of M11's four verification findings were about the verification, not
+the feature. They are written down together because they are one lesson.
+
+**`nav_create()` never cleared `s_overlay`.** Every caller has just run `lv_obj_clean()` on
+the active screen, which deletes an open overlay along with everything else — but nothing
+told `nav.c`, so the pointer was left dangling and the next `nav_open_overlay()` dealt with
+it by calling `lv_obj_delete()` on freed memory. LoadProhibited inside
+`lv_obj_get_parent()`. Reachable today from the serial console: open any overlay, press `0`
+to restore the live view, open one again.
+
+**`screen_overhead.c` had no `s_alive` guard** — the one `screen_wifi.c` and `screen_geo.c`
+both carry, and which both of them got by panicking first (D58). It never seemed to need
+one because nothing wrote into it from another task. Something does now: the fixture
+commands. It is only ever built as the detail layer, so the same `lv_obj_clean()` left every
+pointer in the file dangling and `dbg_fixture_show()` then called `lv_label_set_text()` on a
+freed label.
+
+Both are pre-existing, both are console-only, both are two lines, and **neither was found
+by reading.** They were found by 25 cycles of tearing screens down while something was
+animating on them — which is AGENTS.md §11 rule 3, and which is also how both WLAN panics
+were found.
+
+**The camera was lying.** `tools/grab_screen.py` triggers `dbg_screen.c`'s capture, which
+reads `esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &fb)` — the FIRST buffer, of two. LVGL
+renders into them alternately, so after a single redraw buffer 0 still holds the frame
+**before** the change. Every screenshot of a screen that had just been changed and then gone
+still was one state out of date, and said nothing about it: the image is a perfectly valid
+picture of the wrong moment.
+
+It went unnoticed for as long as it did because it only bites a **static** screen. Anything
+animating redraws continuously, both buffers converge within a frame or two, and the grab is
+correct — so M11's loading states photographed correctly while the no-route fixture beside
+them came back twice showing the state before it, and the only reason that was caught at all
+is that the two pictures disagreed with the log line between them. The capture now
+invalidates the whole screen once per buffer before reading.
+
+**And one of the four was mine, in the same session.** The first version of
+`geo_demo_states()` asked `nav_overlay_open()` before opening the screen — "is SOME overlay
+up", which is the exact question PLAN.md M10 records `geo_demo_search()` getting wrong three
+weeks of work earlier. With Einstellungen open it would have skipped opening the Ortssuche,
+set three states on a screen that was not there, and reported three states drawn. It now
+asks `screen_geo_is_up()` and logs `SCREEN NOT UP` when the answer is no.
+
+Four harness bugs in one feature, every one of them reporting a pass. **A harness bug reads
+exactly like a passing test** — and the corollary M11 adds is that the harness deserves the
+same suspicion as the code, including the camera.

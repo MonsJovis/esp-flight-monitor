@@ -59,6 +59,35 @@ static void screenshot(void)
         return;
     }
 
+    /* FRAME BUFFER 0 IS NOT NECESSARILY WHAT IS ON THE GLASS.
+     *
+     * esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &fb) hands back the FIRST
+     * buffer, and this build has two (CONFIG_BSP_LCD_RGB_BUFFER_NUMS=2):
+     * LVGL renders into them alternately, so after a single redraw buffer 0
+     * still holds the frame BEFORE the change. Every screenshot of a screen
+     * that has just been changed and then gone still was therefore one state
+     * out of date — and said nothing about it, because the image was a
+     * perfectly valid picture of the wrong moment.
+     *
+     * It went unnoticed for as long as it did because it only bites a STATIC
+     * screen. Anything with an animation on it redraws continuously, both
+     * buffers converge within a frame or two, and the grab is correct; the
+     * loading states added in M11 photographed correctly for exactly that
+     * reason, while the no-route fixture beside them came back twice showing
+     * the state before it. Two readings, both wrong, neither complaining —
+     * the fourth harness bug in this feature with that shape (PLAN.md M10).
+     *
+     * Redrawing the whole screen once per buffer leaves buffer 0 holding the
+     * current frame whatever the rotation, for about a quarter of a second
+     * on a command that already takes seconds to transfer. */
+    for (int i = 0; i < CONFIG_BSP_LCD_RGB_BUFFER_NUMS; i++) {
+        if (display_lock(2000)) {
+            lv_obj_invalidate(lv_screen_active());
+            display_unlock();
+        }
+        vTaskDelay(pdMS_TO_TICKS(120));
+    }
+
     /* Hold the LVGL lock for the whole capture. Otherwise anything that
      * redraws — the perf monitor's FPS label alone is enough — mutates the
      * framebuffer between the CRC and the transfer, and every grab fails. */

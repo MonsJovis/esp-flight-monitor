@@ -4,9 +4,9 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); sixty decisions are written up with their reasoning and
-> their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is **32,380
-> checks across ten suites, 0 failed**.
+> ([docs/PLAN.md](./docs/PLAN.md)); sixty-seven decisions are written up with their reasoning
+> and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
+> **32,380 checks across eleven suites, 0 failed**.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -53,7 +53,9 @@ or it has failed. Two usage modes drive every design decision:
   translation unit. Two consequences that are easy to miss until they bite:
   - **The LVGL font must carry ä ö ü ß.** LVGL's built-in Montserrat faces are ASCII-only.
     Build a font including the Latin-1 supplement range, or umlauts render as blanks —
-    and "Zurich"/"Munchen" on a German panel looks broken.
+    and "Zurich"/"Munchen" on a German panel looks broken. This reaches further than the
+    labels: the on-screen KEYBOARD has to be able to type them too, which is why it runs
+    two faces at once (§7).
   - **The route API returns *English* city names** ("Vienna", "Munich", "Prague"). Ship a
     small airport → German name table for the common European destinations (Wien, München,
     Zürich, Prag, Mailand, Athen, Kopenhagen, Warschau …) and fall back to the API's own
@@ -162,7 +164,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 28,069 checks, plus the font and string gates
+make -C test/host        # 32,380 checks, plus the font and string gates
 ```
 
 For anything visual, the panel reports on itself; you do not have to be in the room:
@@ -175,10 +177,16 @@ python3 tools/provision.py               # WiFi credentials → NVS, never throu
 The firmware takes single command bytes on the same serial link (`on_cmd()` in
 `main/main.c`, plus `s` handled in `main/debug/dbg_screen.c`):
 
-- `s` screenshot — `1`–`4` show a captured fixture — `0` back to live
+- `s` screenshot — `1`–`5` show a captured fixture (`5` is §5.2 with the route lookup
+  still outstanding) — `0` back to live
 - `g` next page — `i` toggle the detail layer — `e` settings — `k` WLAN — `d` scroll to end
 - `q` open Ort suchen — `Q` run a real search on it — `z` search and take the first hit
-  — `Z` draw its "nothing found" and "no answer" states
+  — `Z` step through its three states (waiting / nothing found / no answer), one per press
+  — `a` press the keyboard's layer key (abc → ABC → 1# → abc)
+- `K` open WLAN and go straight to the password step, which is the one screen a finger is
+  otherwise needed for. It says in the log whether it got there by tapping an unsaved
+  network (the real path) or had to force it open because everything in range is already
+  saved — those are not the same check and it does not report them as one.
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
@@ -344,6 +352,16 @@ not read a manual. Design for that:
   stalls rendering for ~2.85 s to save 3 µs — the mitigation is far worse than the disease.
   Keep `CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y` and `CONFIG_SPIRAM_RODATA=y` on. Full numbers
   in docs/DECISIONS.md D29.
+- **A screenshot reads frame buffer 0, which is not necessarily what is on the glass.**
+  `esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &fb)` hands back the FIRST buffer and this
+  build has two, so after a single redraw buffer 0 still holds the frame BEFORE the change.
+  Every grab of a screen that had just been changed and then gone still was one state out
+  of date, and said nothing about it — the image is a valid picture of the wrong moment.
+  It only bites a STATIC screen: anything animating redraws continuously and both buffers
+  converge, which is why the M11 loading states photographed correctly while the no-route
+  fixture beside them came back twice showing the state before it. `dbg_screen.c` now
+  invalidates the whole screen once per buffer before capturing. If you add a third
+  buffer, that loop already follows `CONFIG_BSP_LCD_RGB_BUFFER_NUMS`.
 - **Stay at 80 MHz PSRAM.** 120 MHz is experimental and temperature-sensitive — a real
   risk for an always-on panel behind glass.
 - **WiFi bursts compete for PSRAM bandwidth** and cause visible drift. This is the #1
@@ -372,6 +390,31 @@ not read a manual. Design for that:
   and so was never once reached from the build host. Use `lv_obj_align(kb,
   LV_ALIGN_TOP_LEFT, 0, y)`. Both keyboards are styled by `main/ui/widget_input.c`, which
   says the same thing where someone writing the next one will read it.
+- **`lv_keyboard_set_map()` is PROCESS-WIDE, not per keyboard.** It writes into a
+  file-scope table inside `lv_keyboard.c` (`kb_map[mode] = map`) that every keyboard reads
+  at redraw, so two keyboards cannot have two layouts and installing one from either screen
+  changes both. Here that is what we want — the WLAN keyboard and the Ortssuche keyboard
+  must be the same keyboard — so `widget_input.c` leans on it and installs the German
+  QWERTZ layout from the styling function. If you ever DO need two, the only per-instance
+  hook is `LV_KEYBOARD_MODE_USER_1..4`.
+- **The three layer keys are a contract with LVGL, spelled by hand.**
+  `lv_keyboard_def_event_cb()` decides whether a key switches layer by comparing its CAP
+  TEXT against `LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER` / `_UPPER` / `_SPECIAL` — macros
+  `lv_keyboard.c` keeps to itself and does not export, so a custom map has to carry the same
+  three strings (`"abc"`, `"ABC"`, `"1#"`). Get one wrong and nothing warns: the key stops
+  switching layers and starts typing its own cap into the field. `widget_keyboard_debug_layer()`
+  and the `a` console key exist to press all three and photograph the result, because this
+  is the kind of thing that breaks silently on an LVGL bump.
+- **The built-in Montserrat faces have no umlauts.** LVGL generates them with
+  `-r 0x20-0x7F,0xB0,0x2022` plus FontAwesome — read it off the top of
+  `lv_font_montserrat_24.c`, it is in the file. So an `ü` key drawn in Montserrat is a key
+  with nothing on it; and the Plex subset has none of the `LV_SYMBOL_*` private-use
+  codepoints, so a backspace drawn in Plex is a key with nothing on it either. Neither face
+  can draw a German keyboard alone. The way out is a per-state font: `lv_buttonmatrix`
+  re-reads `LV_PART_ITEMS`'s label style per button with that button's own state
+  (`lv_buttonmatrix.c`, `draw_main`), and every control key carries
+  `LV_BUTTONMATRIX_CTRL_CHECKED` — so `LV_PART_ITEMS` gets Plex and
+  `LV_PART_ITEMS | LV_STATE_CHECKED` gets Montserrat.
 - **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
   a 2 px band of `#525152` all round — a grey line under every list divider and a grey
   column down both edges of a list. Nothing in the source asks for it, so nothing in the

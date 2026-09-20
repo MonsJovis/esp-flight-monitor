@@ -56,6 +56,7 @@ void dbg_fixture_show(int n)
             bool routed = (r != NULL && r->resolved && r->plausible);
             if (n == 1 && routed) { pick = i; what = "§5.1 Über dir jetzt"; break; } /* LOG-ONLY */
             if (n == 2 && !routed) { pick = i; what = "§5.2 Ohne Route"; break; }    /* LOG-ONLY */
+            if (n == 5 && !routed) { pick = i; what = "§5.2 Route wird gesucht"; break; } /* LOG-ONLY */
             if (n == 4 && routed) {
                 /* Longest destination, to exercise the hero shrink ladder. */
                 const route_t *best = route_find(rt, nrt, ac[pick].flight);
@@ -66,8 +67,14 @@ void dbg_fixture_show(int n)
                 what = "§5.1 longest destination"; /* LOG-ONLY */
             }
         }
-        view_build(&ac[pick], route_find(rt, nrt, ac[pick].flight),
-                   &now, nac, true, &vm);
+        /* n == 5 is the same aircraft as n == 2 with the route lookup still
+         * outstanding — the one state on this screen that is a WAIT rather
+         * than an answer, and the only one that cannot be photographed by
+         * waiting for it: it lasts as long as one HTTP request and then
+         * becomes something else. view_build_ex() is the real path, the same
+         * one flight_source.c uses; nothing here fakes the model. */
+        view_build_ex(&ac[pick], route_find(rt, nrt, ac[pick].flight), n == 5,
+                      &now, nac, true, &vm);
         ESP_LOGW(TAG, "%s — %s (%s)", what, ac[pick].flight,
                  ac[pick].type[0] ? ac[pick].type : "no type");
     }

@@ -231,6 +231,34 @@ data**. Consistent across all seven screens so the eye learns one map.
 > If the hardware ever changes to a round panel, keep content inside the inscribed circle
 > (~340 px diameter) and the design ports with no rework.
 
+### Motion — there is exactly one moving thing
+
+Nothing on this device animates except one 4 px cyan line, and it means **the device is
+waiting on the network right now**. That is the entire motion vocabulary, and keeping it
+that small is what makes it readable: on a panel where nothing else ever moves, movement
+does not have to be labelled.
+
+Three screens wait in front of him, and until M11 all three said so in words alone —
+*Suche Netzwerke…*, *Suche Orte…*, *ROUTE WIRD GESUCHT*. A sentence says WHAT is
+happening. It cannot say that anything **still is**: static text looks identical two
+seconds in and twenty seconds in, so a slow answer and a dead device are the same picture,
+and he taps again. AGENTS.md §1 says never a silent panel; a frozen sentence meets that on
+the letter and misses the point.
+
+| | |
+|---|---|
+| **The bar** | 4 px tall, full content width, track in `border-idle`, a 32% segment in **cyan** sweeping side to side inside it, 700 ms each way, eased at the turns. It never leaves the track — a one-way sweep that exits the right edge spends about a quarter of every cycle looking blank, which was measured on the panel and is the one thing a "still working" indicator must never do. |
+| **Where it lives** | Inside the gap that was already between the status line and the content. It costs no layout space, which matters on §5.8, where the hit list is sized so that three rows and a sliver of a fourth are visible and that sliver is the only thing saying the list continues. |
+| **Colour** | Cyan everywhere, including under §5.2's amber tag. This is not a seventh colour and not a semantic claim — cyan is already "live" on this device (a focused field, a pressed key). The sentence above says what is unknown; the bar says the device is still working on it. |
+| **The skeleton** | On a list that is empty because the answer has not arrived, ghost rows in `border-idle` / `divider` stand where the rows will be, the same height as the real ones. Uneven widths, because three bars of equal length read as a finished graphic rather than as text that has not come yet. **Nothing pulses or shimmers** — the bar is the one moving thing, and a skeleton that breathes turns a calm wait into a busy one. |
+| **Not on a refresh** | Skeleton rows are for an empty list only. A rescan over networks he can already read keeps them and shows the bar alone: replacing a list he is reading with grey bars throws away what he has and tells him nothing. |
+
+**It is for a wait with an end, never for a condition.** §5.3's *Kein Netz — Ich suche ein
+bekanntes WLAN* deliberately has no bar. That state can last all night, and a bar that
+sweeps until morning stops meaning "still working" and starts meaning "this device
+animates" — besides burning a redraw a frame on a panel that dims itself at 22:00 to save
+power. One request in flight gets a bar. A standing condition gets a sentence.
+
 ---
 
 ## 5. Screens

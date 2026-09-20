@@ -17,6 +17,7 @@
 #include "strings_de.h"
 #include "geocode.h"
 #include "widget_input.h"
+#include "widget_busy.h"
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — there are none in this file. Every word it shows
@@ -59,10 +60,17 @@ static lv_obj_t *s_type;
 static lv_obj_t *s_ta;
 static lv_obj_t *s_kb;
 
-/* --- s_res: title, status, hit list, Neu suchen/Zurück --- */
+/* --- s_res: title, status, the busy bar, hit list, Neu suchen/Zurück --- */
 static lv_obj_t *s_res;
 static lv_obj_t *s_lbl_status;
+static lv_obj_t *s_busy;
 static lv_obj_t *s_list;
+
+/* Ghost rows, shown only while a search is in flight. Three, because three is
+ * what fits above the fold — a fourth would be half-visible and read as a
+ * result that failed to draw rather than as a placeholder. */
+#define GEO_SKEL_ROWS 3
+static lv_obj_t *s_skel[GEO_SKEL_ROWS];
 
 typedef struct {
     lv_obj_t *row;
@@ -108,6 +116,14 @@ static void on_type_deleted(lv_event_t *e)
      * pick a place from the PREVIOUS session — writing a location to NVS
      * that nothing on the glass ever offered. */
     s_n_places = 0;
+    /* The waiting furniture dies with the tree too. Left standing, these are
+     * the same dangling pointers s_alive exists to stop being written
+     * through — and set_waiting() is reached from paths that do not all
+     * check it. */
+    s_busy = NULL;
+    for (int i = 0; i < GEO_SKEL_ROWS; i++) {
+        s_skel[i] = NULL;
+    }
 }
 
 /* ============================================================================
@@ -183,8 +199,27 @@ static void apply_status(const char *text, lv_color_t color)
     lv_obj_set_style_text_color(s_lbl_status, color, 0);
 }
 
+/* The waiting state, as one switch. The bar and the ghost rows are two halves
+ * of one idea and there is no state in which one of them belongs without the
+ * other, so they are never set separately — see widget_busy.h. */
+static void set_waiting(bool waiting)
+{
+    if (!s_alive) {
+        return;
+    }
+    widget_busy_set_active(s_busy, waiting);
+    for (int i = 0; i < GEO_SKEL_ROWS; i++) {
+        lv_obj_set_hidden(s_skel[i], !waiting);
+    }
+}
+
 static void show_typing(void)
 {
+    /* Leaving the results state ends the wait as far as this screen is
+     * concerned, whatever the network is still doing. A bar left sweeping
+     * behind a hidden screen is an animation nobody can see, invalidating an
+     * area nobody is looking at, until the overlay is torn down. */
+    set_waiting(false);
     lv_obj_set_hidden(s_res, true);
     lv_obj_set_hidden(s_type, false);
     /* Re-attach rather than assume: the keyboard keeps whatever text area it
@@ -221,12 +256,13 @@ static void row_event_cb(lv_event_t *e)
  * TWO LINES PER ROW, and the second one is not decoration: "Wien" returns
  * four places and "Pattaya" two, so the name alone cannot tell him which one
  * he means. The region line is what makes the list answerable. */
-static void create_row(lv_obj_t *parent, int idx, int32_t name_lh, int32_t region_lh)
+static void create_row(lv_obj_t *parent, int idx, int32_t row_h,
+                       int32_t name_lh, int32_t region_lh)
 {
     geo_row_t *row = &s_rows[idx];
 
     row->row = lv_button_create(parent);
-    lv_obj_set_size(row->row, CONTENT_W, 2 * ROW_PAD_V + name_lh + GAP_SM / 2 + region_lh);
+    lv_obj_set_size(row->row, CONTENT_W, row_h);
     widget_kill_button_chrome(row->row);
     /* A DIVIDED LIST, not a stack of cards. Every card on this device is a
      * place he can BE (the location cards in Einstellungen); these are
@@ -256,12 +292,56 @@ static void create_row(lv_obj_t *parent, int idx, int32_t name_lh, int32_t regio
     lv_obj_set_pos(row->lbl_region, ROW_INSET, ROW_PAD_V + name_lh + GAP_SM / 2);
 }
 
+/* One ghost row, the same size and shape as a real hit, in the same place.
+ *
+ * The widths are three different pairs rather than three identical ones: a
+ * column of three bars of exactly equal length reads as a graphic, and a
+ * graphic is a thing that is finished. Uneven, it reads as text that has not
+ * arrived — which is what it is. Nothing here animates; the bar above is the
+ * one moving thing on this device (widget_busy.h). */
+static void create_skeleton(lv_obj_t *parent, int idx, int32_t row_h,
+                            int32_t name_lh, int32_t region_lh)
+{
+    static const int32_t name_pct[GEO_SKEL_ROWS]   = { 52, 38, 46 };
+    static const int32_t region_pct[GEO_SKEL_ROWS] = { 34, 26, 30 };
+
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, CONTENT_W, row_h);
+    lv_obj_set_style_pad_all(row, 0, 0);
+    /* The same hairline the real rows carry, so the list does not visibly
+     * change construction when the answer lands. */
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(row, THEME_DIVIDER, 0);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_set_hidden(row, true);
+
+    int32_t inner = CONTENT_W - 2 * ROW_INSET;
+    /* Ghost heights are the x-height of the line they stand in, near enough:
+     * a bar as tall as the full line box looks like a redaction. */
+    int32_t nh = name_lh / 2;
+    int32_t rh = region_lh / 2;
+    widget_busy_ghost(row, ROW_INSET, ROW_PAD_V + (name_lh - nh) / 2,
+                      inner * name_pct[idx] / 100, nh, false);
+    widget_busy_ghost(row, ROW_INSET,
+                      ROW_PAD_V + name_lh + GAP_SM / 2 + (region_lh - rh) / 2,
+                      inner * region_pct[idx] / 100, rh, true);
+
+    s_skel[idx] = row;
+}
+
 void screen_geo_set_results(const geo_place_t *places, int n)
 {
     /* He may have tapped Zurück while the lookup was in flight — see s_alive. */
     if (!s_alive) {
         return;
     }
+
+    /* Whatever came back, the waiting is over — including the two answers
+     * that are not successes. A bar still sweeping under "Kein Ort mit diesem
+     * Namen" would say the device is still looking. */
+    set_waiting(false);
 
     bool failed = (n < 0);
     if (failed || places == NULL) {
@@ -342,6 +422,30 @@ static void trimmed_query(char *out, size_t out_sz)
     out[n] = '\0';
 }
 
+/* Everything the screen itself does when a search starts: flip to the results
+ * state, say so, empty the list, and start the wait.
+ *
+ * Split out from do_search() so that screen_geo_debug_searching() can put the
+ * screen into this state WITHOUT a network round trip, and put it into the
+ * real one rather than a hand-made copy of it. The state is worth reaching on
+ * its own because it is the hardest one to photograph: the endpoint answers
+ * in about 250 ms, so a screenshot of the actual wait loses the race almost
+ * every time, and a loading state nobody can photograph is a loading state
+ * nobody can check. */
+static void begin_search(void)
+{
+    apply_status(STR_GEO_SEARCHING, THEME_TEXT_LABEL);
+    for (int i = 0; i < GEO_MAX_ROWS; i++) {
+        lv_obj_set_hidden(s_rows[i].row, true);
+    }
+    s_n_places = 0;
+    show_results();
+    /* After show_results(), not before: the bar measures itself when it is
+     * switched on, and an object inside a hidden parent has no width to
+     * measure. */
+    set_waiting(true);
+}
+
 static void do_search(void)
 {
     char query[SCREEN_GEO_QUERY_MAX];
@@ -356,12 +460,7 @@ static void do_search(void)
         return;
     }
 
-    apply_status(STR_GEO_SEARCHING, THEME_TEXT_LABEL);
-    for (int i = 0; i < GEO_MAX_ROWS; i++) {
-        lv_obj_set_hidden(s_rows[i].row, true);
-    }
-    s_n_places = 0;
-    show_results();
+    begin_search();
 
     if (s_search_cb) {
         s_search_cb(query);
@@ -465,6 +564,18 @@ void screen_geo_create(lv_obj_t *parent)
     /* Never blank, even before the first search (AGENTS.md §1). */
     apply_status(STR_GEO_IDLE, THEME_TEXT_LABEL);
     lv_obj_set_pos(s_lbl_status, PAD, ry);
+
+    /* The busy bar goes INSIDE the gap that was already between the status
+     * line and the list, not below it. GAP_MD is 16 px and the bar is 4, so
+     * it sits with 6 px of air above and below and the list starts exactly
+     * where it did — which matters more than it sounds: the row pool is sized
+     * so that three rows and a sliver of a fourth are visible, and that
+     * sliver is the only thing telling him the list continues past the fold
+     * (see create_row). Twelve pixels spent here would have bought a list
+     * that ends on a clean row edge and looks complete when it is not. */
+    s_busy = widget_busy_create(s_res, CONTENT_W);
+    lv_obj_set_pos(s_busy, PAD, ry + name_lh + (GAP_MD - WIDGET_BUSY_H) / 2);
+
     ry += name_lh + GAP_MD;
 
     int32_t btn_y = THEME_SCREEN_HEIGHT - PAD - BTN_H;
@@ -498,14 +609,44 @@ void screen_geo_create(lv_obj_t *parent)
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
 
     /* A hidden pool row takes no flex layout space, so the first visible hit
-     * always lands at the top of the list with no extra handling. */
+     * always lands at the top of the list with no extra handling — and the
+     * same property is what lets the ghost rows and the real rows share one
+     * flex column without either having to know about the other. The ghosts
+     * are created FIRST because flex order is creation order, and a ghost
+     * below a result would be a promise of more that is not coming. */
+    /* One height, used by the ghost rows and the real ones. It used to be
+     * spelled out inside create_row(); a ghost row that was a pixel taller
+     * than the row it stands in would make the list twitch at the moment the
+     * answer arrives, which is the one moment he is looking at it. */
+    int32_t row_h = 2 * ROW_PAD_V + name_lh + GAP_SM / 2 + region_lh;
+    for (int i = 0; i < GEO_SKEL_ROWS; i++) {
+        create_skeleton(s_list, i, row_h, name_lh, region_lh);
+    }
     for (int i = 0; i < GEO_MAX_ROWS; i++) {
-        create_row(s_list, i, name_lh, region_lh);
+        create_row(s_list, i, row_h, name_lh, region_lh);
     }
 
     /* Last, deliberately: until every widget exists there is nothing safe for
      * the search task to write into. */
     s_alive = true;
+}
+
+bool screen_geo_is_up(void)
+{
+    return s_alive;
+}
+
+void screen_geo_debug_searching(void)
+{
+    if (!s_alive) {
+        return;
+    }
+    begin_search();
+}
+
+bool screen_geo_debug_layer(void)
+{
+    return s_alive && widget_keyboard_debug_layer(s_kb);
 }
 
 bool screen_geo_debug_tap(int idx)

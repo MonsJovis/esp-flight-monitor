@@ -179,6 +179,18 @@ static void bubble_decorative(lv_obj_t *parent)
 
 void nav_create(const nav_page_t *pages, int n_pages)
 {
+    /* FORGET ANY OVERLAY FIRST. Every caller of this function has just
+     * emptied the active screen (lv_obj_clean), which deletes an open overlay
+     * along with everything else — but nothing told this file, so s_overlay
+     * was left pointing at freed memory and the NEXT nav_open_overlay() dealt
+     * with it by calling lv_obj_delete() on it. That is a LoadProhibited in
+     * lv_obj_get_parent(), and it is reachable today: open any overlay from
+     * the serial console, press '0' to restore the live view, open one again.
+     *
+     * Found by the M11 stress run rather than by reading, which is the point
+     * of the stress run. */
+    s_overlay = NULL;
+
     if (n_pages > NAV_MAX_PAGES) n_pages = NAV_MAX_PAGES;
     s_n_pages = n_pages;
     s_page_idx = 0;

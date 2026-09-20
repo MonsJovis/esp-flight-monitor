@@ -184,13 +184,30 @@ _NON_UI_LITERALS = {
     ),
     # Source names and the English compass used in the developer log line;
     # the German compass he reads is compass_de_abbr() in fmt_de.c.
+    #
+    # Only the two-letter points are listed. "N", "E", "S" and "W" used to be
+    # here and are now covered by is_single_letter() — and the stale-exemption
+    # warning is what said so, out loud, the first time the new rule ran. An
+    # exemption nobody needs is an exemption that will one day cover something
+    # new by accident, so it goes.
     "main/net/source_logic.c": (
         "adsb.lol (point)", "adsb.lol (lat/lon/dist)",
-        "N", "NE", "E", "SE", "S", "SW", "W", "NW",
+        "NE", "SE", "SW", "NW",
     ),
     # NVS key templates, one per stored network slot.
     "main/net/wifi.c": (
         "ssid%d", "pass%d",
+    ),
+    # The three layer keys on the on-screen keyboard. They ARE drawn — so this
+    # is the one exemption here for a literal that reaches the panel — but
+    # they are LVGL's contract, not German: lv_keyboard_def_event_cb() decides
+    # what a key does by comparing its cap against these exact three strings,
+    # which lv_keyboard.c keeps to itself and does not export. widget_input.c
+    # has to spell them or the shift key stops shifting. There is no German
+    # spelling of "ABC" for a reading-aloud pass to judge, and inventing one
+    # would break the keyboard.
+    "main/ui/widget_input.c": (
+        "abc", "ABC",
     ),
     # main/main.c is a mixture of product bootstrap and developer diagnostics.
     #
@@ -464,6 +481,34 @@ def is_structural(raw):
     if "%" in rest:
         return False
     return not any(ch.isalpha() for ch in rest)
+
+
+def is_single_letter(raw):
+    """True if this literal is one letter — a key cap, not a sentence.
+
+    THE ALPHABET IS NOT PROSE. main/ui/widget_input.c spells out a German
+    QWERTZ keyboard: thirty-six key caps, of which thirty are a single letter
+    and four of those are umlauts. Every one of them would otherwise have to
+    be #defined in main/strings_de.h, and that is the wrong answer twice over.
+    It would put thirty entries with no meaning between them into the lexicon
+    that `--list` prints — the lexicon whose whole purpose is that a native
+    speaker can read down it and judge the SENTENCES the device says — and it
+    would dress up "q" as a translation decision, which it is not.
+
+    Narrow on purpose: exactly one character, and that character is a letter.
+    No German word is one letter long, so nothing this lets through is
+    something the reading-aloud pass would have caught. "ja" is two and still
+    fails; so does "OK", and so does every label anyone will ever be tempted
+    to leave inline.
+
+    Note c_unescape() first: "\\xC3\\xBC" is two bytes in the source that are
+    one character on the panel, so the length test has to be made on what
+    renders, not on what is typed. is_structural() cannot be widened to cover
+    this — it rejects every \\x escape on sight, and rightly, because that is
+    how this codebase spells the em dash and the degree sign.
+    """
+    value = c_unescape(raw)
+    return len(value) == 1 and value.isalpha()
 
 
 def is_non_ui(rel, raw):
@@ -825,7 +870,7 @@ def do_check():
         text = path.read_text(encoding="utf-8")
         lines = text.splitlines()
         for lineno, raw in scan_literals(text):
-            if is_structural(raw) or raw in allowed:
+            if is_structural(raw) or is_single_letter(raw) or raw in allowed:
                 continue
             if is_non_ui(rel, raw):
                 used_exemptions.add((rel, raw))

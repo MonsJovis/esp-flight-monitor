@@ -12,6 +12,7 @@ set(SRCS
     "ui/screen_overhead.c"
     "ui/widget_compass.c"
     "ui/widget_input.c"
+    "ui/widget_busy.c"
     "ui/nav.c"
     "ui/screen_settings.c"
     "ui/screen_wifi.c"

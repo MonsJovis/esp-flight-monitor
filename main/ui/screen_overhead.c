@@ -14,6 +14,7 @@
 #include "theme.h"
 #include "fonts/fonts.h"
 #include "widget_compass.h"
+#include "widget_busy.h"
 #include "strings_de.h"
 #include "data/fmt_de.h"
 
@@ -66,6 +67,18 @@ static const struct {
  */
 static lv_obj_t *s_cont;
 
+/* True only while this screen's widgets exist — the same guard screen_wifi.c
+ * and screen_geo.c carry, arriving here late because nothing used to write
+ * into this screen from outside the UI task.
+ *
+ * Something does now: the fixture commands on the serial console. This screen
+ * is only ever built as the detail layer (main.c), so lv_obj_clean() on the
+ * active screen destroys it and leaves every pointer in this file dangling —
+ * and dbg_fixture_show() then calls lv_label_set_text() on a freed label.
+ * Measured, from the M11 stress run: a LoadProhibited inside
+ * lv_label_mark_need_refr_text(). */
+static bool s_alive;
+
 /* Chrome band */
 static lv_obj_t *s_lbl_clock;
 
@@ -89,6 +102,10 @@ static lv_obj_t *s_compass;
 static lv_obj_t *s_lbl_origin;
 static lv_obj_t *s_lbl_arrow;
 static lv_obj_t *s_lbl_no_route_tag;
+/* The sweep under the no-route tag while the route lookup is on the wire.
+ * Only ever visible with that tag, and only in its "still looking" reading —
+ * see the update path. */
+static lv_obj_t *s_busy_route;
 
 /* Hero band */
 static lv_obj_t *s_lbl_hero;
@@ -161,9 +178,17 @@ static lv_obj_t *make_wrapped_label(lv_obj_t *parent, const lv_font_t *font, lv_
     return l;
 }
 
+static void on_cont_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_alive = false;
+    s_cont  = NULL;
+}
+
 void screen_overhead_create(lv_obj_t *parent)
 {
     s_cont = lv_obj_create(parent);
+    lv_obj_add_event_cb(s_cont, on_cont_deleted, LV_EVENT_DELETE, NULL);
     lv_obj_remove_style_all(s_cont);
     lv_obj_set_size(s_cont, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
     lv_obj_set_pos(s_cont, 0, 0);
@@ -228,6 +253,19 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_hidden(s_lbl_arrow, true);
     lv_obj_set_hidden(s_lbl_no_route_tag, true);
 
+    /* The bar lives in the GAP_SM between the top row and the hero, not in
+     * space of its own: this screen's whole layout rule is that the hero
+     * starts at the same Y whatever the top row is saying, so that the panel
+     * does not jump when traffic appears. Four pixels of the eight-pixel gap,
+     * two above and two below, and the hero does not move.
+     *
+     * Width is the tag's, set per update — a bar the full 440 px under a
+     * 300 px tag would read as a progress bar for the whole screen rather
+     * than as this one sentence still working. */
+    s_busy_route = widget_busy_create(s_cont, CONTENT_W);
+    lv_obj_set_pos(s_busy_route, PAD,
+                   Y_TOPROW + lv_font_get_line_height(&plex_sans_cond_34) + 2);
+
     /* --- Hero band -- the single most important thing on the panel --- */
     s_lbl_hero = make_wrapped_label(s_cont, &plex_sans_cond_100, THEME_WHITE);
 
@@ -251,10 +289,18 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_hidden(s_lbl_altitude, true);
     lv_obj_set_hidden(s_lbl_distance, true);
     lv_obj_set_hidden(s_lbl_direction_word, true);
+
+    /* Last, deliberately: until every widget exists there is nothing safe for
+     * an update to write into. */
+    s_alive = true;
 }
 
 void screen_overhead_update(const view_model_t *vm)
 {
+    /* The tree may have been torn down since the caller last looked. */
+    if (!s_alive) {
+        return;
+    }
     bool empty_sky = (vm->state == VIEW_EMPTY_SKY);
     bool no_route  = (vm->state == VIEW_NO_ROUTE);
     bool overhead  = (vm->state == VIEW_OVERHEAD);
@@ -355,7 +401,18 @@ void screen_overhead_update(const view_model_t *vm)
                           vm->route_searching ? STR_ROUTE_SEARCHING
                                               : STR_NO_FLIGHT_PLAN);
         lv_obj_set_pos(s_lbl_no_route_tag, PAD, Y_TOPROW);
+        /* Sized to the tag it belongs to, measured rather than guessed —
+         * "ROUTE WIRD GESUCHT" and "KEIN FLUGPLAN" are different lengths and
+         * only one of them ever has a bar under it. */
+        lv_obj_update_layout(s_lbl_no_route_tag);
+        lv_obj_set_width(s_busy_route, lv_obj_get_width(s_lbl_no_route_tag));
     }
+    /* THE DISTINCTION THIS DRAWS IS THE POINT. Both sentences are amber, both
+     * sit in the same place, and until now the only difference between "this
+     * aircraft filed no flight plan" and "I am still asking about this one"
+     * was eighteen characters he has to read at 70 cm. One of them is final
+     * and one of them is not; now one of them moves. */
+    widget_busy_set_active(s_busy_route, show_no_route && vm->route_searching);
 
     /* --- Hero --- */
     const char      *hero_text;

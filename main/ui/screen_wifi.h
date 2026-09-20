@@ -132,6 +132,52 @@ void screen_wifi_set_rescan_cb(wifi_rescan_cb cb);
 typedef void (*wifi_exit_cb)(void);
 void screen_wifi_set_exit_cb(wifi_exit_cb cb);
 
+/* Opens the password step from the build host, and says how it got there.
+ *
+ * Returns:
+ *   SCREEN_WIFI_PW_TAPPED — an unsaved network was in range and its row was
+ *       CLICKED, exactly as a fingertip would. The whole path.
+ *   SCREEN_WIFI_PW_FORCED — networks were in range but every one of them is
+ *       already saved, so there was no row a finger could have tapped to get
+ *       here. The step was opened directly instead. The keyboard is on the
+ *       glass and can be photographed; the row-tap that normally leads to it
+ *       was NOT exercised, and a caller that reports this as the same thing
+ *       is reporting a check it did not run.
+ *   SCREEN_WIFI_PW_NONE — no networks at all. Nothing was opened.
+ *
+ * It never taps a SAVED row even when that is the only row there: a tap on a
+ * saved row does not open anything, it starts a join with stored credentials,
+ * and a debug command must not reconnect the device as a side effect.
+ *
+ * A debug entry point, and it earns its place more than most: the password
+ * step is the one screen in this product that cannot be reached from the
+ * build host, because reaching it requires tapping a network the device has
+ * no credentials for. That is not a footnote. Its keyboard was positioned
+ * off the bottom edge of the panel from M6 until 2026-09-20 — four
+ * milestones of a password step with no keyboard on it — and it survived
+ * precisely because every check of this screen in this repo stopped at the
+ * network list. The fix was one line. Finding it took building a second
+ * keyboard next door and hitting the same wall.
+ *
+ * So the hole gets a door. `K` on the serial console opens WLAN, scans, and
+ * calls this, and tools/grab_screen.py reads back what is actually on the
+ * glass (D4, D41).
+ *
+ * UNSAVED, deliberately, and never a saved one: tapping a saved row does not
+ * open anything, it starts a join with stored credentials. This must not have
+ * a side effect on the network the device is using.
+ *
+ * Nothing is typed and nothing is stored: it opens the step and stops. The
+ * password itself is his to type, on the panel, and never travels through a
+ * console or a transcript (AGENTS.md §10).
+ *
+ * Caller holds display_lock().
+ */
+#define SCREEN_WIFI_PW_NONE   0
+#define SCREEN_WIFI_PW_TAPPED 1
+#define SCREEN_WIFI_PW_FORCED 2
+int screen_wifi_debug_password_step(void);
+
 #ifdef __cplusplus
 }
 #endif

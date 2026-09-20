@@ -27,6 +27,7 @@
 #include "fonts/fonts.h"
 #include "strings_de.h"
 #include "widget_input.h"
+#include "widget_busy.h"
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
@@ -82,14 +83,24 @@
  * ============================================================================
  */
 
-/* --- s_main: title, status, list, Suchen/Zurück --- */
+/* --- s_main: title, status, the busy bar, list, Suchen/Zurück --- */
 static lv_obj_t *s_main;
 static lv_obj_t *s_lbl_title;
 static lv_obj_t *s_lbl_status;
+static lv_obj_t *s_busy;
 static lv_obj_t *s_list;
 static lv_obj_t *s_lbl_empty;
 static lv_obj_t *s_btn_rescan;
 static lv_obj_t *s_btn_exit;
+
+/* Ghost rows for the FIRST scan only — see set_waiting(). */
+#define WIFI_SKEL_ROWS 4
+static lv_obj_t *s_skel[WIFI_SKEL_ROWS];
+
+/* How many networks are on the list right now. Kept because the skeleton
+ * question is not "are we scanning" but "are we scanning with nothing to
+ * show": a rescan over a list he can already read must not blank it. */
+static int s_n_shown;
 
 /* One entry per pool slot. `ssid[0] == '\0'` marks an unused slot. */
 typedef struct {
@@ -137,6 +148,16 @@ static void on_main_deleted(lv_event_t *e)
     s_alive = false;
     s_main  = NULL;
     s_pw    = NULL;
+    /* And the waiting furniture, for the same reason the Ortssuche clears
+     * its own: these are written through by set_waiting(), which is reached
+     * from paths that do not all check s_alive first. s_n_shown goes with
+     * them — a fresh screen that believed it still had rows would show the
+     * bar alone on an empty list and never the ghosts. */
+    s_busy    = NULL;
+    s_n_shown = 0;
+    for (int i = 0; i < WIFI_SKEL_ROWS; i++) {
+        s_skel[i] = NULL;
+    }
 }
 
 static char      s_pw_ssid[SCREEN_WIFI_SSID_LEN];
@@ -153,6 +174,7 @@ static wifi_exit_cb   s_exit_cb;
  * ============================================================================
  */
 static void apply_status_text(const char *text, lv_color_t color);
+static void set_waiting(bool waiting);
 static void set_status_connecting(const char *ssid);
 static void open_password_step(const char *ssid);
 static void close_password_step(void);
@@ -216,6 +238,33 @@ static void apply_status_text(const char *text, lv_color_t color)
     lv_obj_set_style_text_color(s_lbl_status, color, 0);
 }
 
+/* The waiting state: the sweeping bar, and — only when there is nothing on
+ * the list yet — the ghost rows.
+ *
+ * THE SKELETON IS FOR AN EMPTY LIST, NOT FOR EVERY SCAN. A rescan while he
+ * can already see six networks must keep showing those six: replacing a list
+ * he was reading with grey bars throws away information he has and tells him
+ * nothing he does not. First scan, nothing to lose, ghosts say where the
+ * answer will be; rescan, plenty to lose, the bar alone says it is working.
+ * That is also the rule every phone in his pocket follows. */
+static void set_waiting(bool waiting)
+{
+    if (!s_alive) {
+        return;
+    }
+    widget_busy_set_active(s_busy, waiting);
+    bool ghosts = waiting && s_n_shown == 0;
+    for (int i = 0; i < WIFI_SKEL_ROWS; i++) {
+        lv_obj_set_hidden(s_skel[i], !ghosts);
+    }
+    /* "Keine Netzwerke gefunden" and a set of ghost rows are two answers to
+     * the same question, and one of them is wrong. While the ghosts are up
+     * the scan has not answered yet, so the empty line must go. */
+    if (ghosts) {
+        lv_obj_set_hidden(s_lbl_empty, true);
+    }
+}
+
 /* Local, optimistic status shown the instant he taps a saved row or
  * Verbinden — before the integrator's own screen_wifi_set_status() call for
  * the actual outcome has had time to arrive. Without this the status line
@@ -228,6 +277,11 @@ static void set_status_connecting(const char *ssid)
     char buf[64];
     snprintf(buf, sizeof buf, FMT_WIFI_CONNECTING, ssid);
     apply_status_text(buf, THEME_TEXT_LABEL);
+    /* A join is the longer of the two waits on this screen — DHCP alone can
+     * take several seconds — and it is the one where a device that looks
+     * inert gets tapped again. The list stays exactly as it is: he has just
+     * chosen a row from it and it has to stay there for him to see which. */
+    set_waiting(true);
 }
 
 void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scanning)
@@ -244,8 +298,13 @@ void screen_wifi_set_status(const char *ssid_or_null, bool connected, bool scann
      * contradictory messages at once (screen_wifi.h). */
     if (scanning) {
         apply_status_text(STR_WIFI_SCANNING, THEME_TEXT_LABEL);
+        set_waiting(true);
         return;
     }
+    /* Everything below this line is an outcome, and an outcome ends the
+     * wait — including the failure, which is the one a bar left sweeping
+     * underneath would contradict most loudly. */
+    set_waiting(false);
     if (connected) {
         if (ssid_or_null && ssid_or_null[0] != '\0') {
             snprintf(buf, sizeof buf, FMT_WIFI_CONNECTED, ssid_or_null);
@@ -405,6 +464,14 @@ void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
         s_rows[i].ssid[0] = '\0';
     }
 
+    s_n_shown = n;
+
+    /* A list has arrived, so whatever it says, the scan is over. This also
+     * clears the ghost rows — which matters more than the bar does, because a
+     * ghost row left standing under a real one is indistinguishable from a
+     * network whose name failed to render. */
+    set_waiting(false);
+
     /* AGENTS.md §1: never a blank panel. An empty scan result is not a
      * hypothetical here — see DESIGN.md §5.3's own empty-state precedent. */
     lv_obj_set_hidden(s_lbl_empty, n != 0);
@@ -545,6 +612,14 @@ void screen_wifi_create(lv_obj_t *parent)
     apply_status_text(STR_WIFI_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
     lv_obj_set_pos(s_lbl_status, PAD, y);
     lv_obj_update_layout(s_lbl_status);
+
+    /* Inside the existing status-to-list gap, not below it, so the list keeps
+     * every pixel it had — same placement and same reasoning as the Ortssuche
+     * screen next door (screen_geo.c). */
+    s_busy = widget_busy_create(s_main, CONTENT_W);
+    lv_obj_set_pos(s_busy, PAD,
+                   y + lv_obj_get_height(s_lbl_status) + (GAP_MD - WIDGET_BUSY_H) / 2);
+
     y += lv_obj_get_height(s_lbl_status) + GAP_MD;
 
     int32_t list_top = y;
@@ -582,6 +657,29 @@ void screen_wifi_create(lv_obj_t *parent)
     /* A hidden pool row does not take flex layout space, so the first
      * visible row always lands at the top of the list — "first row fully
      * visible without scrolling" (task brief) needs no extra handling. */
+    /* Ghost rows first: flex order is creation order, and a ghost below the
+     * real list would promise a network that is not coming. They are the
+     * shape of a row here rather than of two lines of text, because a WLAN
+     * row IS one line — a card with a name in it. */
+    for (int i = 0; i < WIFI_SKEL_ROWS; i++) {
+        static const int32_t ssid_pct[WIFI_SKEL_ROWS] = { 58, 42, 66, 36 };
+
+        lv_obj_t *row = lv_obj_create(s_list);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_size(row, CONTENT_W, ROW_H);
+        lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_style_radius(row, THEME_BASE_UNIT, 0);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_set_style_border_color(row, THEME_DIVIDER, 0);
+        lv_obj_set_scrollable(row, false);
+        lv_obj_set_hidden(row, true);
+
+        int32_t gh = 16;
+        widget_busy_ghost(row, ROW_INSET, (ROW_H - gh) / 2,
+                          (CONTENT_W - 2 * ROW_INSET) * ssid_pct[i] / 100, gh, false);
+        s_skel[i] = row;
+    }
+
     s_lbl_empty = make_label(s_list, &plex_sans_cond_25, THEME_TEXT_LABEL);
     lv_label_set_text(s_lbl_empty, STR_WIFI_LIST_EMPTY);
     lv_obj_set_width(s_lbl_empty, CONTENT_W);
@@ -703,4 +801,34 @@ void screen_wifi_set_rescan_cb(wifi_rescan_cb cb)
 void screen_wifi_set_exit_cb(wifi_exit_cb cb)
 {
     s_exit_cb = cb;
+}
+
+int screen_wifi_debug_password_step(void)
+{
+    if (!s_alive) {
+        return SCREEN_WIFI_PW_NONE;
+    }
+    for (int i = 0; i < SCREEN_WIFI_MAX_ROWS; i++) {
+        if (s_rows[i].ssid[0] == '\0' || s_rows[i].saved) {
+            continue;
+        }
+        /* Through the row's own click event rather than by calling
+         * open_password_step() directly: what is being checked is the path a
+         * finger takes, and a direct call would skip the event dispatch that
+         * the path actually runs through. */
+        lv_obj_send_event(s_rows[i].row, LV_EVENT_CLICKED, NULL);
+        return SCREEN_WIFI_PW_TAPPED;
+    }
+    /* Nothing unsaved in range. That is a property of where the device is
+     * standing, not of the code — and it is exactly the circumstance that
+     * kept this screen unverified for four milestones, so it gets a way
+     * through rather than a shrug. Open the step on the first row there,
+     * WITHOUT clicking it. */
+    for (int i = 0; i < SCREEN_WIFI_MAX_ROWS; i++) {
+        if (s_rows[i].ssid[0] != '\0') {
+            open_password_step(s_rows[i].ssid);
+            return SCREEN_WIFI_PW_FORCED;
+        }
+    }
+    return SCREEN_WIFI_PW_NONE;
 }

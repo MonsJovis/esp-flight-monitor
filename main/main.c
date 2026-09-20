@@ -748,32 +748,75 @@ static void open_settings(void);
  * it once on its own stack and hands the result back under the display lock. */
 static void wifi_scan_task(void *arg)
 {
-    (void)arg;
-    static char found[8][WIFI_SSID_LEN];
-    static char saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
+    /* The one bit of intention this scan carries: open the password step on
+     * whatever unsaved network it finds. Set only by the 'K' console command.
+     *
+     * In the ARGUMENT, not in a file-scope flag, for the reason D63 records
+     * about the place search next door: a flag that only the successful path
+     * clears stays armed when the path is not taken — here, when the overlay
+     * was closed before the scan landed — and then fires on whatever he
+     * starts next with his own finger. Carried by the task, it dies with the
+     * scan it belonged to. */
+    bool tap_unsaved = (arg != NULL);
+
+    /* NOT static. They used to be, and two scans cannot both be in flight —
+     * except that they can: 'K' and a finger on Suchen start two tasks, and
+     * the second one's wifi_scan() overwrites the first one's results while
+     * the first is still reading them. Exactly the shape the review found in
+     * geo_search_task (D63). 264 + 132 bytes on a 4 KB stack is not a reason
+     * to share a buffer. */
+    char found[8][WIFI_SSID_LEN];
+    char saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
 
     int n = wifi_scan(found, 8);
     int n_saved = (wifi_creds_list(saved, WIFI_MAX_NETWORKS) == ESP_OK)
                       ? WIFI_MAX_NETWORKS : 0;
 
     display_lock(0);
-    if (nav_overlay_open()) {
+    bool shown = nav_overlay_open();
+    if (shown) {
         screen_wifi_set_networks((const char (*)[WIFI_SSID_LEN])found, n,
                                  (const char (*)[WIFI_SSID_LEN])saved, n_saved);
         screen_wifi_set_status(NULL, wifi_is_connected(), false);
     }
+    int how = (shown && tap_unsaved) ? screen_wifi_debug_password_step()
+                                     : SCREEN_WIFI_PW_NONE;
     display_unlock();
+
+    if (tap_unsaved) {
+        /* Logged AFTER the step and only for what actually happened — the
+         * geo autopick line taught this one (D63): a log written before the
+         * action reports an action that may never occur. The two ways of
+         * arriving are told apart on purpose, because only one of them is
+         * the path a finger takes. */
+        if (!shown) {
+            ESP_LOGW(TAG, "wlan: the screen was gone before the scan landed");
+        } else if (how == SCREEN_WIFI_PW_TAPPED) {
+            ESP_LOGW(TAG, "wlan: password step open, via an unsaved row (the real path)");
+        } else if (how == SCREEN_WIFI_PW_FORCED) {
+            ESP_LOGW(TAG, "wlan: password step open, FORCED — all %d network(s) in "
+                          "range are saved, so no row-tap was exercised", n);
+        } else {
+            ESP_LOGW(TAG, "wlan: no networks in range at all, nothing opened");
+        }
+    }
     vTaskDelete(NULL);
 }
 
-static void start_wifi_scan(void)
+static void start_wifi_scan_ex(bool tap_unsaved)
 {
     display_lock(0);
     if (nav_overlay_open()) {
         screen_wifi_set_status(NULL, wifi_is_connected(), true);
     }
     display_unlock();
-    xTaskCreate(wifi_scan_task, "wifiscan", 4096, NULL, 4, NULL);
+    xTaskCreate(wifi_scan_task, "wifiscan", 4096,
+                tap_unsaved ? (void *)(intptr_t)1 : NULL, 4, NULL);
+}
+
+static void start_wifi_scan(void)
+{
+    start_wifi_scan_ex(false);
 }
 
 static void on_wifi_join(const char *ssid, const char *password)
@@ -861,6 +904,26 @@ static void open_wifi(void)
     nav_open_overlay(build_wifi_screen, "wlan");
     display_unlock();
     start_wifi_scan();
+}
+
+/* Opens WLAN and walks it as far as the password step, from the serial
+ * console.
+ *
+ * The step behind this command is the only screen in the product a build host
+ * cannot reach: getting there needs a finger on a network the device has no
+ * password for. That gap is not theoretical — its keyboard was off the bottom
+ * edge of the panel for four milestones because of it (screen_wifi.h, D64) —
+ * so the gap gets a command, and tools/grab_screen.py answers the question
+ * instead of Markus (D4, D41).
+ *
+ * It opens the step and stops. Nothing is typed and no password goes anywhere
+ * near this console (AGENTS.md §10). */
+static void wifi_demo_password(void)
+{
+    display_lock(0);
+    nav_open_overlay(build_wifi_screen, "wlan");
+    display_unlock();
+    start_wifi_scan_ex(true);
 }
 
 /* ---- The place search (§5.8) --------------------------------------------
@@ -1078,16 +1141,47 @@ static void open_geo(void)
  * Both say something in words — AGENTS.md §1, never a blank panel — and they
  * deliberately say DIFFERENT things: one is his typo to fix, the other is
  * the device's problem and nothing he types will help. */
+/* ONE STATE PER PRESS, NOT A TIMED TOUR, and the difference is the whole
+ * point of the command.
+ *
+ * This used to show each state and vTaskDelay() between them. It could not be
+ * photographed, and worse, it looked like it could. The screenshot key is
+ * read by the SAME console task that runs this function, so a delay in here
+ * is a delay in servicing 's': the request sits in the buffer until the tour
+ * ends, and the frame that comes back is always the state the tour finished
+ * in. Three states, one of them verifiable, and no complaint from anything.
+ *
+ * That is the third harness bug in this feature with the same shape (PLAN.md
+ * M10 records the other two): the check ran, reported nothing wrong, and had
+ * not looked at what it claimed to look at. Cycling on each press costs one
+ * static int and makes every state hold still to be measured. */
 static void geo_demo_states(void)
 {
-    open_geo();
+    static int step;
+
+    /* "Is the Ortssuche up", NOT "is SOME overlay up". The difference is the
+     * whole of PLAN.md M10's first harness bug: with Einstellungen open, the
+     * weaker test passes, this function skips opening the screen, every state
+     * it then sets lands on a screen that is not there, and the command
+     * reports three states it never drew. */
     display_lock(0);
-    screen_geo_set_results(NULL, 0);          /* nothing by that name */
+    bool up = screen_geo_is_up();
     display_unlock();
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    if (!up) {
+        open_geo();
+        step = 0;
+    }
+
     display_lock(0);
-    screen_geo_set_results(NULL, -1);         /* no answer at all */
+    switch (step) {
+    case 0:  screen_geo_debug_searching();  break;  /* still looking */
+    case 1:  screen_geo_set_results(NULL, 0);  break;  /* nothing by that name */
+    default: screen_geo_set_results(NULL, -1); break;  /* no answer at all */
+    }
+    up = screen_geo_is_up();
     display_unlock();
+    ESP_LOGW(TAG, "ortsuche state %d of 3 (%s)", step + 1, up ? "drawn" : "SCREEN NOT UP");
+    step = (step + 1) % 3;
 }
 
 static void on_settings_changed(const settings_t *s)
@@ -1316,7 +1410,7 @@ static void lvgl_mem_report(const char *when)
 
 static void on_cmd(char c)
 {
-    if (c >= '1' && c <= '4') {
+    if (c >= '1' && c <= '5') {
         ui_suspend();
         dbg_fixture_show(c - '0');
         return;
@@ -1337,10 +1431,16 @@ static void on_cmd(char c)
     else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % (int)(sizeof k_pages / sizeof k_pages[0]), true); display_unlock(); }
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
+    else if (c == 'K') wifi_demo_password();
     else if (c == 'q') open_geo();
     else if (c == 'Q') geo_demo_search();
     else if (c == 'z') { s_geo_autopick = true; geo_demo_search(); }
     else if (c == 'Z') geo_demo_states();
+    /* 'a' for the ABC key. NOT 'S' — dbg_screen.c takes both cases of 's'
+     * for the screenshot, so an 'S' here is a command that appears to work,
+     * dumps a framebuffer, and never reaches this switch at all. */
+    else if (c == 'a') { display_lock(0); bool ok = screen_geo_debug_layer(); display_unlock();
+                         ESP_LOGW(TAG, "keyboard layer key: %s", ok ? "pressed" : "not found"); }
     else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
