@@ -116,7 +116,6 @@ static const char *reason_for_category(ac_category_t cat)
 {
     switch (cat) {
     case AC_CAT_PRIVATE:    return STR_REASON_GA;
-    case AC_CAT_HELICOPTER: return STR_REASON_HELI;
     case AC_CAT_MILITARY:   return STR_REASON_MIL;
     case AC_CAT_AIRLINER:   return STR_REASON_UNAVAILABLE;
     case AC_CAT_UNKNOWN:
@@ -644,13 +643,18 @@ int main(void)
             { "ULAC", STR_REASON_GA },
             { "BALL", STR_REASON_GA },
 
-            /* Hubschrauber -> a different true sentence */
-            { "H135", STR_REASON_HELI },
-            { "EC35", STR_REASON_HELI },   /* already in the table */
-            { "B407", STR_REASON_HELI },
-            { "A169", STR_REASON_HELI },
-            { "GAZL", STR_REASON_HELI },
-            { "S92",  STR_REASON_HELI },
+            /* Hubschrauber -> the neutral sentence, since the owner had the
+             * helicopter-specific one removed. The rows stay because they
+             * still prove these types are not being told the GA or the
+             * military sentence; that they are categorised as helicopters at
+             * all is pinned by the size_class sweep further down, which is
+             * where that claim belongs now. */
+            { "H135", STR_REASON_NONE },
+            { "EC35", STR_REASON_NONE },   /* already in the table */
+            { "B407", STR_REASON_NONE },
+            { "A169", STR_REASON_NONE },
+            { "GAZL", STR_REASON_NONE },
+            { "S92",  STR_REASON_NONE },
 
             /* Militär -> not in any public plan, uniformed rotorcraft included */
             { "EUFI", STR_REASON_MIL },    /* already in the table */

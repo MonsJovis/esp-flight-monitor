@@ -153,9 +153,6 @@ static void fill_reason(const ac_type_t *t, char *out, size_t outsz)
     case AC_CAT_PRIVATE:
         s = STR_REASON_GA;
         break;
-    case AC_CAT_HELICOPTER:
-        s = STR_REASON_HELI;
-        break;
     case AC_CAT_MILITARY:
         s = STR_REASON_MIL;
         break;
@@ -165,6 +162,13 @@ static void fill_reason(const ac_type_t *t, char *out, size_t outsz)
          * wrong and would teach him to distrust the panel (rule 3). */
         s = STR_REASON_UNAVAILABLE;
         break;
+    case AC_CAT_HELICOPTER:
+        /* Deliberately no sentence of its own. There used to be one —
+         * "Hubschrauber fliegen meist ohne feste Route" — and the owner had
+         * it removed: his father-in-law has known that his whole life, and a
+         * panel that explains what its reader already knows is a panel he
+         * stops reading. The neutral statement of fact below is what is left,
+         * which is the truth without the lesson. Falls through. */
     case AC_CAT_UNKNOWN:
     default:
         s = STR_REASON_NONE;

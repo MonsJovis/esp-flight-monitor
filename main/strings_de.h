@@ -269,12 +269,13 @@
  * flight number. He knows what a Flugnummer is; he has read one off a ticket
  * his whole life. */
 #define STR_REASON_GA          "Eine Route gibt es nur zu Flügen mit Flugnummer."
-/* "feste Route", not "fester Flugplan": a rescue or police helicopter flies
- * where it is needed, which is the thing he can see for himself. It keeps
- * "Flugplan" for the two sentences where the filed ATC plan is genuinely the
- * subject, rather than spending the word on a sense closer to "timetable". */
-#define STR_REASON_HELI        "Hubschrauber fliegen meist ohne feste Route."
 #define STR_REASON_MIL         "Militärflüge scheinen in keinem öffentlichen Flugplan auf."
+
+/* There is no sentence for helicopters, on purpose. One used to be here and
+ * the owner had it removed: it told his father-in-law something he has known
+ * his whole life, and a panel that explains what its reader already knows is
+ * a panel he stops reading. Helicopters get STR_REASON_NONE below — the fact
+ * without the lesson. Do not put it back without asking him. */
 
 /* Not "there is no flight plan" — we do not know that. We know we cannot get
  * it right now, and the sentence says only that. */

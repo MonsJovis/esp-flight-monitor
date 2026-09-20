@@ -34,7 +34,6 @@
  * to him is supposed to cost two edits in two files, and the failing test in
  * between is the point. */
 static const char *const REASON_PRIVATE    = "Eine Route gibt es nur zu Flügen mit Flugnummer.";
-static const char *const REASON_HELICOPTER = "Hubschrauber fliegen meist ohne feste Route.";
 static const char *const REASON_MILITARY   = "Militärflüge scheinen in keinem öffentlichen Flugplan auf.";
 static const char *const REASON_AIRLINER   = "Der Flugplan ist im Moment nicht verfügbar.";
 static const char *const REASON_UNKNOWN    = "Zu diesem Flug ist keine Route bekannt.";
@@ -451,7 +450,7 @@ static void test_no_route_helicopter_ec35(void)
 
         CHECK_INT(vm.state, VIEW_NO_ROUTE);
         CHECK_STR(vm.hero, "Airbus H135");
-        CHECK_STR(vm.reason, REASON_HELICOPTER);
+        CHECK_STR(vm.reason, REASON_UNKNOWN);
         CHECK_STR(vm.type_full, "");
         CHECK_STR(vm.size_class, "Hubschrauber");
         remember_for_scan("OEBXP helicopter no-route", &vm);
@@ -564,7 +563,7 @@ static void test_no_route_private_g2ca(void)
          * category — so the hero is the model name and the reason is the
          * helicopter one, not the generic private-aircraft sentence. */
         CHECK_STR(vm.hero, "Guimbal Cabri G2");
-        CHECK_STR(vm.reason, REASON_HELICOPTER);
+        CHECK_STR(vm.reason, REASON_UNKNOWN);
     }
 
     free(ac_json);
@@ -616,7 +615,7 @@ static void test_nearest_aircraft_field_by_field(void)
     CHECK_STR(vm.size_class, "Hubschrauber");
     CHECK_STR(vm.callsign, "OEBXP");
     CHECK_STR(vm.registration, "OE-BXP");
-    CHECK_STR(vm.reason, REASON_HELICOPTER);
+    CHECK_STR(vm.reason, REASON_UNKNOWN);
     CHECK_STR(vm.clock, "09:47");
     CHECK_STR(vm.date_line, "Freitag, 18. September 2026");
     CHECK_INT(vm.traffic_count, 12);
