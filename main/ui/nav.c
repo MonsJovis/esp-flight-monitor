@@ -11,11 +11,20 @@ static const char *TAG = "nav";
 #define DOT_SIZE      8
 #define DOT_GAP       10
 #define DOT_Y         (THEME_SCREEN_HEIGHT - 16)
-
 /* DESIGN.md §6: only from §5.3, and only after 30 s without a touch. */
 #define AUTO_RETURN_MS 30000
 /* A long-press that is too short fires while he is just resting a finger;
- * too long and he gives up. */
+ * too long and he gives up.
+ *
+ * THIS CONSTANT USED TO BE DEAD. It sat here for the whole build describing a
+ * threshold nothing enforced: LVGL sends LV_EVENT_LONG_PRESSED at
+ * CONFIG_LV_INDEV_DEF_LONG_PRESS_TIME, which is 400 ms in this build, and
+ * on_longpress() acted on that event directly. So the real threshold was a
+ * third of the documented one, and resting a finger on the glass for half a
+ * second opened Einstellungen — which is exactly the failure the comment
+ * above was written to prevent. AGENTS.md §11 rule 1: the comment had
+ * drifted from the code, and the code was believed because the comment
+ * sounded confident. */
 #define LONGPRESS_MS   1200
 
 static lv_obj_t *s_tiles;
@@ -28,6 +37,11 @@ static lv_obj_t *s_overlay;
 static void    (*s_longpress_cb)(void);
 
 static int64_t  s_last_touch_ms;
+
+/* When the finger went down, and whether this press has already opened
+ * something. Both reset on every new press. */
+static int64_t  s_press_start_ms;
+static bool     s_longpress_fired;
 
 static int64_t now_ms(void) { return esp_timer_get_time() / 1000; }
 
@@ -88,13 +102,35 @@ static void on_tile_change(lv_event_t *e)
 static void on_press(lv_event_t *e)
 {
     (void)e;
-    s_last_touch_ms = now_ms();
+    s_last_touch_ms   = now_ms();
+    s_press_start_ms  = s_last_touch_ms;
+    s_longpress_fired = false;
 }
 
+/* Bound to BOTH long-press events, and neither of them is the threshold.
+ *
+ * LVGL fires LV_EVENT_LONG_PRESSED once at 400 ms and then
+ * LV_EVENT_LONG_PRESSED_REPEAT every 100 ms, so the repeats are used purely
+ * as a clock and the real test is how long the finger has actually been
+ * down. Raising CONFIG_LV_INDEV_DEF_LONG_PRESS_TIME instead would have been
+ * one line, but it is global: it also sets how long the WLAN keyboard waits
+ * before a held backspace starts repeating, and 1.2 s there is a keyboard
+ * that feels broken.
+ *
+ * Both events stop arriving the moment LVGL decides the press is a scroll,
+ * which is what keeps a slow swipe between Radar and Liste from opening
+ * Einstellungen. That is the reason this is not done from LV_EVENT_PRESSING,
+ * which keeps coming during a drag. */
 static void on_longpress(lv_event_t *e)
 {
     (void)e;
-    s_last_touch_ms = now_ms();
+    int64_t t = now_ms();
+    s_last_touch_ms = t;
+
+    if (s_longpress_fired || t - s_press_start_ms < LONGPRESS_MS) {
+        return;
+    }
+    s_longpress_fired = true;
     if (s_longpress_cb && !nav_overlay_open()) {
         s_longpress_cb();
     }
@@ -121,6 +157,7 @@ void nav_create(const nav_page_t *pages, int n_pages)
     lv_obj_add_event_cb(s_tiles, on_tile_change, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_tiles, on_press, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_tiles, on_longpress, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(s_tiles, on_longpress, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
 
     for (int i = 0; i < n_pages; i++) {
         /* Horizontal deck: the first tile may only be left, the last only

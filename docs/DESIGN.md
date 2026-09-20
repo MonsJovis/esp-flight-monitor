@@ -276,9 +276,11 @@ Three swipe pages, one deck:
 - **The page indicator shows three dots because the deck has three pages.** The mockups
   currently mark Liste as position 1 and Radar as position 2 — under this model they are
   2 and 3. Minor mockup fix.
-- **§5.6 Einstellungen is not in the deck.** Long-press the chrome bar. He will be shown it
-  once and then never need it; putting it in the swipe path means finding it by accident,
-  which for this user means being lost.
+- **§5.6 Einstellungen is not in the deck.** **Long-press for 1.2 s anywhere on the page**
+  — not only the chrome bar, which is what this line used to say and was never true of the
+  code. He will be shown it once and then never need it; putting it in the swipe path means
+  finding it by accident, which for this user means being lost. A long press that lands on
+  an aircraft caption or a list row does nothing, because those handle their own taps.
 - **§5.7 WLAN** is reached from Einstellungen, and appears by itself when no known network
   is in range — the one case where the device must interrupt him.
 - **Auto-return** to §5.1 happens **only from §5.3**, and only after 30 s without a touch.

@@ -43,7 +43,22 @@ void nav_open_overlay(void (*create)(lv_obj_t *parent), const char *name);
 void nav_close_overlay(void);
 bool nav_overlay_open(void);
 
-/* Long-press on the chrome strip opens Einstellungen (DESIGN.md §6). */
+/* Long-press opens Einstellungen (DESIGN.md §6).
+ *
+ * ANYWHERE on the deck page, not just the chrome strip: the handler is bound
+ * to the tileview, which is the full 480 x 480, and there is no coordinate
+ * test. This comment used to say "on the chrome strip" and was wrong for the
+ * whole build. It is the behaviour that is right, not the old comment — the
+ * chrome strip is 24 px of a 480 px panel and a settings screen nobody can
+ * find is a settings screen he cannot use.
+ *
+ * A child that handles its own clicks keeps them: long-pressing an aircraft
+ * caption or a list row does nothing, because LVGL does not bubble events to
+ * a parent unless the child asks it to. Empty space always works, and so
+ * does the chrome strip itself.
+ *
+ * The threshold is LONGPRESS_MS in nav.c (1.2 s), enforced there rather than
+ * taken from LVGL's 400 ms default. */
 void nav_set_longpress_cb(void (*cb)(void));
 
 /* Auto-return to page 0. Called once per UI tick.
