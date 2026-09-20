@@ -6,6 +6,11 @@
  *   g  swipe to the next deck page        e  open Einstellungen
  *   k  open WLAN                          o  cycle the location preset
  *   d  scroll the current screen to its end
+ *   i  open/close the detail layer   v  LVGL heap
+ *
+ * 'i' exists for the same reason g/e/k do (D41): the detail layer is only
+ * reachable by tapping an aircraft, and a screen that can only be reached
+ * by touching the glass is a screen nobody checks.
  *   f  draw the font card — the M1 "German renders at 100 px" gate
  *   b  run the render benchmark suite     t  tearing bench
  *   m  measure every place name against the hero shrink ladder
@@ -79,6 +84,17 @@ static volatile bool s_ui_suspended = false;
  * hero screen and the deck slides back to it. No separate detail card: a fourth
  * layout to learn, for information the first page already shows, is exactly the
  * kind of thing this user does not need. */
+/* Deck page order, and the state of the layer beneath it. Up here because
+ * ui_task reads them long before the overlay code that owns them. */
+#define PAGE_RADAR 0
+#define PAGE_LISTE 1
+
+static bool s_detail_open;
+static int  s_detail_from = PAGE_RADAR;
+
+static void open_detail(void);   /* defined with the overlays, below */
+static void close_detail(void);
+
 static aircraft_t s_selected;
 static bool       s_has_selection;
 
@@ -87,7 +103,7 @@ static void on_list_select(const aircraft_t *ac)
     if (ac == NULL) return;
     s_selected = *ac;
     s_has_selection = true;
-    nav_go_to(0, true);
+    open_detail();
 }
 
 /* The radar hands over an ICAO hex rather than an aircraft_t, because by the
@@ -104,7 +120,7 @@ static void on_radar_select(const char *hex)
     memset(&s_selected, 0, sizeof s_selected);
     snprintf(s_selected.hex, sizeof s_selected.hex, "%s", hex);
     s_has_selection = true;
-    nav_go_to(0, true);
+    open_detail();
 }
 
 
@@ -406,7 +422,17 @@ static void ui_task(void *arg)
             for (int i = 0; i < n; i++) {
                 if (strcmp(ac[i].hex, s_selected.hex) == 0) { subject = i; break; }
             }
-            if (subject < 0) { s_has_selection = false; subject = 0; }
+            if (subject < 0) {
+                s_has_selection = false;
+                subject = 0;
+                /* It left the ring while he was reading about it. Closing the
+                 * layer is the honest move: silently swapping in a different
+                 * aircraft under the same heading is how a panel teaches him
+                 * not to trust it. */
+                if (s_detail_open) {
+                    close_detail();
+                }
+            }
         }
 
         view_model_t vm;
@@ -425,12 +451,16 @@ static void ui_task(void *arg)
         }
 
         display_lock(0);
-        /* Only the visible page is repainted. The other two are behind the
-         * tileview and repainting them costs PSRAM bandwidth for nothing. */
-        switch (nav_page()) {
-        case 1:  screen_list_update(ac, n, rt, n); break;
-        case 2:  screen_radar_update(ac, n, rt, n, g_settings.radius_nm); break;
-        default: screen_overhead_update(&vm); break;
+        /* Only what is actually on screen is repainted. The other page is
+         * behind the tileview and repainting it costs PSRAM bandwidth for
+         * nothing; when the detail layer is up it covers both. */
+        if (s_detail_open) {
+            screen_overhead_update(&vm);
+        } else if (nav_page() == PAGE_LISTE) {
+            screen_list_update(ac, n, rt, n);
+        } else {
+            screen_radar_update(ac, n, rt, n, g_settings.radius_nm);
+            screen_radar_set_clock(vm.clock_valid ? vm.clock : "");
         }
         nav_tick(vm.state == VIEW_EMPTY_SKY);
         display_unlock();
@@ -478,11 +508,22 @@ static void probe_link(void)
     }
 }
 
+/* Radar first, Liste beside it. The hero screen is no longer in the deck at
+ * all — it is the layer you reach by tapping an aircraft, and you leave it the
+ * way you came in.
+ *
+ * Worth being honest in writing about what that trades away: AGENTS.md §1 asks
+ * for the answer "in under two seconds with NO interaction", and the hero was
+ * the default page precisely because of that sentence. The Radar answers a
+ * different question first — what is up there — and names only the nearest
+ * aircraft, in its caption. Destination and distance are still there without a
+ * tap; airline, type and altitude are a tap away. Chosen by the man who uses
+ * it, after using it. */
 static const nav_page_t k_pages[] = {
-    { "ueber-dir", screen_overhead_create },
-    { "liste",     screen_list_create },
-    { "radar",     screen_radar_create },
+    { "radar", screen_radar_create },
+    { "liste", screen_list_create },
 };
+
 
 /* ---- Einstellungen and WLAN, reached from the long-press ----------------
  *
@@ -561,6 +602,38 @@ static void close_overlay(void)
     display_lock(0);
     nav_close_overlay();
     display_unlock();
+}
+
+/* ---- The detail layer ---------------------------------------------------
+ *
+ * §5.1/§5.2 used to be page 0 of the deck. It is now a layer underneath the
+ * Radar and the Liste, opened by tapping an aircraft on either, and left by
+ * tapping anywhere. `s_detail_from` remembers which page he came from so
+ * "back" means back, and not "back to wherever the deck happens to be". */
+
+static void close_detail(void)
+{
+    display_lock(0);
+    nav_close_overlay();
+    s_detail_open = false;
+    s_has_selection = false;      /* the subject dies with the layer */
+    nav_go_to(s_detail_from, true);
+    display_unlock();
+}
+
+static void build_detail_screen(lv_obj_t *parent)
+{
+    screen_overhead_create(parent);
+    screen_overhead_set_back_cb(close_detail);
+}
+
+static void open_detail(void)
+{
+    s_detail_from = nav_page();
+    display_lock(0);
+    nav_open_overlay(build_detail_screen, "detail");
+    display_unlock();
+    s_detail_open = true;
 }
 
 static void build_wifi_screen(lv_obj_t *parent)
@@ -713,21 +786,22 @@ static void update_console(void)
     }
 }
 
-/* LVGL's heap, which is NOT the system heap: CONFIG_LV_USE_STDLIB_MALLOC=0
- * means it is a fixed static pool of CONFIG_LV_MEM_SIZE bytes, and when it
- * runs out LVGL does not crash — it logs and silently fails to build a
- * widget. A screen that is missing a button looks like a layout bug. Worth a
- * key of its own, because the only alternative is guessing. */
+/* Where LVGL's widgets actually come from.
+ *
+ * It used to print lv_mem_monitor(), which was the right thing while LVGL had
+ * a fixed pool of its own. Since D58 it allocates through the system heap, so
+ * that monitor reports zeros — a diagnostic that answers every question with
+ * "0" is worse than none, because it looks like an answer. What matters now
+ * is the largest contiguous internal block: LVGL asks for many small blocks
+ * and one big one for a keyboard, and it is the big one that fails first.
+ */
 static void lvgl_mem_report(const char *when)
 {
-    display_lock(0);
-    lv_mem_monitor_t m;
-    lv_mem_monitor(&m);
-    display_unlock();
-    ESP_LOGW(TAG, "LVGL heap %-22s used %6u / %6u B (%2u%%)  free %6u  largest %6u  frag %u%%",
-             when, (unsigned)(m.total_size - m.free_size), (unsigned)m.total_size,
-             (unsigned)m.used_pct, (unsigned)m.free_size,
-             (unsigned)m.free_biggest_size, (unsigned)m.frag_pct);
+    ESP_LOGW(TAG, "widget memory %-14s internal free %6u (largest %6u)  psram free %8u",
+             when,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 static void on_cmd(char c)
@@ -750,12 +824,13 @@ static void on_cmd(char c)
     else if (c == 'p') probe_link();
     else if (c == 't') { ui_suspend(); dbg_bench_tearing(); }
     else if (c == 'o') cycle_location();
-    else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % 3, true); display_unlock(); }
+    else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % (int)(sizeof k_pages / sizeof k_pages[0]), true); display_unlock(); }
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
     else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
+    else if (c == 'i') { if (s_detail_open) close_detail(); else open_detail(); }
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
 }
 

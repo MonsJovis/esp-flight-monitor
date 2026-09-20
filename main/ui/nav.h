@@ -1,12 +1,18 @@
 /* The screen graph — DESIGN.md §6.
  *
- *        ←   Über dir jetzt   ·   Liste   ·   Radar   →
- *                  ●               ○           ○
+ *              ←   Radar   ·   Liste   →
+ *                    ●           ○
+ *                    |           |
+ *                    +-----+-----+
+ *                          |
+ *                   Über dir jetzt        (tap an aircraft; tap to go back)
  *
- * Three swipe pages, and two things that are deliberately NOT in the deck:
+ * TWO swipe pages, and three things that are deliberately NOT in the deck:
  *
- *  - §5.1/§5.2/§5.3 are one page in three states. The device picks the state;
- *    he never navigates between them.
+ *  - §5.1/§5.2/§5.3 is the layer BELOW the deck, not a page in it. It is
+ *    reached by tapping an aircraft on either page and left by tapping
+ *    anywhere, returning to the page it was opened from. It is one screen in
+ *    three states; the device picks the state, he never navigates between them.
  *  - Einstellungen is behind a long-press, because putting it in the swipe path
  *    means finding it by accident, and for this user being somewhere he did not
  *    mean to go is the same as being lost.

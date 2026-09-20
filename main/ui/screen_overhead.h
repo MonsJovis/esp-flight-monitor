@@ -49,6 +49,27 @@ void screen_overhead_update(const view_model_t *vm);
  */
 int32_t screen_overhead_hero_size_px(void);
 
+/* --- Going back ----------------------------------------------------------
+ *
+ * This screen is no longer a page in the deck; it is the layer you reach by
+ * tapping an aircraft on the Radar or in the Liste. So it needs a way out.
+ *
+ * The way out is THE WHOLE SCREEN. A 44 px button has nowhere to sit here —
+ * the chrome row is 24 px tall and the compass tape starts at y=40, so
+ * anything finger-sized either covers the tape or pushes the hero down — and
+ * more to the point, a target you cannot miss beats a target you have to aim
+ * at, for a man in his eighties holding a small panel. There is nothing else
+ * on this screen to tap, so a tap is never ambiguous.
+ *
+ * The word "Zurück" still appears, in the slot the clock used, because an
+ * invisible affordance is not an affordance. It replaces the clock rather
+ * than crowding it: on a view he opened on purpose, the time is not what he
+ * came for.
+ *
+ * Passing NULL puts the clock back and makes the screen inert again.
+ */
+void screen_overhead_set_back_cb(void (*cb)(void));
+
 #ifdef __cplusplus
 }
 #endif

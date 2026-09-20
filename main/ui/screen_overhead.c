@@ -68,6 +68,17 @@ static lv_obj_t *s_cont;
 
 /* Chrome band */
 static lv_obj_t *s_lbl_clock;
+
+/* Set while this screen is the detail layer: see screen_overhead.h. */
+static void (*s_back_cb)(void);
+
+static void back_tapped_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_back_cb != NULL) {
+        s_back_cb();
+    }
+}
 static lv_obj_t *s_lbl_offline; /* the network caution; hidden when vm->net == NET_OK */
 
 /* Compass tape band */
@@ -232,7 +243,9 @@ void screen_overhead_update(const view_model_t *vm)
     /* In §5.3 the hero IS the clock, so the chrome copy is the same four
      * characters twice on one screen — it reads as a rendering fault rather
      * than as chrome. Hide it there. */
-    lv_label_set_text(s_lbl_clock, vm->clock);
+    /* "Zurück" in the clock's slot while this is the detail layer — the time
+     * is not what he opened it for, and an invisible way out is not one. */
+    lv_label_set_text(s_lbl_clock, (s_back_cb != NULL) ? STR_BACK : vm->clock);
     set_hidden(s_lbl_clock, vm->state == VIEW_EMPTY_SKY);
     /* Right-aligned, so the text has to be set BEFORE the position is
      * recomputed — "KEINE DATEN" is three glyphs wider than "KEIN NETZ" and
@@ -476,4 +489,20 @@ void screen_overhead_update(const view_model_t *vm)
 int32_t screen_overhead_hero_size_px(void)
 {
     return s_last_hero_px;
+}
+
+void screen_overhead_set_back_cb(void (*cb)(void))
+{
+    s_back_cb = cb;
+    if (s_cont == NULL) {
+        return;
+    }
+    /* The container itself is the button. LVGL only delivers clicks to
+     * objects that ask for them, and this one has never asked before. */
+    lv_obj_set_clickable(s_cont, cb != NULL);
+    if (cb != NULL) {
+        lv_obj_add_event_cb(s_cont, back_tapped_cb, LV_EVENT_CLICKED, NULL);
+    } else {
+        lv_obj_remove_event_cb(s_cont, back_tapped_cb);
+    }
 }

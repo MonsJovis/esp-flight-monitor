@@ -105,6 +105,16 @@ void screen_radar_set_select_cb(radar_select_cb cb);
  * is not what he means by a glance. */
 void screen_radar_clear_selection(void);
 
+/* The time, top right.
+ *
+ * It lives here because the Radar is now the default view, and the clock used
+ * to sit on the hero screen — which is a layer down since the deck was
+ * reordered. Losing it silently in a navigation change would be taking a
+ * feature away by accident. Chrome tier, same 13 px mono as the range
+ * read-out it balances. Pass "" or NULL to hide it (the clock is not yet set).
+ */
+void screen_radar_set_clock(const char *hhmm);
+
 #ifdef __cplusplus
 }
 #endif

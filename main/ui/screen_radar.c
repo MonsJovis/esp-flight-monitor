@@ -139,6 +139,9 @@
 /* The scope reaches y=404 (centre 240 + cardinal radius 164); the page
  * indicator sits at y=464. The caption lives in the gap between them. */
 #define RADAR_CAPTION_Y   416
+
+/* Level with the range read-out in the opposite corner. */
+#define RADAR_CLOCK_Y     24
 #define RADAR_CAPTION_GAP 12
 
 /* Invisible touch margin around each mark. A fingertip is ~10 mm; the mark is
@@ -163,6 +166,7 @@
 static lv_obj_t *s_cont;
 static lv_obj_t *s_ring_inner, *s_ring_mid, *s_ring_outer;
 static lv_obj_t *s_lbl_km;
+static lv_obj_t *s_lbl_clock;
 static lv_obj_t *s_lbl_cardinal[4];
 static lv_obj_t *s_home_outer, *s_home_inner;
 
@@ -454,6 +458,10 @@ void screen_radar_create(lv_obj_t *parent)
      * (widget_compass.c), which this screen has no compass tape of its
      * own to inherit the convention from otherwise. --- */
     s_lbl_km = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
+
+    /* The clock, balancing the range read-out across the top. */
+    s_lbl_clock = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
+    lv_obj_set_hidden(s_lbl_clock, true);
 
     /* --- Cardinal marks: N / O / S / W, at the SAME bearings (0/90/180/270)
      * used to verify bearing_to_xy() above. "O" for Ost, never "E"
@@ -831,4 +839,21 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     build_caption(a, routes, n_routes, name_buf, sizeof name_buf,
                   dist_buf, sizeof dist_buf);
     place_caption(name_buf, dist_buf);
+}
+
+void screen_radar_set_clock(const char *hhmm)
+{
+    if (s_lbl_clock == NULL) {
+        return;
+    }
+    if (hhmm == NULL || hhmm[0] == '\0') {
+        lv_obj_set_hidden(s_lbl_clock, true);
+        return;
+    }
+    lv_label_set_text(s_lbl_clock, hhmm);
+    lv_obj_update_layout(s_lbl_clock);
+    lv_obj_set_pos(s_lbl_clock,
+                   THEME_SCREEN_WIDTH - THEME_SIDE_PADDING - lv_obj_get_width(s_lbl_clock),
+                   RADAR_CLOCK_Y);
+    lv_obj_set_hidden(s_lbl_clock, false);
 }

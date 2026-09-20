@@ -1245,3 +1245,48 @@ interrogate — tap a mark to ask "which one is that", tap the caption to commit
 tap reuses the selection path the list already had, so there is still exactly one "detail
 view" (§5.1) and no fourth layout to learn, which was the original argument in main.c and
 still holds.
+
+## D60 — Radar is the default, and the hero moved a layer down
+
+**Decision:** the deck is two pages — **Radar, then Liste**. §5.1/§5.2 is no longer a page;
+it is the layer beneath both, opened by tapping an aircraft and left by tapping anywhere.
+
+**What this trades away, stated once.** AGENTS.md §1 asks for the answer "in under two
+seconds with **no interaction**", and the hero was page 0 precisely because of that sentence.
+The Radar answers a different question first — *what is up there* — and names only the
+nearest aircraft, in its caption. Destination, distance and bearing are still there without
+a tap; airline, type and altitude are now one tap away. Decided by the man who uses it,
+after using it, which is better evidence than the sentence in the brief.
+
+**The way out is the whole screen.** There is nowhere on §5.1 for a 44 px button: the chrome
+row is 24 px tall and the compass tape starts at y=40, so anything finger-sized either
+covers the tape or pushes the hero down. A target you cannot miss beats one you have to aim
+at, and since nothing else on that screen is tappable, a tap is never ambiguous. The word
+"Zurück" still appears, in the slot the clock used — an invisible affordance is not one, and
+on a view he opened on purpose the time is not what he came for.
+
+**Two things the restructure would have quietly removed, and did not.**
+
+The clock lived on the hero screen, which is now a layer down — so making Radar the default
+would have taken the clock off the device entirely. It is now top right on the Radar,
+balancing the range read-out. Losing a feature as a side effect of moving things around is
+not a decision, it is an accident.
+
+And `s_detail_from` remembers which page he opened the layer from, so "back" means back to
+the Radar *or* the Liste. Returning always to page 0 would have been one line shorter and
+would have moved him somewhere he did not ask to be, which for this user is the same as
+being lost (the same reasoning nav.h already gives for overlays).
+
+**Closed when the aircraft leaves.** If the aircraft he is reading about drops out of range,
+the layer closes rather than silently swapping in a different one under the same heading.
+A panel caught substituting is a panel he stops believing.
+
+**Verified:** 20 open/close cycles leak nothing (−132 B then +52 B, noise either side of
+zero), 0 crashes across page and overlay stress, and the layer renders correctly
+(Rom → Breslau · Ryanair · 10,2 km östlich). Debug key 'i' added for the same reason
+g/e/k exist (D41) — a screen only reachable by tapping the glass is a screen nobody checks.
+
+Also: `lvgl_mem_report()` was printing `lv_mem_monitor()`, which reports zeros now that
+LVGL allocates through the system heap (D58). A diagnostic that answers every question with
+"0" is worse than none, because it looks like an answer. It reports the largest contiguous
+internal block instead — the number that actually decides whether the next keyboard fits.
