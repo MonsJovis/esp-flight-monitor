@@ -188,7 +188,12 @@ void screen_overhead_create(lv_obj_t *parent)
      *
      * Tertiary tier, centred between "Zurück" on the left and the network
      * caution on the right: findable, never competing with the destination,
-     * and in the same place on every aircraft. */
+     * and in the same place on every aircraft.
+     *
+     * Carries the AIRLINE since the swap; the identity it used to hold is now
+     * in the body, where he asked for it. Note the Radar still puts the
+     * identity in this slot — the two screens differ because the detail layer
+     * has a body to give it and the Radar does not. */
     s_lbl_identity = make_label(s_cont, &plex_mono_13, THEME_TEXT_TERTIARY);
     lv_obj_set_hidden(s_lbl_identity, true);
 
@@ -284,9 +289,9 @@ void screen_overhead_update(const view_model_t *vm)
      * not hold the line, it hides rather than overlapping either — an identifier printed across a
      * warning is worse than no identifier. */
     {
-        bool show_id = vm->identity[0] != '\0';
+        bool show_id = vm->airline[0] != '\0';
         if (show_id) {
-            lv_label_set_text(s_lbl_identity, vm->identity);
+            lv_label_set_text(s_lbl_identity, vm->airline);
             lv_obj_update_layout(s_lbl_identity);
             lv_obj_update_layout(s_lbl_clock);
             int32_t left  = PAD + lv_obj_get_width(s_lbl_clock) + GAP_MD;
@@ -436,8 +441,14 @@ void screen_overhead_update(const view_model_t *vm)
      * for all three states (view_model.h), so this is the natural reuse. */
     /* When the clock is not yet set, vm->hero already holds the "Kein Netz"
      * sentence and is rendered as the hero, so this slot must not repeat it. */
+    /* The body slot carries the IDENTITY — flight number and model — and the
+     * airline has moved up to the chrome row. Swapped on request, and the
+     * reasoning holds up: "ASL12H · Airbus A320" is what he wants when he has
+     * deliberately opened one aircraft, and the operator is the part he can
+     * usually infer from the callsign anyway. §5.3 is unchanged; there the
+     * slot still carries the hero, because there is no aircraft to identify. */
     const char *airline_slot_text =
-        empty_sky ? (vm->clock_valid ? vm->hero : "") : vm->airline;
+        empty_sky ? (vm->clock_valid ? vm->hero : "") : vm->identity;
     bool show_airline_slot = airline_slot_text[0] != '\0';
     set_hidden(s_lbl_airline, !show_airline_slot);
     if (show_airline_slot) {
@@ -451,7 +462,12 @@ void screen_overhead_update(const view_model_t *vm)
      * hero (avoids "Leichtflugzeug" over "Leichtflugzeug"); view_build_empty()
      * has no such dedup against the airline-slot text above, so this file
      * does it for that one case rather than showing the same name twice. */
-    bool show_type = vm->type_full[0] != '\0' && strcmp(vm->type_full, airline_slot_text) != 0;
+    /* strstr, not strcmp: the slot above now holds "AUA453 · Airbus A320neo",
+     * so the model is a SUBSTRING of it rather than equal to it, and an
+     * equality test would let "Airbus A320neo" print again directly
+     * underneath itself. */
+    bool show_type = vm->type_full[0] != '\0' &&
+                     strstr(airline_slot_text, vm->type_full) == NULL;
     set_hidden(s_lbl_type_full, !show_type);
     if (show_type) {
         lv_label_set_text(s_lbl_type_full, vm->type_full);
