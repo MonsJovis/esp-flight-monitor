@@ -28,8 +28,8 @@ CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 
-.PHONY: all clean fontcheck stringcheck $(TESTS)
-all: fontcheck stringcheck $(TESTS)
+.PHONY: all clean fontcheck stringcheck keycheck $(TESTS)
+all: fontcheck stringcheck keycheck $(TESTS)
 
 # A glyph missing from the subset renders as NOTHING in LVGL — no error, no
 # placeholder. That is not something to discover on the panel, so it is checked
@@ -44,6 +44,13 @@ fontcheck:
 stringcheck:
 	@echo "== user-facing strings"
 	@python3 $(ROOT)/tools/check_strings.py
+
+# The serial console is how every screen gets verified (D4, D41), and the two
+# places that describe it are prose nothing consults — so they drift. Two
+# consecutive reviews found them stale before this check existed.
+keycheck:
+	@echo "== console keys"
+	@python3 $(ROOT)/tools/check_console_keys.py
 
 $(TESTS): %: $(BINDIR)/%
 	@echo "== $@"

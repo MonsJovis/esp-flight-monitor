@@ -1757,3 +1757,69 @@ asks `screen_geo_is_up()` and logs `SCREEN NOT UP` when the answer is no.
 Four harness bugs in one feature, every one of them reporting a pass. **A harness bug reads
 exactly like a passing test** — and the corollary M11 adds is that the harness deserves the
 same suspicion as the code, including the camera.
+
+---
+
+## D68 — A fix that only the panel could tell you was wrong
+
+**2026-09-20.** A review of M11 found four things. Two of them this milestone had not
+caused but had made **silent**, which is worse than causing them.
+
+`ui_resume()` — the `0` console key — rebuilds the deck after a debug view has had the
+screen, and it already knew to forget the battery badge memo, because the deck it had been
+drawn on is gone. It did not know to forget `s_detail_open`. The `lv_obj_clean()` two lines
+above deletes the detail overlay, so `ui_task`'s update branch went on choosing
+`screen_overhead_update()` for a screen that no longer existed. Before M11 that wrote
+through freed labels and the device rebooted, which at least announced itself. With
+`screen_overhead.c`'s new `s_alive` guard (D67) it returns quietly — and **neither Radar nor
+Liste is ever updated again.** The panel just stops moving, with nothing in the log. The
+same guard that made the crash impossible made the freeze invisible.
+
+The fixture keys `1`–`5` had the same shape: §5.1/§5.2 is the detail *layer*, not a deck
+page, so unless it happened to be up the fixtures wrote into a screen that was not there
+and `dbg_fixture_show()` still logged the hero line it had not drawn. A check reporting a
+state it never rendered — the harness bug this milestone already found three times. They
+open the layer they need now rather than assuming a finger did.
+
+**The third was mine and it was real.** "Neu suchen" did not cancel anything. It put the
+typing sheet back up while the previous request was still on the wire, and geocode.c waits
+ten seconds before giving up — so the answer to a word he had abandoned arrived mid-
+keystroke, called `show_results()`, and took the keyboard out from under his fingers.
+`show_typing()` had a comment saying the wait was over; it had only stopped the animation.
+The generation counter next door does not reach it, because tapping Neu suchen is neither a
+new search nor a re-open. `s_awaiting` is the missing half: the screen answers a question
+only while it is still asking it.
+
+**And then the fix broke two console commands, and only the device said so.** `Q` and `z`
+call `on_geo_search()` directly instead of going through `do_search()`, so they send a
+request without ever telling the screen a question was asked. With answers now being
+dropped when nothing is waiting, both silently drew nothing — the panel sat on the typing
+keyboard through a whole request-and-timeout cycle while the log reported a completed
+lookup. It builds, the gates pass, the host suite passes, and the feature is dead. Nothing
+short of flashing it and looking would have caught that, which is the entire argument for
+D4 and D41 in one sentence.
+
+**The race is built, not raced.** Three attempts to abandon a search from the host failed:
+the endpoint at this location refuses in ~100 ms, and the second keystroke arrived 33 ms
+late every time — including as a single unpaced burst, which is M10's own remedy. So `C`
+holds the display lock across both steps. The search task has to take that lock before it
+can paint, so it cannot slip an answer in between "started" and "abandoned", and the
+scenario is constructed rather than gambled on. A harness that cannot win its race reports
+a pass and has exercised nothing.
+
+**The fourth finding was doc drift, and it got a gate.** The header block and the boot
+`ready:` line both still described a console this firmware no longer has. That is AGENTS.md
+§11 rule 1 pointed the other way — not a comment that lies about what the code does, but a
+comment that never learned what the code gained, which puts the screen behind an
+undocumented key back to being one nobody checks. Two consecutive reviews had found those
+two blobs stale, so they are now parsed and compared against `on_cmd()` by
+`tools/check_console_keys.py`, in the host suite with the other two gates. It found four
+more omissions on its first run that nobody had reported: `u`, `i`, `p`, `t` and `v` had
+never been in the ready line, and `u` had never been in the header at all.
+
+**The pattern across D67 and D68 is one thing.** Every safety net added in this milestone —
+the `s_alive` guard, the dropped stale answers — converts a loud failure into a quiet one.
+That is the right trade for a device in somebody's living room and the wrong one for a
+build host, so each of them has to arrive with a way to see the quiet case: a log line that
+says which branch was taken, a command that constructs the state, or a gate. A guard
+without one of those does not remove a bug, it removes the evidence.

@@ -4,7 +4,7 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); sixty-seven decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); sixty-eight decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
 > **32,380 checks across eleven suites, 0 failed**.
 >
@@ -164,7 +164,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 32,380 checks, plus the font and string gates
+make -C test/host        # 32,380 checks, plus the font, string and console-key gates
 ```
 
 For anything visual, the panel reports on itself; you do not have to be in the room:
@@ -173,6 +173,11 @@ For anything visual, the panel reports on itself; you do not have to be in the r
 python3 tools/grab_screen.py shot.png    # the real RGB565 framebuffer, read back over USB
 python3 tools/provision.py               # WiFi credentials → NVS, never through you
 ```
+
+Every key below has to appear in main.c's header block AND in the boot `ready:` line —
+`tools/check_console_keys.py` parses `on_cmd()` and fails the build otherwise. Two reviews
+in a row found those two lists describing a console this firmware no longer had, and a key
+nobody has written down puts the screen behind it back to being one nobody checks.
 
 The firmware takes single command bytes on the same serial link (`on_cmd()` in
 `main/main.c`, plus `s` handled in `main/debug/dbg_screen.c`):
@@ -183,6 +188,10 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 - `q` open Ort suchen — `Q` run a real search on it — `z` search and take the first hit
   — `Z` step through its three states (waiting / nothing found / no answer), one per press
   — `a` press the keyboard's layer key (abc → ABC → 1# → abc)
+- `c` tap "Neu suchen" — `C` start a lookup and abandon it before the answer can land,
+  which is the one race in this feature that cannot be won from the host: the endpoint
+  answers or refuses faster than a second keystroke arrives, so `C` holds the display lock
+  across both steps and constructs the scenario instead of gambling on it.
 - `K` open WLAN and go straight to the password step, which is the one screen a finger is
   otherwise needed for. It says in the log whether it got there by tapping an unsaved
   network (the real path) or had to force it open because everything in range is already

@@ -131,6 +131,24 @@ void screen_geo_debug_searching(void);
  * M10 records against the first version of geo_demo_search(). */
 bool screen_geo_is_up(void);
 
+/* Taps "Neu suchen", exactly as a fingertip would — back to the keyboard,
+ * with the previous request still on the wire.
+ *
+ * A debug entry point for a race that has now been reported twice by two
+ * separate reviews of this one file, and that has no other way in: the bug it
+ * exercises needs a finger on that button DURING the two-to-ten seconds a
+ * lookup is in flight, and a build host has no finger. Without it, "an
+ * abandoned search no longer yanks the keyboard away mid-word" is a claim
+ * about a line of code rather than about the device.
+ *
+ * Returns false if the screen is not up, or is not showing results — in
+ * which case there is no such button to tap and the caller must not report
+ * that it tapped one.
+ *
+ * Caller holds display_lock().
+ */
+bool screen_geo_debug_again(void);
+
 /* Steps this screen's keyboard to the next layer — see
  * widget_keyboard_debug_layer() in widget_input.h, which is where the
  * reasoning lives. Returns false if the screen is not up. Caller holds

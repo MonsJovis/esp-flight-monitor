@@ -528,6 +528,41 @@ was opened directly and the row-tap that normally leads there was not exercised.
   every pointer in the file dangling and `dbg_fixture_show()` then called
   `lv_label_set_text()` on a freed label.
 
+**A review round after the fact found four more, and its own fix broke a fifth**
+(D68). Two were product bugs this milestone had made *silent* rather than caused:
+`ui_resume()` never cleared `s_detail_open`, so after `0` the deck's update branch kept
+taking the dead detail path and Radar and Liste simply stopped moving — which before the
+new `s_alive` guard was a crash, and is now nothing at all; and the fixture keys `1`–`5`
+draw on the detail *layer*, so unless it happened to be up they logged a hero line they had
+not rendered. Both fixed, both verified on the glass (the clock advances again after `0`;
+`1` on a fresh deck now draws §5.1 instead of the radar).
+
+The third was mine and older: **"Neu suchen" did not cancel anything.** `show_typing()`
+stopped the animation and said in its own comment that the wait was over, but the answer
+was still coming — up to ten seconds later it called `show_results()` and took the keyboard
+out from under his fingers to show hits for a word he had stopped typing. The generation
+counter in main.c does not cover it, because tapping Neu suchen is neither a new search nor
+a re-open. `s_awaiting` closes it.
+
+**The review's fix for that broke `Q` and `z`, and only the panel said so.** Both console
+commands call `on_geo_search()` directly rather than through `do_search()`, so the screen
+was never told a question had been asked — the reply then arrived at a screen that was not
+waiting, was dropped as stale, and `Q` drew nothing while the log reported a completed
+lookup. Found by running it: the panel sat on the typing keyboard after a full request
+cycle. Both now go through the same `begin_search()` the button does.
+
+The abandoned-search race is **built, not raced** (`C`). Three attempts to win it from the
+host failed — the endpoint at this location refuses in ~100 ms and the second keystroke
+arrived 33 ms late every time — so the command holds the display lock across both steps,
+which the search task must also take before it can paint. Verified: the reply lands after
+the abandon and the keyboard stays.
+
+**A gate came out of it.** `tools/check_console_keys.py` parses the keys `on_cmd()` actually
+answers to and fails if either the header block or the boot `ready:` line omits one. Two
+consecutive reviews had found those two blobs stale; the gate immediately turned up four
+more nobody had reported — `u`, `i`, `p`, `t` and `v` had never been in the ready line, and
+`u` had never been in the header. 34 keys, both places, proved to bite.
+
 **And a third harness bug of the shape M10 records twice** — the check ran, reported
 nothing, and had not looked. `tools/grab_screen.py` reads frame buffer 0 of two, so a
 screenshot of a screen that had just changed and then gone still showed the state BEFORE

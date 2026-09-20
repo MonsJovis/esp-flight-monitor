@@ -2,7 +2,8 @@
  * gate. The numbers this logs go into the table at the bottom of docs/PLAN.md.
  *
  * Debug console (over USB serial):
- *   s  screenshot the live framebuffer    0  give the screen back to the UI task
+ *   s  screenshot the live framebuffer    S  the same (both cases)
+ *   0  give the screen back to the UI task
  *   g  swipe to the next deck page        e  open Einstellungen
  *   k  open WLAN                          o  cycle the location preset
  *   d  scroll the current screen to its end
@@ -17,14 +18,19 @@
  *   w  provision WiFi (typed in over serial, stored in NVS — never in the repo)
  *   n  network status and a scan of what is in range
  *   p  probe the link (DNS, then a raw GET by IP)
+ *   u  the OTA update console
  *   y  battery: the judged status and the PMIC registers under it
  *   x  what the touch layer has seen (presses, long presses, the last hold)
  *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
  *      the amber caution and the backlight cap can be seen without one
  *   q  open Ortssuche                      Q  open it and run one search
  *   z  the same, then TAP the first hit    Z  the empty and no-answer states
+ *   K  open WLAN and walk it to the password step (its keyboard)
+ *   a  press the keyboard's layer key (abc -> ABC -> 1# -> abc)
+ *   c  tap "Neu suchen"                  C  start a lookup and abandon it
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
  *   3  §5.3 Himmel frei                    4  longest destination (shrink ladder)
+ *   5  §5.2 with the route lookup still outstanding ("Route wird gesucht")
  *
  * g/e/k exist so every screen can be reached from the build host and read
  * back as a PNG (tools/grab_screen.py). A screen that can only be reached by
@@ -1023,7 +1029,14 @@ static void geo_search_task(void *arg)
             if (tapped) {
                 ESP_LOGW(TAG, "autopick: %s", job->found[0].label);
             } else {
-                ESP_LOGW(TAG, "autopick: the screen was gone before the answer arrived");
+                /* Two ways to get here and the line must not pick one: the
+                 * overlay was torn down, or it is still up but has stopped
+                 * waiting for this answer (he tapped Neu suchen), in which
+                 * case screen_geo.c dropped it and there is nothing to tap.
+                 * Both mean the same thing to a reader — the answer never
+                 * reached the glass — and neither is "the screen was gone". */
+                ESP_LOGW(TAG, "autopick: the answer never reached the screen "
+                              "(closed, or he had already moved on)");
             }
         } else {
             ESP_LOGW(TAG, "autopick: nothing to pick (%d)", n);
@@ -1173,8 +1186,15 @@ static void geo_demo_states(void)
     }
 
     display_lock(0);
+    /* ALWAYS through the wait first, whatever the step is, because that is
+     * the order the real thing happens in: he asks, it looks, it answers. It
+     * is also what makes the last two states reachable at all — an answer
+     * handed to a screen that is not waiting for one is a stale reply and is
+     * dropped (screen_geo.c, s_awaiting), so a bare set_results() on the
+     * typing sheet would draw nothing and report that it had. */
+    screen_geo_debug_searching();
     switch (step) {
-    case 0:  screen_geo_debug_searching();  break;  /* still looking */
+    case 0:  break;                                    /* leave it looking   */
     case 1:  screen_geo_set_results(NULL, 0);  break;  /* nothing by that name */
     default: screen_geo_set_results(NULL, -1); break;  /* no answer at all */
     }
@@ -1242,7 +1262,56 @@ static void geo_demo_search(void)
      * the card two screens away. LOC_WIEN in particular returns four places
      * across two countries, which is exactly the case the second line on
      * each row exists for. */
+    /* THROUGH THE SCREEN'S OWN "a search started", not straight to the
+     * integrator callback. `do_search()` does two things when he taps Suchen
+     * — it tells the screen to start waiting, and then it sends the request —
+     * and this command only ever did the second. That was invisible until the
+     * screen began DROPPING answers it is not waiting for (screen_geo.c,
+     * s_awaiting): the reply then landed on a screen that had never been told
+     * a question was asked, was dropped as stale, and 'Q' drew nothing at all
+     * while the log cheerfully reported a completed lookup.
+     *
+     * Measured, not reasoned about: the panel sat on the typing keyboard
+     * after a full request/timeout cycle. Calling the same entry point the
+     * button does is also simply more honest — a demo that skips half the
+     * path is testing half the path. */
+    display_lock(0);
+    screen_geo_debug_searching();
+    display_unlock();
     on_geo_search(location_name(LOC_WIEN));
+}
+
+/* The abandoned search, built rather than raced.
+ *
+ * Starts a real lookup and taps "Neu suchen" before the answer can land, so
+ * the reply arrives at a screen that has gone back to the keyboard. What
+ * should happen is nothing at all: screen_geo.c drops it (s_awaiting) and he
+ * keeps typing. What used to happen is show_results() taking the keyboard out
+ * from under his fingers to show hits for a word he had stopped asking about.
+ *
+ * DETERMINISTIC, because the race cannot be won from the host. Both steps run
+ * here, back to back on the console task, before the search task can get a
+ * reply back — whereas a test that sends 'Q' and then 'c' over the wire loses
+ * by milliseconds: measured, the endpoint at this location refuses in ~100 ms
+ * and the second keystroke arrived 33 ms too late, twice. A harness that
+ * cannot win its race reports a pass and has exercised nothing (PLAN.md M10,
+ * twice already). */
+static void geo_demo_abandon(void)
+{
+    /* THE DISPLAY LOCK IS HELD ACROSS BOTH STEPS, and that is what makes this
+     * deterministic rather than merely fast. It is recursive, so the nested
+     * takes inside open_geo() and on_geo_search() are free — but geo_search_task()
+     * has to take it too before it can paint, so it cannot slip an answer in
+     * between "search started" and "search abandoned". Without this the
+     * endpoint here refused in ~100 ms, the task painted the failure, and the
+     * abandon arrived 33 ms late: measured three times, three passes, nothing
+     * exercised. */
+    display_lock(0);
+    geo_demo_search();
+    bool tapped = screen_geo_debug_again();
+    display_unlock();
+    ESP_LOGW(TAG, "ortsuche: search started, then abandoned (%s) — the reply "
+                  "must not be drawn", tapped ? "Neu suchen tapped" : "NO BUTTON TO TAP");
 }
 
 /* Hand the screen to a debug view: stop the UI task touching it, and wait out
@@ -1267,6 +1336,17 @@ static void ui_resume(void)
     /* The deck was rebuilt, so the badge that was on it is gone. Forget what
      * we believed was showing or the next poll will decide nothing changed. */
     power_forget_ui();
+    /* And the detail layer is gone with it. lv_obj_clean() above deleted the
+     * overlay, but s_detail_open would have stayed true — and the update
+     * branch at the foot of ui_task() reads it, so the live view would have
+     * gone on calling screen_overhead_update() on a screen that no longer
+     * exists. That used to be a write through freed labels; with
+     * screen_overhead.c's s_alive guard it is a silent no-op instead, which
+     * is worse in one specific way: neither Radar nor Liste is ever updated
+     * again and the panel simply stops moving. Same class as the badge memo
+     * above — the deck was rebuilt, so forget what was on it. */
+    s_detail_open   = false;
+    s_has_selection = false;
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
 }
@@ -1411,6 +1491,17 @@ static void lvgl_mem_report(const char *when)
 static void on_cmd(char c)
 {
     if (c >= '1' && c <= '5') {
+        /* The fixtures draw on §5.1/§5.2, which is the DETAIL LAYER and not a
+         * deck page any more — so unless it happens to be up, every one of
+         * these commands wrote into a screen that does not exist. It used to
+         * crash; with screen_overhead.c's s_alive guard it returns quietly
+         * instead, and dbg_fixture_show() still logs the hero line it did not
+         * draw. A check that reports a state it never rendered is the harness
+         * bug this milestone found three times already, so the command opens
+         * the layer it needs rather than assuming a finger did. */
+        if (!s_detail_open) {
+            open_detail();
+        }
         ui_suspend();
         dbg_fixture_show(c - '0');
         return;
@@ -1439,6 +1530,9 @@ static void on_cmd(char c)
     /* 'a' for the ABC key. NOT 'S' — dbg_screen.c takes both cases of 's'
      * for the screenshot, so an 'S' here is a command that appears to work,
      * dumps a framebuffer, and never reaches this switch at all. */
+    else if (c == 'C') geo_demo_abandon();
+    else if (c == 'c') { display_lock(0); bool ok = screen_geo_debug_again(); display_unlock();
+                         ESP_LOGW(TAG, "ortsuche: Neu suchen %s", ok ? "tapped" : "not available"); }
     else if (c == 'a') { display_lock(0); bool ok = screen_geo_debug_layer(); display_unlock();
                          ESP_LOGW(TAG, "keyboard layer key: %s", ok ? "pressed" : "not found"); }
     else if (c == 'u') update_console();
@@ -1524,7 +1618,13 @@ void app_main(void)
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
     ota_start();
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku x=touch o=ort g=seite e=einst k=wlan q/Q/z/Z=ortsuche d=scroll 1-4=fixture 0=live");
+    /* Every key on_cmd() answers to, and tools/check_console_keys.py fails the
+     * build if that stops being true — twice in a row a review has found this
+     * line and the header block above claiming a console this firmware no
+     * longer has. AGENTS.md §11 rule 1 is about exactly that. */
+    ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
+                  "u=update y=akku Y=akkusim x=touch i=detail o=ort g=seite e=einst k/K=wlan "
+                  "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
      * freshly written image is on probation until it says otherwise, and the

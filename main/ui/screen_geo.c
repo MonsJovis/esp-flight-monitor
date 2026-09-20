@@ -63,6 +63,7 @@ static lv_obj_t *s_kb;
 /* --- s_res: title, status, the busy bar, hit list, Neu suchen/Zurück --- */
 static lv_obj_t *s_res;
 static lv_obj_t *s_lbl_status;
+static lv_obj_t *s_btn_again;
 static lv_obj_t *s_busy;
 static lv_obj_t *s_list;
 
@@ -98,6 +99,20 @@ static int         s_n_places;
  * true. */
 static bool s_alive;
 
+/* True between "he asked" and "an answer was drawn" — i.e. exactly while an
+ * answer handed to screen_geo_set_results() is still the answer to the
+ * question on the glass.
+ *
+ * It exists because "Neu suchen" does not cancel anything: it puts the typing
+ * sub-screen back up while the previous request is still on the wire, and
+ * geocode.c waits ten seconds before giving up. Without this, that request
+ * landing mid-word called show_results() and took the keyboard out from under
+ * his fingers to show hits for a question he stopped asking. The integrator's
+ * generation counter (main.c, s_geo_gen) does not cover it — it only moves
+ * when a NEW search starts or the screen is re-opened, and tapping Neu suchen
+ * is neither. */
+static bool s_awaiting;
+
 static geo_search_cb s_search_cb;
 static geo_pick_cb   s_pick_cb;
 static geo_exit_cb   s_exit_cb;
@@ -116,11 +131,13 @@ static void on_type_deleted(lv_event_t *e)
      * pick a place from the PREVIOUS session — writing a location to NVS
      * that nothing on the glass ever offered. */
     s_n_places = 0;
+    s_awaiting = false;
     /* The waiting furniture dies with the tree too. Left standing, these are
      * the same dangling pointers s_alive exists to stop being written
      * through — and set_waiting() is reached from paths that do not all
      * check it. */
     s_busy = NULL;
+    s_btn_again = NULL;
     for (int i = 0; i < GEO_SKEL_ROWS; i++) {
         s_skel[i] = NULL;
     }
@@ -218,8 +235,12 @@ static void show_typing(void)
     /* Leaving the results state ends the wait as far as this screen is
      * concerned, whatever the network is still doing. A bar left sweeping
      * behind a hidden screen is an animation nobody can see, invalidating an
-     * area nobody is looking at, until the overlay is torn down. */
+     * area nobody is looking at, until the overlay is torn down.
+     *
+     * And it ends it for the ANSWER too: he is typing again, so a reply to
+     * the previous word must not flip him back here mid-keystroke. */
     set_waiting(false);
+    s_awaiting = false;
     lv_obj_set_hidden(s_res, true);
     lv_obj_set_hidden(s_type, false);
     /* Re-attach rather than assume: the keyboard keeps whatever text area it
@@ -337,6 +358,14 @@ void screen_geo_set_results(const geo_place_t *places, int n)
     if (!s_alive) {
         return;
     }
+    /* Or tapped "Neu suchen" and started typing the next word. The screen is
+     * no longer asking this question, so the answer is not shown — see
+     * s_awaiting. Dropping it is the whole point: painting it would call
+     * show_results() and take the keyboard away from under his fingers. */
+    if (!s_awaiting) {
+        return;
+    }
+    s_awaiting = false;
 
     /* Whatever came back, the waiting is over — including the two answers
      * that are not successes. A bar still sweeping under "Kein Ort mit diesem
@@ -439,6 +468,7 @@ static void begin_search(void)
         lv_obj_set_hidden(s_rows[i].row, true);
     }
     s_n_places = 0;
+    s_awaiting = true;
     show_results();
     /* After show_results(), not before: the bar measures itself when it is
      * switched on, and an object inside a hidden parent has no width to
@@ -456,6 +486,7 @@ static void do_search(void)
      * on the typing screen doing nothing visible — a tap that produces no
      * change at all is how he decides the device is broken. */
     if (strlen(query) < 2) {
+        begin_search();                 /* flip over, then answer at once */
         screen_geo_set_results(NULL, 0);
         return;
     }
@@ -580,11 +611,11 @@ void screen_geo_create(lv_obj_t *parent)
 
     int32_t btn_y = THEME_SCREEN_HEIGHT - PAD - BTN_H;
 
-    lv_obj_t *btn_again = make_button(s_res, btn_w, BTN_H, STR_GEO_BTN_SEARCH,
-                                      THEME_SURFACE_SEL, THEME_BORDER_IDLE,
-                                      THEME_TEXT_PRIMARY);
-    lv_obj_set_pos(btn_again, PAD, btn_y);
-    lv_obj_add_event_cb(btn_again, again_clicked_cb, LV_EVENT_CLICKED, NULL);
+    s_btn_again = make_button(s_res, btn_w, BTN_H, STR_GEO_BTN_SEARCH,
+                              THEME_SURFACE_SEL, THEME_BORDER_IDLE,
+                              THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(s_btn_again, PAD, btn_y);
+    lv_obj_add_event_cb(s_btn_again, again_clicked_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *btn_back2 = make_button(s_res, btn_w, BTN_H, STR_BACK,
                                       THEME_SURFACE_SEL, THEME_BORDER_IDLE,
@@ -642,6 +673,15 @@ void screen_geo_debug_searching(void)
         return;
     }
     begin_search();
+}
+
+bool screen_geo_debug_again(void)
+{
+    if (!s_alive || s_btn_again == NULL || lv_obj_is_hidden(s_res)) {
+        return false;
+    }
+    lv_obj_send_event(s_btn_again, LV_EVENT_CLICKED, NULL);
+    return true;
 }
 
 bool screen_geo_debug_layer(void)
