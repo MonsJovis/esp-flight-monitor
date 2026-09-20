@@ -102,6 +102,12 @@ static void on_type_deleted(lv_event_t *e)
     s_alive = false;
     s_type  = NULL;
     s_res   = NULL;
+    /* The hits die with the tree. Left standing, they outlive the widgets
+     * that showed them: a freshly built screen would start with a non-zero
+     * s_n_places, so screen_geo_debug_tap() would pass its range check and
+     * pick a place from the PREVIOUS session — writing a location to NVS
+     * that nothing on the glass ever offered. */
+    s_n_places = 0;
 }
 
 /* ============================================================================
@@ -502,12 +508,13 @@ void screen_geo_create(lv_obj_t *parent)
     s_alive = true;
 }
 
-void screen_geo_debug_tap(int idx)
+bool screen_geo_debug_tap(int idx)
 {
     if (!s_alive || idx < 0 || idx >= s_n_places) {
-        return;
+        return false;
     }
     lv_obj_send_event(s_rows[idx].row, LV_EVENT_CLICKED, NULL);
+    return true;
 }
 
 void screen_geo_set_search_cb(geo_search_cb cb) { s_search_cb = cb; }

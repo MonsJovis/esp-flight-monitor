@@ -120,9 +120,15 @@ void screen_geo_set_exit_cb(geo_exit_cb cb);
  * and prove nothing about the teardown, because it would not be inside an
  * event dispatch at all. This is.
  *
- * Out of range or no results: does nothing. Caller holds display_lock().
+ * Returns true if the click was dispatched. FALSE is the interesting answer
+ * and the reason this is not void: the screen may have been torn down while
+ * the search that produced `idx` was still on the wire, in which case there
+ * is nothing to tap and the caller must not log that it tapped something.
+ *
+ * Out of range, no results, or screen gone: does nothing. Caller holds
+ * display_lock().
  */
-void screen_geo_debug_tap(int idx);
+bool screen_geo_debug_tap(int idx);
 
 #ifdef __cplusplus
 }

@@ -21,6 +21,8 @@
  *   x  what the touch layer has seen (presses, long presses, the last hold)
  *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
  *      the amber caution and the backlight cap can be seen without one
+ *   q  open Ortssuche                      Q  open it and run one search
+ *   z  the same, then TAP the first hit    Z  the empty and no-answer states
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
  *   3  §5.3 Himmel frei                    4  longest destination (shrink ladder)
  *
@@ -29,6 +31,7 @@
  * tapping is a screen nobody checks.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
@@ -868,13 +871,39 @@ static void open_wifi(void)
  * search, created on tap and gone again when the answer has been handed back
  * under display_lock().
  *
- * The query is copied into a file-scope buffer rather than passed as the
- * task argument: screen_geo.c hands out a pointer into its own text area and
- * says so, and that text area belongs to an overlay that may be deleted
- * before the task ever runs. One search can be in flight at a time, which is
- * also all he can start — the screen is showing "Suche Orte..." and its
- * Suchen button is on the other sub-screen. */
-static char s_geo_query[SCREEN_GEO_QUERY_MAX];
+ * EVERYTHING THE TASK NEEDS IS IN ITS OWN JOB, allocated by the starter and
+ * freed by the task. It used to be a file-scope query buffer and a file-scope
+ * `static` result array, under a comment claiming only one search could ever
+ * be in flight. That claim was wrong by one finger: "Neu suchen" puts the
+ * typing sub-screen — and its Suchen button — back on the glass while the
+ * previous request is still on the wire, and geocode.c waits ten seconds
+ * before giving up. Two tasks then parsed into the same array and read the
+ * same query buffer while the other was overwriting it.
+ *
+ * screen_geo.c hands out a pointer into its own text area and says it is
+ * only valid for the duration of the callback, so the query is COPIED into
+ * the job here — that part of the old reasoning was right and is kept.
+ *
+ * PSRAM, like every other buffer this layer allocates (geocode.c): ~2 KB is
+ * not something to take out of the ~24 KB of internal heap this board runs
+ * with, and it is far too much to put on a 4 KB task stack that also has
+ * cJSON on it. */
+typedef struct {
+    uint32_t    gen;
+    bool        autopick;   /* this search was started by 'z', not by a finger */
+    char        query[SCREEN_GEO_QUERY_MAX];
+    geo_place_t found[GEOCODE_MAX_RESULTS];
+} geo_job_t;
+
+/* Which search the screen is still waiting for.
+ *
+ * Bumped when a search starts AND when the screen is opened, because both
+ * events make an older answer stale. Without it a lookup that lands after he
+ * tapped Zurück and opened "Ort suchen" again paints into the NEW screen —
+ * screen_geo.c's s_alive is true again by then and nav_overlay_open() cannot
+ * tell one overlay from another — so the keyboard he is typing on flips to a
+ * result list for a question he stopped asking ten seconds ago. */
+static uint32_t s_geo_gen;
 
 /* Set by the 'z' console command: take the first hit automatically instead of
  * waiting for a finger. Tapping a result row is the one step of this feature
@@ -882,50 +911,110 @@ static char s_geo_query[SCREEN_GEO_QUERY_MAX];
  * settings are written, the clock is re-based and the poll location moves —
  * so without this, "does picking a place actually move the device" would be
  * a question only Markus could answer, by opening a screen he has no reason
- * to open. D4/D41: drive it from here and read the framebuffer back. */
+ * to open. D4/D41: drive it from here and read the framebuffer back.
+ *
+ * It is an INTENTION HANDED TO THE NEXT SEARCH, not a mode the device sits
+ * in: on_geo_search() moves it into that search's own job and clears it
+ * immediately. A file-scope flag cleared by the task instead looks right and
+ * leaves one gap — a stale search never clears it, because a stale search is
+ * not allowed to act on it either, so a 'z' whose answer arrived too late
+ * leaves the flag armed for whatever he starts next with his own finger. In
+ * the job, the intention dies with the search it belonged to. */
 static bool s_geo_autopick;
 
 static void on_geo_pick(const geo_place_t *place);
 
 static void geo_search_task(void *arg)
 {
-    (void)arg;
-    static geo_place_t found[GEOCODE_MAX_RESULTS];
+    geo_job_t *job = arg;
 
-    int n = geocode_lookup(s_geo_query, found, GEOCODE_MAX_RESULTS);
+    int n = geocode_lookup(job->query, job->found, GEOCODE_MAX_RESULTS);
 
     display_lock(0);
-    if (nav_overlay_open()) {
+    /* Only the search the screen is still waiting for may paint. */
+    bool mine = (job->gen == s_geo_gen);
+    if (mine && nav_overlay_open()) {
         /* Negative codes all mean the same thing to him — the search did not
          * answer — and screen_geo.c turns any of them into that one
          * sentence. The distinction stays in geocode.c's log line, which is
          * where it is useful. */
-        screen_geo_set_results(found, n);
+        screen_geo_set_results(job->found, n);
     }
     display_unlock();
 
-    if (s_geo_autopick && n > 0) {
-        s_geo_autopick = false;
-        ESP_LOGW(TAG, "autopick: %s", found[0].label);
-        /* Through the row's own click event, not straight to on_geo_pick():
-         * the interesting part of this path is that picking a hit deletes
-         * this screen from inside one of its own event callbacks, and
-         * calling the callback directly would skip exactly that. */
-        display_lock(0);
-        screen_geo_debug_tap(0);
-        display_unlock();
+    if (mine && job->autopick) {
+        if (n > 0) {
+            /* Through the row's own click event, not straight to
+             * on_geo_pick(): the interesting part of this path is that
+             * picking a hit deletes this screen from inside one of its own
+             * event callbacks, and calling the callback directly would skip
+             * exactly that. */
+            display_lock(0);
+            bool tapped = screen_geo_debug_tap(0);
+            display_unlock();
+            /* Logged AFTER, and only if it happened. The line used to go out
+             * before the tap, so a run where the screen had been closed
+             * mid-search printed "autopick: Wien" and picked nothing — a log
+             * claiming an action it did not perform, which is AGENTS.md §11
+             * rule 1 wearing a different hat. */
+            if (tapped) {
+                ESP_LOGW(TAG, "autopick: %s", job->found[0].label);
+            } else {
+                ESP_LOGW(TAG, "autopick: the screen was gone before the answer arrived");
+            }
+        } else {
+            ESP_LOGW(TAG, "autopick: nothing to pick (%d)", n);
+        }
     }
+    free(job);
     vTaskDelete(NULL);
 }
 
 static void on_geo_search(const char *query)
 {
     if (query == NULL) return;
-    snprintf(s_geo_query, sizeof s_geo_query, "%s", query);
-    /* 4 KB matches the WiFi scan task beside it. cJSON parses the response on
-     * this stack, but into a heap document, and the 8 KB response buffer is a
-     * PSRAM allocation inside geocode_lookup() — nothing large lives here. */
-    xTaskCreate(geo_search_task, "geosearch", 4096, NULL, 4, NULL);
+
+    geo_job_t *job = heap_caps_malloc(sizeof *job, MALLOC_CAP_SPIRAM);
+    if (job == NULL) {
+        job = heap_caps_malloc(sizeof *job, MALLOC_CAP_DEFAULT);
+    }
+    if (job != NULL) {
+        snprintf(job->query, sizeof job->query, "%s", query);
+        /* Under the display lock, which is the mutex the generation is READ
+         * under in geo_search_task(). It is recursive, so this is safe from
+         * the tap that got here (already holding it) and from the console
+         * commands (not holding it). An unsynchronised ++ would need two
+         * searches started microseconds apart to go wrong, which no finger
+         * can do — but the console can, and "no finger can do that" is the
+         * reasoning that left the WLAN keyboard off the screen for four
+         * milestones. */
+        display_lock(0);
+        job->gen      = ++s_geo_gen;
+        job->autopick = s_geo_autopick;
+        s_geo_autopick = false;
+        display_unlock();
+
+        /* 4 KB matches the WiFi scan task beside it. cJSON parses the
+         * response on this stack, but into a heap document; the 8 KB response
+         * buffer is a PSRAM allocation inside geocode_lookup() and the job
+         * above is another — nothing large lives on this stack. */
+        if (xTaskCreate(geo_search_task, "geosearch", 4096, job, 4, NULL) == pdPASS) {
+            return;
+        }
+        free(job);
+    }
+
+    /* Nothing started, so nothing will ever land — and the screen is sitting
+     * on "Suche Orte...", which would stay there forever (AGENTS.md §1: never
+     * a silent panel). Say the search did not answer, which is exactly what
+     * happened as far as he is concerned. display_lock() is recursive, so
+     * this is safe both from the tap that got here and from the 'Q'/'z'
+     * console commands, which hold no lock. */
+    s_geo_autopick = false;
+    ESP_LOGE(TAG, "could not start the place search");
+    display_lock(0);
+    screen_geo_set_results(NULL, -1);
+    display_unlock();
 }
 
 /* The two fixed-length string pairs that this function copies between are
@@ -973,6 +1062,10 @@ static void build_geo_screen(lv_obj_t *parent)
 static void open_geo(void)
 {
     display_lock(0);
+    /* A NEW instance of the screen, so whatever an older one asked for is no
+     * longer the question being asked — see s_geo_gen. Under the lock, for
+     * the same reason the bump in on_geo_search() is. */
+    s_geo_gen++;
     nav_open_overlay(build_geo_screen, "ortsuche");
     display_unlock();
 }
@@ -1331,7 +1424,7 @@ void app_main(void)
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
     ota_start();
 
-    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku x=touch o=ort g=seite e=einst k=wlan d=scroll 1-4=fixture 0=live");
+    ESP_LOGW(TAG, "ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net u=update y=akku x=touch o=ort g=seite e=einst k=wlan q/Q/z/Z=ortsuche d=scroll 1-4=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
      * freshly written image is on probation until it says otherwise, and the

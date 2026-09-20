@@ -1521,6 +1521,24 @@ bytes of `0x7F` wearing a valid version word. What the host suite still cannot p
 that, and it did: it came up reporting `brightness=45%`, which is neither a default nor a
 clamp bound, so those are his settings and not a reconstruction.
 
+**Two lifetime bugs a review found afterwards, both the same shape.** The first version
+kept the query and the result array in file scope, under a comment asserting that only one
+search could ever be in flight. That was wrong by one finger: "Neu suchen" puts the Suchen
+button back on the glass while the previous request is still out, and `geocode.c` waits ten
+seconds before giving up — so two tasks could parse into one array. And a lookup that landed
+after he had tapped Zurück and reopened the screen painted into the NEW instance, because
+`s_alive` is true again by then and `nav_overlay_open()` cannot tell one overlay from
+another: the keyboard he was typing on would flip to a result list for a question he had
+stopped asking.
+
+Both are now one mechanism. Each search gets its own `geo_job_t` — query, results and the
+autopick intention — allocated by the starter, freed by the task, and stamped with a
+generation number that only the search the screen is still waiting for can match. The
+autopick flag moved INTO the job for the same reason: as a file-scope flag cleared by the
+task it left a narrower version of itself, because a stale search is not allowed to act on
+the flag and therefore never cleared it, arming whatever he started next with his own
+finger.
+
 **Not done, deliberately:** no type-ahead. One request per tap on Suchen, and nothing polls
 the endpoint. Also no umlaut keys — `?name=Munchen` finds München, measured, and a keyboard
 layout is a bigger change than this feature deserved.

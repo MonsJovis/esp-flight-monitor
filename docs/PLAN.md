@@ -444,12 +444,16 @@ navigation, and one of them was a task writing into a deleted screen):
 
 | | |
 |---|---|
-| Ortssuche opened and closed | **40 times, 0 crashes.** Twenty of those tore the overlay down *while a real lookup was on the wire*, which is D58's shape exactly. |
-| A hit tapped | **20 times, 0 crashes.** Each one deletes this screen from inside one of its own event callbacks, via `screen_geo_debug_tap()` rather than by calling the callback directly, so the teardown is what is being tested and not just the settings write. |
+| Ortssuche opened and closed | **62 times, 0 crashes.** Twenty of those tore the overlay down *while a real lookup was on the wire*, which is D58's shape exactly. |
+| A hit tapped | **21 times, 0 crashes**, and 21 of 21 reported picks actually moved the device. Each one deletes this screen from inside one of its own event callbacks, via `screen_geo_debug_tap()` rather than by calling the callback directly, so the teardown is what is being tested and not just the settings write. |
+| Searches abandoned and overlapped | **42 lookups, 0 crashes, 0 wrong paints.** Console bytes sent as one unpaced burst, because the endpoint answers in ~250 ms and a test that pauses between keystrokes never wins the race it is aiming at — the first attempt at this reported a clean pass and had exercised nothing. |
 
-The first stress run reported forty cycles and had performed twenty: `geo_demo_search()`
-opened the screen only when no overlay was already up, so half the cycles were no-ops
-against Einstellungen. Worth writing down — a harness bug reads as a passing test.
+Two harness bugs are worth writing down, because both reported a pass. The first stress run
+claimed forty cycles and had performed twenty — `geo_demo_search()` opened the screen only
+when no overlay was already up, so half of them were no-ops against Einstellungen. The
+second looked like it had raced an abandoned search and had not: the endpoint answers in
+about 250 ms, faster than the test could send the next keystroke, so every "abandoned"
+lookup had already landed. **A harness bug reads exactly like a passing test.**
 
 **Not verified on the glass:** the WLAN password step's keyboard, and only that. It is the
 same one-line fix as the Ortssuche keyboard and the same shared styling, but reaching that
