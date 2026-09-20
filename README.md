@@ -1,15 +1,22 @@
 # Flugradar
 
-A 4-inch panel that answers one question, in German, without being touched:
+A 4-inch panel that answers one question, in German:
 
 > **Das Flugzeug da oben — wo fliegt es hin, wo kommt es her, und was ist es?**
 
+![Radar](docs/screens/3-radar.png)
+
+Real traffic over Gloggnitz, Lower Austria. This is what the panel shows by itself, with
+nobody touching it: where they are, which way they point, how many there are, north up,
+and the nearest one named along the bottom edge. Every picture in this file is the panel's
+own framebuffer read back over USB, not a mockup.
+
+Tap one, and it answers in words:
+
 ![Über dir jetzt](docs/screens/1-ueber-dir.png)
 
-Real traffic over Gloggnitz, Lower Austria: an Austrian Airlines flight out of Vienna,
-4.793 m up, 16,4 km to the north-east, on its way to Bologna. Nobody touched anything —
-this is what the panel shows by itself, and it is the panel's own framebuffer read back
-over USB, not a mockup.
+An Austrian Airlines flight out of Vienna, 4.793 m up, 16,4 km to the north-east, on its
+way to Bologna.
 
 ## Why it exists
 
@@ -18,10 +25,15 @@ technical. When he hears a plane he pulls out his phone and opens Flightradar24.
 to be faster and easier than that, or there is no reason for it to exist.
 
 So the whole design follows from two things he does. He **hears a plane and glances up** —
-the answer has to already be on the screen, in under two seconds, with no interaction. Or
-he **wonders what else is up there** — and taps.
+the scope is already showing him where it is and how many are up there, with nothing to
+press. Or he **wants it in words** — and taps the aircraft.
 
-That is why the destination is the headline in 76 px type rather than a field in a table,
+That split is his own correction. It originally opened on the written answer and kept the
+scope a swipe away, which is what the brief said to do. After living with it he asked for
+the other way round, and he was right: the glance is served by the picture, and the tap
+costs him nothing.
+
+That is why the destination is the headline in 100 px type rather than a field in a table,
 why it says "Airbus A321neo" and not `A21N`, and why the screen is never blank: an empty
 panel reads as *broken* to someone who did not build it.
 
@@ -29,17 +41,27 @@ He splits the year between Gloggnitz, Vienna and Pattaya. One tap moves the devi
 location, time zone, clock and all. He never sets a clock, because the timezone is bound to
 the place rather than configured beside it.
 
-## The three screens
+## The screens
 
-| | | |
-|---|---|---|
-| ![Über dir jetzt](docs/screens/1-ueber-dir.png) | ![Liste](docs/screens/2-liste.png) | ![Radar](docs/screens/3-radar.png) |
-| **Über dir jetzt** — the nearest aircraft, and where it is going. The one screen that matters. | **Liste** — everything in range, nearest first. Cyan when the route is known, amber when it is not. | **Radar** — where they are and which way they point, north up. Magenta is the nearest. |
+Two pages side by side, and the answer one layer underneath either of them.
 
-Swipe between them; it returns to the first screen by itself after 30 seconds of an empty
-sky. Aircraft with no filed route are not a failure case — seven of the thirteen in our
-first live capture were light aircraft with no flight plan, and those are precisely the
-ones he *hears*, low and slow over the house. They keep the layout and say why:
+| | |
+|---|---|
+| ![Radar](docs/screens/3-radar.png) | ![Liste](docs/screens/2-liste.png) |
+| **Radar** — where they are and which way they point, north up. Magenta is the nearest, cyan has a filed route, amber does not. The marks are carried forward between polls, so they creep the way the aircraft does instead of jumping once every twelve seconds. | **Liste** — everything in range, nearest first, scrolling. Two lines a row: where it is going, then how far and in which direction — with the flight number and the model in the half of that line the distance was never using. |
+
+Swipe between the two. Tap an aircraft on either one — or the caption along the bottom of
+the radar — and **Über dir jetzt** opens underneath it: the same answer the device used to
+open on, now one tap away instead of zero. **Zurück** sits in the top-left, and a tap
+anywhere on the screen does the same thing, because a man in his eighties should not have
+to find a button.
+
+After 30 seconds of an untouched, empty sky the deck returns to the radar by itself. The
+detail layer never closes on its own — if it is open, someone is reading it.
+
+Aircraft with no filed route are not a failure case — seven of the thirteen in our first
+live capture were light aircraft with no flight plan, and those are precisely the ones he
+*hears*, low and slow over the house. They keep the layout and say why:
 
 > **Eine Route gibt es nur zu Flügen mit Flugnummer.**
 
@@ -59,6 +81,7 @@ side edge.
 Built with **ESP-IDF 5.4**, the Waveshare BSP and **LVGL 9.6**, in C.
 
 ```
+ls /dev/cu.usbmodem*          # the board re-enumerates; the node is not fixed
 idf.py build
 idf.py -p /dev/cu.usbmodem101 flash monitor
 ```
@@ -97,10 +120,12 @@ Everything that can be tested off the device is:
 cd test/host && make
 ```
 
-Seven suites and two gates. The check count is in the tens of thousands, but most of
-that is one exhaustive cross-product — every hour against every night-window setting,
-checked against the dimmer's own answer, because a midnight wrap that looks right and is
-not is the kind of bug you otherwise find at 3 a.m. six months later. The gates:
+Nine suites and two gates, **28,069 checks**, under ten seconds from a clean tree. Half of
+that count is one exhaustive cross-product: all 13,824 combinations of hour, window start
+and window end, with the updater's answer checked against the dimmer's own — two
+implementations of one midnight wrap, in two translation units that cannot share code. If
+they ever disagree the device dims at one hour and installs at another, and only one of
+those is visible. The gates:
 
 - **`check_font_coverage.py`** — LVGL draws a missing glyph as *nothing at all*. No error,
   no placeholder, just text that is shorter than you wrote. This fails the build if any
@@ -121,17 +146,24 @@ paste an `https://` manifest URL:
   "size": 2313536 }
 ```
 
-It checks daily and installs **only inside the night dim window**, because writing 2 MB to
-flash tears this panel and he should never see that. A freshly written image boots on
-probation: unless it proves it can still reach WiFi, the bootloader puts the working one
-back. Plain HTTP is refused — whoever controls that URL controls the device.
+It checks about once a day and installs **only inside the night dim window**. That is a
+precaution rather than a measurement: small NVS writes were measured on this unit and do
+*not* tear the panel (espressif/esp-bsp#570 does not reproduce here), but a 2 MB image
+write is a different workload and has never been run with anyone watching the screen. At
+3 a.m. it costs nothing to assume the worse case.
+
+A freshly written image boots on probation: it has to stay on WiFi for two minutes before
+it confirms itself, and if it cannot, the bootloader puts the working build back. Plain
+HTTP is refused — whoever controls that URL controls the device.
 
 ## Data
 
 Positions come from **[adsb.lol](https://adsb.lol)**, routes from
 **[adsb.im](https://adsb.im)**. Both are free, community-run, and this device is a polite
-client: one request per location every 15 seconds, route lookups batched and cached to
-NVS so a reboot does not re-ask.
+client: one position request every 12 seconds and never faster than 10, because rapid
+requests earn a `429` and then a multi-minute `503`. Route lookups are batched — one POST
+resolves every callsign on screen — and cached to NVS, so a route survives a reboot and is
+never asked for twice. A route does not change mid-flight.
 
 > Contains information from **adsb.lol**, which is made available under the
 > [Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/).
@@ -142,7 +174,7 @@ NVS so a reboot does not re-ask.
 
 | | |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | The brief. Product intent, verified hardware profile, data architecture, the gotchas that cost a day each. |
+| [`AGENTS.md`](AGENTS.md) | The operating manual. Product intent, verified hardware profile, data architecture, the gotchas that cost a day each, and the three ways this repo has actually failed. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Colour semantics, type scale, screen inventory. Read before building any screen. |
 | [`docs/PLAN.md`](docs/PLAN.md) | Milestones M0–M8 and where the build actually is. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Every decision and why, including the ones that turned out to be wrong. |

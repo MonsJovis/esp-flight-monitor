@@ -81,11 +81,19 @@ bool ota_should_check(const ota_ctx_t *ctx);
  * written NOW.
  *
  * The gate is the night dim window, and the reason is not politeness. Writing
- * 2 MB to flash tears this panel — espressif/esp-bsp#570 on this exact
+ * 2 MB to flash may tear this panel — espressif/esp-bsp#570 on this exact
  * silicon, which docs/PLAN.md lists as one of the three risks the whole build
- * order exists to retire. An update during the day would garble the screen for
- * a minute in front of the one person who must never see this thing look
- * broken. At 3 a.m. it costs nothing.
+ * order exists to retire.
+ *
+ * Note the "may", because D29 measured the same bug and did NOT reproduce it:
+ * an NVS commit costs 3 us against a 49.7 ms worst-case frame gap, and
+ * sustained commits under a moving high-contrast pattern produced no visible
+ * tearing. But that is the SMALL-WRITE case. A 2 MB continuous write to
+ * another partition is a different workload, it has never been measured here
+ * (the download path is one of the two things this project has not
+ * exercised), and the cost of being wrong is the screen garbling for a minute
+ * in front of the one person who must never see this thing look broken. At
+ * 3 a.m. the precaution costs nothing, so it stays until someone measures it.
  *
  * With auto_dim off there is no window, so there is no safe hour, and the
  * answer is never. That is deliberate: a device whose owner has turned off the
