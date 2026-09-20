@@ -244,6 +244,52 @@ data**. Consistent across all seven screens so the eye learns one map.
 | 5.5 | **Radar** | PPI scope, range rings, heading-rotated glyphs. |
 | 5.6 | **Einstellungen** | Location preset, radius, brightness. |
 | 5.7 | **WLAN** | Provisioning, both networks remembered — the device travels. |
+| 5.8 | **Ort suchen** | Type a town, tap the right one. How "Eigener Ort" gets set. |
+
+### §5.8 exists because §5.6's escape hatch had no way in
+
+"Eigener Ort" sat on the settings screen from M6 as a card that could be SELECTED and never
+SET: it showed whatever coordinates `settings_defaults()` had left in it, read-only. The
+TODO beside it argued — correctly — that a numeric keypad is exactly the "coordinate entry
+form" AGENTS.md §6 forbids. The conclusion it drew from that was wrong. You set a location
+without a coordinate form by **searching for it by name**, which is how everyone has done
+it on every device since about 2008.
+
+So: a row under the location cards, shaped like the WLAN row because it also leaves the
+screen. Two states, one at a time, because a keyboard and a scrollable result list cannot
+both have room on a 480 px panel:
+
+```
+  TYPING                              RESULTS
+  ┌──────────────────────────┐        ┌──────────────────────────┐
+  │ Ort suchen               │        │ Ort suchen               │
+  │ ┌──────────────────────┐ │        │ 8 Orte gefunden          │
+  │ │ Ort                  │ │        │ ──────────────────────── │
+  │ └──────────────────────┘ │        │ Wien                     │
+  │ [ Suchen ] [ Zurück ]    │        │ Bundesland Wien · Öst... │
+  │ ┌──────────────────────┐ │        │ ──────────────────────── │
+  │ │  q w e r t y u i o p │ │        │ Wien                     │
+  │ │   a s d f g h j k l  │ │        │ Missouri · Vereinigte... │
+  │ │    z x c v b n m     │ │        │ ──────────────────────── │
+  │ └──────────────────────┘ │        │ [ Suchen ] [ Zurück ]    │
+  └──────────────────────────┘        └──────────────────────────┘
+```
+
+**Every row carries two lines and the second one is not decoration.** "Wien" returns four
+places and "Pattaya" two, so the name alone cannot answer which one he means; the region
+line is what makes the list answerable. Three rows fit, with the fourth showing just enough
+to say the list continues.
+
+**Three outcomes, three sentences, never a blank list** (AGENTS.md §1). "Kein Ort mit
+diesem Namen" is his typo to fix; "Die Suche hat nicht geantwortet" is the device's problem
+and nothing he types will help; and they are amber and grey respectively, because only one
+of them is a caution.
+
+**The keyboard keeps a Montserrat face** while every word around it is Plex. Its backspace,
+shift, enter and close keys are `LV_SYMBOL_*` codepoints in the private use area and §3's
+Plex subset has no entry for any of them — a Plex keyboard renders four blank keys and logs
+nothing. It is built at 24 px rather than LVGL's 14, because §3's near floor applies to
+something he has to hit with a fingertip.
 
 ### The no-route case is not an edge case
 
@@ -283,6 +329,10 @@ Three swipe pages, one deck:
   an aircraft caption or a list row does nothing, because those handle their own taps.
 - **§5.7 WLAN** is reached from Einstellungen, and appears by itself when no known network
   is in range — the one case where the device must interrupt him.
+- **§5.8 Ort suchen** is reached from Einstellungen only, and returns there. Picking a hit
+  is what returns him: he lands back on the card that now says where he put the device,
+  because a result list with no sign that the tap did anything is how he decides it is
+  broken.
 - **Auto-return** to §5.1 happens **only from §5.3**, and only after 30 s without a touch.
   If he is reading the list, traffic appearing must not yank the screen away.
 

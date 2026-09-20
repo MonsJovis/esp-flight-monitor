@@ -69,7 +69,10 @@ static lv_obj_t *s_cont; /* the scrollable column itself */
 static lv_obj_t *s_card[LOC_COUNT];
 static lv_obj_t *s_card_name[LOC_COUNT];
 static lv_obj_t *s_card_tag[LOC_COUNT]; /* STR_ACTIVE_TAG, shown only when active */
-static lv_obj_t *s_card_coords;         /* LOC_CUSTOM only, always visible */
+/* LOC_CUSTOM's second line. Carries the searched place's name once there is
+ * one and its coordinates until then, which is two different fonts in one
+ * label — see screen_settings_update(). */
+static lv_obj_t *s_card_coords;
 
 /* Umkreis */
 static lv_obj_t *s_radius_value;
@@ -115,6 +118,7 @@ static settings_t s_current;
 
 static settings_changed_cb s_changed_cb;
 static settings_wifi_cb    s_wifi_cb;
+static settings_geo_cb     s_geo_cb;
 static settings_exit_cb    s_exit_cb;
 
 /* ----------------------------------------------------------------------
@@ -300,6 +304,14 @@ static void wifi_row_event_cb(lv_event_t *e)
     }
 }
 
+static void geo_row_event_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_geo_cb) {
+        s_geo_cb();
+    }
+}
+
 static void back_row_event_cb(lv_event_t *e)
 {
     (void)e;
@@ -345,6 +357,12 @@ void screen_settings_create(lv_obj_t *parent)
     int32_t heading_lh = lv_font_get_line_height(&plex_sans_cond_34);
     int32_t body_lh     = lv_font_get_line_height(&plex_sans_cond_25);
     int32_t coord_lh    = lv_font_get_line_height(&plex_mono_17);
+    /* The "Eigener Ort" second line is either coordinates (mono 17) or a
+     * place name (sans 22), and which one it is changes at runtime. The card
+     * is sized for the taller so that searching for somewhere never makes
+     * this card grow and push everything below it down the screen. */
+    int32_t place_lh    = lv_font_get_line_height(&plex_sans_cond_22);
+    int32_t custom_lh   = LV_MAX(coord_lh, place_lh);
     int32_t value_lh    = lv_font_get_line_height(&plex_mono_32);
 
     int32_t y = PAD;
@@ -356,7 +374,7 @@ void screen_settings_create(lv_obj_t *parent)
     y += heading_lh + GAP_LABEL;
 
     int32_t card_h_plain  = LV_MAX(TOUCH_ROW_H, 2 * CARD_PAD_V + body_lh);
-    int32_t card_h_custom = LV_MAX(TOUCH_ROW_H, 2 * CARD_PAD_V + body_lh + GAP_INNER + coord_lh);
+    int32_t card_h_custom = LV_MAX(TOUCH_ROW_H, 2 * CARD_PAD_V + body_lh + GAP_INNER + custom_lh);
 
     /* Indexed by SLOT, not by preset: the cards are laid out in
      * location_display_order() so a new place can be appended to the enum
@@ -388,26 +406,56 @@ void screen_settings_create(lv_obj_t *parent)
         s_card_tag[i]  = tag;
 
         if (is_custom) {
-            /* Read-only, always shown regardless of whether this preset is
-             * active — see screen_settings_update(). */
+            /* Always shown, whether or not this preset is active: he needs to
+             * be able to read where "Eigener Ort" currently points BEFORE
+             * deciding to tap it. Text and font are set by
+             * screen_settings_update(), which is also where the two states
+             * (a searched place, or coordinates) are chosen between.
+             *
+             * This label used to carry a TODO saying coordinate entry was
+             * intentionally unimplemented, because a numeric keypad is
+             * exactly the "coordinate entry form" AGENTS.md §6 forbids. That
+             * reasoning was right and its conclusion was not: the way to set
+             * a location without a coordinate form is to search for it by
+             * name, which is what the row below these cards now does (§5.8,
+             * screen_geo.h). */
             s_card_coords = make_label(card, &plex_mono_17, THEME_TEXT_LABEL);
+            lv_obj_set_width(s_card_coords, CONTENT_W - 2 * CARD_PAD_H);
+            lv_label_set_long_mode(s_card_coords, LV_LABEL_LONG_MODE_DOTS);
             lv_obj_set_pos(s_card_coords, CARD_PAD_H, CARD_PAD_V + body_lh + GAP_INNER);
-
-            /* TODO(coordinate entry): this screen has no way to SET
-             * custom_lat/custom_lon — a numeric keypad or map tap is exactly
-             * the "coordinate entry form" this screen exists to avoid
-             * (AGENTS.md §6). Tapping this card only selects LOC_CUSTOM as
-             * the active preset; the figure above is read-only. A real entry
-             * path (map tap, or a geocoded "type your city") belongs one tap
-             * further away — an advanced, rarely-used screen — not competing
-             * here with the one-tap preset switch that is the whole point of
-             * this section. */
         }
 
         lv_obj_add_event_cb(card, card_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)p);
 
-        y += h + ((i == LOC_COUNT - 1) ? GAP_SECTION : GAP_CARD);
+        /* GAP_CARD after the LAST card too, not GAP_SECTION: "Ort suchen"
+         * follows and it belongs to this section — it is the row that fills
+         * the "Eigener Ort" card in. A section-sized gap there would read as
+         * the end of Ort and the start of something unrelated. */
+        y += h + GAP_CARD;
     }
+
+    /* ---- Ort suchen --------------------------------------------------
+     * A ROW, not a card. Every card above it is a place he can BE; this one
+     * takes him somewhere else, so it is shaped like the WLAN row further
+     * down — a bordered row with an arrow — and not like a fifth location he
+     * could accidentally select. It sits directly under the cards because
+     * that is what it changes: tapping a hit over there is what fills
+     * "Eigener Ort" in over here. */
+    lv_obj_t *geo_row = make_row(s_cont, y, TOUCH_ROW_H);
+    lv_obj_set_style_bg_color(geo_row, THEME_GROUND, 0);
+    lv_obj_set_style_border_color(geo_row, THEME_BORDER_IDLE, 0);
+
+    lv_obj_t *geo_label = make_label(geo_row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    lv_label_set_text(geo_label, STR_GEO_TITLE);
+    lv_obj_set_pos(geo_label, CARD_PAD_H, (TOUCH_ROW_H - body_lh) / 2);
+
+    lv_obj_t *geo_arrow = make_label(geo_row, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    lv_label_set_text(geo_arrow, STR_ROW_ARROW);
+    align_right(geo_arrow, CONTENT_W, CARD_PAD_H, (TOUCH_ROW_H - body_lh) / 2);
+
+    lv_obj_add_event_cb(geo_row, geo_row_event_cb, LV_EVENT_CLICKED, NULL);
+
+    y += TOUCH_ROW_H + GAP_SECTION;
 
     /* ================= 2. Umkreis ================= */
     lv_obj_t *h_umkreis = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
@@ -554,6 +602,15 @@ void screen_settings_create(lv_obj_t *parent)
     lv_label_set_text(attrib, STR_ATTRIBUTION);
     lv_obj_update_layout(attrib);
     lv_obj_set_pos(attrib, PAD + (CONTENT_W - lv_obj_get_width(attrib)) / 2, y);
+    y += lv_obj_get_height(attrib) + GAP_INNER;
+
+    /* The place search's own obligation: Open-Meteo's geocoding data is
+     * GeoNames under CC BY 4.0 (AGENTS.md, "Data licences"). Its own line
+     * because the two together run past the content column at this size. */
+    lv_obj_t *attrib2 = make_label(s_cont, &plex_mono_12, THEME_TEXT_LABEL);
+    lv_label_set_text(attrib2, STR_ATTRIBUTION_2);
+    lv_obj_update_layout(attrib2);
+    lv_obj_set_pos(attrib2, PAD + (CONTENT_W - lv_obj_get_width(attrib2)) / 2, y);
 }
 
 void screen_settings_set_battery(const char *line)
@@ -583,9 +640,26 @@ void screen_settings_update(const settings_t *s)
         lv_obj_set_hidden(s_card_tag[i], !active);
     }
 
-    char coords[40];
-    snprintf(coords, sizeof coords, FMT_CUSTOM_COORDS, s_current.custom_lat, s_current.custom_lon);
-    lv_label_set_text(s_card_coords, coords);
+    /* The "Eigener Ort" second line. A place he chose is a NAME — it tells
+     * him where the device thinks it is standing, which four decimal places
+     * do not — so once the search has filled one in, that is what the card
+     * says. Until then the coordinates are shown, which is what the card has
+     * always said and is still the honest answer to "where is this pointing".
+     *
+     * The font changes with the content: mono for figures (the same tabular
+     * face every number on this device uses, DESIGN.md §3) and sans for
+     * words. The card was sized for the taller of the two at create time, so
+     * nothing below it moves when this switches. */
+    if (s_current.custom_label[0] != '\0') {
+        lv_obj_set_style_text_font(s_card_coords, &plex_sans_cond_22, 0);
+        lv_label_set_text(s_card_coords, s_current.custom_label);
+    } else {
+        char coords[40];
+        snprintf(coords, sizeof coords, FMT_CUSTOM_COORDS,
+                 s_current.custom_lat, s_current.custom_lon);
+        lv_obj_set_style_text_font(s_card_coords, &plex_mono_17, 0);
+        lv_label_set_text(s_card_coords, coords);
+    }
 
     /* --- Umkreis --- */
     lv_slider_set_value(s_radius_slider, s_current.radius_nm, LV_ANIM_OFF);
@@ -614,6 +688,11 @@ void screen_settings_set_cb(settings_changed_cb cb)
 void screen_settings_set_wifi_cb(settings_wifi_cb cb)
 {
     s_wifi_cb = cb;
+}
+
+void screen_settings_set_geo_cb(settings_geo_cb cb)
+{
+    s_geo_cb = cb;
 }
 
 void screen_settings_set_exit_cb(settings_exit_cb cb)

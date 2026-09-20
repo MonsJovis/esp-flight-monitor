@@ -1,0 +1,515 @@
+/* screen_geo.c — see screen_geo.h for the contract.
+ *
+ * DESIGN.md §5.8 / §3 NEAR tier (~40 cm, leaned into): every label he acts on
+ * is >=25 px and every tappable row is >=64 px, the same floors screen_wifi.c
+ * works to. Two full-bleed sub-screens share `parent` and only one is visible
+ * at a time; both are built once (screen_overhead.c's create-once/update-many
+ * pattern), and the hit list is a fixed POOL of rows so that no widget is
+ * ever created or destroyed on the display task after start-up.
+ */
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "screen_geo.h"
+#include "theme.h"
+#include "fonts/fonts.h"
+#include "strings_de.h"
+#include "geocode.h"
+#include "widget_input.h"
+
+/* ============================================================================
+ * FIXED UI CHROME STRINGS — there are none in this file. Every word it shows
+ * comes from main/strings_de.h, and tools/check_strings.py fails the build if
+ * one reappears here (screen_settings.c's convention).
+ *
+ * NOTE on "..." in STR_GEO_SEARCHING: three ASCII periods, not U+2026. The
+ * font subset has no ellipsis glyph and LVGL draws a missing glyph as nothing
+ * at all (AGENTS.md §7). The reasoning lives beside the string.
+ * ============================================================================
+ */
+
+/* ============================================================================
+ * Layout — px, on the 8 px base unit (THEME_BASE_UNIT).
+ * ============================================================================
+ */
+#define PAD       THEME_SIDE_PADDING                            /* 20  */
+#define CONTENT_W (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING) /* 440 */
+#define GAP_SM    8
+#define GAP_MD    16
+
+#define BTN_H     64    /* comfortably past the 56 px floor, as in WLAN */
+#define FIELD_H   64
+#define ROW_INSET 16
+#define ROW_PAD_V 8
+
+/* One row per hit. GEOCODE_MAX_RESULTS is what the integrator asks the
+ * endpoint for, so sizing the pool from it means the two can never disagree
+ * about how many can come back. */
+#define GEO_MAX_ROWS GEOCODE_MAX_RESULTS
+
+/* ============================================================================
+ * Widget tree — built once, single instance, file-scope statics (matches
+ * screen_wifi.c and screen_overhead.c).
+ * ============================================================================
+ */
+
+/* --- s_type: title, field, Suchen/Zurück, keyboard --- */
+static lv_obj_t *s_type;
+static lv_obj_t *s_ta;
+static lv_obj_t *s_kb;
+
+/* --- s_res: title, status, hit list, Neu suchen/Zurück --- */
+static lv_obj_t *s_res;
+static lv_obj_t *s_lbl_status;
+static lv_obj_t *s_list;
+
+typedef struct {
+    lv_obj_t *row;
+    lv_obj_t *lbl_name;
+    lv_obj_t *lbl_region;
+} geo_row_t;
+
+static geo_row_t   s_rows[GEO_MAX_ROWS];
+/* The hits themselves, kept because the pick callback hands the integrator a
+ * whole geo_place_t — coordinates and timezone included — and a label on
+ * screen cannot give those back. */
+static geo_place_t s_places[GEO_MAX_ROWS];
+static int         s_n_places;
+
+/* True only while this screen's widgets exist.
+ *
+ * The lookup runs on its own task and calls screen_geo_set_results() when it
+ * lands, typically two to ten seconds after he tapped Suchen. If the overlay
+ * was closed in the meantime every pointer in this file is dangling and the
+ * search task writes through all of them — the D58 panic, which reached this
+ * repo twice through the WLAN screen before it was understood.
+ *
+ * Cleared by LVGL itself on LV_EVENT_DELETE, so nothing outside this file has
+ * to remember to call anything, which is the only version of this that stays
+ * true. */
+static bool s_alive;
+
+static geo_search_cb s_search_cb;
+static geo_pick_cb   s_pick_cb;
+static geo_exit_cb   s_exit_cb;
+
+static void show_typing(void);
+
+static void on_type_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_alive = false;
+    s_type  = NULL;
+    s_res   = NULL;
+}
+
+/* ============================================================================
+ * Small helpers — each screen keeps its own copies rather than sharing one
+ * set across files (screen_wifi.c, screen_settings.c do the same).
+ * ============================================================================
+ */
+
+static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color)
+{
+    lv_obj_t *l = lv_label_create(parent);
+    lv_obj_set_style_text_font(l, font, 0);
+    lv_obj_set_style_text_color(l, color, 0);
+    lv_label_set_text(l, "");
+    return l;
+}
+
+static lv_obj_t *make_button(lv_obj_t *parent, int32_t w, int32_t h, const char *text,
+                             lv_color_t bg, lv_color_t border, lv_color_t text_color)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, w, h);
+    widget_kill_button_chrome(btn);
+    lv_obj_set_style_bg_color(btn, bg, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(btn, border, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_radius(btn, THEME_BASE_UNIT, 0);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_obj_set_style_text_font(lbl, &plex_sans_cond_25, 0);
+    lv_obj_set_style_text_color(lbl, text_color, 0);
+    lv_label_set_text(lbl, text);
+    lv_obj_center(lbl);
+    return btn;
+}
+
+/* A full-bleed sub-screen. Both states are one of these. */
+static lv_obj_t *make_sheet(lv_obj_t *parent)
+{
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_size(o, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(o, 0, 0);
+    lv_obj_set_style_bg_color(o, THEME_GROUND, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_scrollable(o, false);
+    return o;
+}
+
+/* The same title on both states, in the same place, so that flipping between
+ * them does not read as having gone somewhere else. Returns the y below it. */
+static int32_t make_title(lv_obj_t *parent)
+{
+    lv_obj_t *t = make_label(parent, &plex_sans_cond_34, THEME_TEXT_PRIMARY);
+    lv_label_set_text(t, STR_GEO_TITLE);
+    lv_obj_set_pos(t, PAD, PAD);
+    lv_obj_update_layout(t);
+    return PAD + lv_obj_get_height(t) + GAP_SM;
+}
+
+/* ============================================================================
+ * State switching
+ * ============================================================================
+ */
+
+static void apply_status(const char *text, lv_color_t color)
+{
+    lv_label_set_text(s_lbl_status, text);
+    lv_obj_set_style_text_color(s_lbl_status, color, 0);
+}
+
+static void show_typing(void)
+{
+    lv_obj_set_hidden(s_res, true);
+    lv_obj_set_hidden(s_type, false);
+    /* Re-attach rather than assume: the keyboard keeps whatever text area it
+     * was last given, and this screen only ever has the one. */
+    lv_keyboard_set_textarea(s_kb, s_ta);
+    lv_keyboard_set_mode(s_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+}
+
+static void show_results(void)
+{
+    lv_obj_set_hidden(s_type, true);
+    lv_obj_set_hidden(s_res, false);
+}
+
+/* ============================================================================
+ * The hit list
+ * ============================================================================
+ */
+
+static void row_event_cb(lv_event_t *e)
+{
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx < 0 || idx >= s_n_places) {
+        return;
+    }
+    if (s_pick_cb) {
+        s_pick_cb(&s_places[idx]);
+    }
+}
+
+/* Builds pool slot `idx` once. Content is set later by update_row(); this
+ * only creates widgets and fixes their static geometry.
+ *
+ * TWO LINES PER ROW, and the second one is not decoration: "Wien" returns
+ * four places and "Pattaya" two, so the name alone cannot tell him which one
+ * he means. The region line is what makes the list answerable. */
+static void create_row(lv_obj_t *parent, int idx, int32_t name_lh, int32_t region_lh)
+{
+    geo_row_t *row = &s_rows[idx];
+
+    row->row = lv_button_create(parent);
+    lv_obj_set_size(row->row, CONTENT_W, 2 * ROW_PAD_V + name_lh + GAP_SM / 2 + region_lh);
+    widget_kill_button_chrome(row->row);
+    /* A DIVIDED LIST, not a stack of cards. Every card on this device is a
+     * place he can BE (the location cards in Einstellungen); these are
+     * candidates he is choosing between, which is DESIGN.md §5.4's list, and
+     * screen_wifi.c draws its unsaved networks the same way for the same
+     * reason. Square corners, a hairline under each row, no gap between
+     * them — which is also what lets three and a bit rows fit instead of
+     * two and a half, so the list visibly continues past the fold. */
+    lv_obj_set_style_radius(row->row, 0, 0);
+    lv_obj_set_style_bg_opa(row->row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(row->row, THEME_SURFACE_SEL, LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(row->row, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(row->row, 1, 0);
+    lv_obj_set_style_border_side(row->row, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(row->row, THEME_DIVIDER, 0);
+    lv_obj_set_hidden(row->row, true);  /* the pool starts empty */
+    lv_obj_add_event_cb(row->row, row_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)idx);
+
+    row->lbl_name = make_label(row->row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    lv_obj_set_width(row->lbl_name, CONTENT_W - 2 * ROW_INSET);
+    lv_label_set_long_mode(row->lbl_name, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(row->lbl_name, ROW_INSET, ROW_PAD_V);
+
+    row->lbl_region = make_label(row->row, &plex_sans_cond_22, THEME_TEXT_LABEL);
+    lv_obj_set_width(row->lbl_region, CONTENT_W - 2 * ROW_INSET);
+    lv_label_set_long_mode(row->lbl_region, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(row->lbl_region, ROW_INSET, ROW_PAD_V + name_lh + GAP_SM / 2);
+}
+
+void screen_geo_set_results(const geo_place_t *places, int n)
+{
+    /* He may have tapped Zurück while the lookup was in flight — see s_alive. */
+    if (!s_alive) {
+        return;
+    }
+
+    bool failed = (n < 0);
+    if (failed || places == NULL) {
+        n = 0;
+    }
+    if (n > GEO_MAX_ROWS) {
+        n = GEO_MAX_ROWS;
+    }
+
+    for (int i = 0; i < n; i++) {
+        s_places[i] = places[i];
+        lv_label_set_text(s_rows[i].lbl_name, s_places[i].name);
+        lv_label_set_text(s_rows[i].lbl_region, s_places[i].region);
+        /* A hit whose region the parser dropped (no glyphs, or the endpoint
+         * knew neither the province nor the country) gets its name centred in
+         * the row instead of a blank second line. */
+        lv_obj_set_hidden(s_rows[i].lbl_region, s_places[i].region[0] == '\0');
+        lv_obj_set_hidden(s_rows[i].row, false);
+    }
+    for (int i = n; i < GEO_MAX_ROWS; i++) {
+        lv_obj_set_hidden(s_rows[i].row, true);
+    }
+    s_n_places = n;
+
+    /* AGENTS.md §1: never a blank panel, and never a silent one. Each of the
+     * three outcomes says what happened in a sentence, and the two that are
+     * not successes are told apart on purpose — "nothing exists by that
+     * name" is his typo to fix, "the search did not answer" is the device's
+     * problem and nothing he types will help. */
+    char buf[48];
+    if (failed) {
+        apply_status(STR_GEO_FAILED, THEME_AMBER);
+    } else if (n == 0) {
+        apply_status(STR_GEO_NONE, THEME_TEXT_LABEL);
+    } else if (n == 1) {
+        apply_status(STR_GEO_ONE, THEME_GREEN);
+    } else {
+        snprintf(buf, sizeof buf, FMT_GEO_MANY, n);
+        apply_status(buf, THEME_GREEN);
+    }
+
+    /* Always land at the top: after a second search the list must not still
+     * be scrolled to where the previous one was left. */
+    lv_obj_scroll_to_y(s_list, 0, LV_ANIM_OFF);
+    show_results();
+}
+
+/* ============================================================================
+ * Suchen / Neu suchen / Zurück
+ * ============================================================================
+ */
+
+/* Copies the field into `out`, trimming ASCII whitespace at both ends. He
+ * will leave a trailing space after tapping the space bar by accident, and an
+ * un-trimmed query is a percent-encoded "%20" the endpoint matches nothing
+ * against — the same trap AGENTS.md §7 documents for the space-padded
+ * `flight` field, arriving from the other direction. */
+static void trimmed_query(char *out, size_t out_sz)
+{
+    const char *src = lv_textarea_get_text(s_ta);
+    if (src == NULL) {
+        out[0] = '\0';
+        return;
+    }
+    size_t start = 0;
+    while (src[start] == ' ' || src[start] == '\t') {
+        start++;
+    }
+    size_t end = strlen(src);
+    while (end > start && (src[end - 1] == ' ' || src[end - 1] == '\t')) {
+        end--;
+    }
+    size_t n = end - start;
+    if (n > out_sz - 1) {
+        n = out_sz - 1;
+    }
+    memcpy(out, src + start, n);
+    out[n] = '\0';
+}
+
+static void do_search(void)
+{
+    char query[SCREEN_GEO_QUERY_MAX];
+    trimmed_query(query, sizeof query);
+
+    /* Two characters is the endpoint's own floor (geo_build_url()). Below it,
+     * flip to the results state and say nothing was found rather than sitting
+     * on the typing screen doing nothing visible — a tap that produces no
+     * change at all is how he decides the device is broken. */
+    if (strlen(query) < 2) {
+        screen_geo_set_results(NULL, 0);
+        return;
+    }
+
+    apply_status(STR_GEO_SEARCHING, THEME_TEXT_LABEL);
+    for (int i = 0; i < GEO_MAX_ROWS; i++) {
+        lv_obj_set_hidden(s_rows[i].row, true);
+    }
+    s_n_places = 0;
+    show_results();
+
+    if (s_search_cb) {
+        s_search_cb(query);
+    }
+}
+
+static void search_clicked_cb(lv_event_t *e)  { (void)e; do_search(); }
+static void again_clicked_cb(lv_event_t *e)   { (void)e; show_typing(); }
+
+static void exit_clicked_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_exit_cb) {
+        s_exit_cb();
+    }
+}
+
+/* lv_keyboard's OK key sends LV_EVENT_READY to its text area, and — because
+ * s_ta is one_line — so does its Enter key. Wiring both to do_search() means
+ * the keyboard behaves the way every other on-screen keyboard he has used
+ * behaves, on top of the explicit Suchen button. Its close glyph
+ * (LV_EVENT_CANCEL) leaves the screen, matching Zurück beside it. */
+static void ta_ready_cb(lv_event_t *e)  { (void)e; do_search(); }
+static void ta_cancel_cb(lv_event_t *e) { (void)e; exit_clicked_cb(e); }
+
+/* ============================================================================
+ * Public API
+ * ============================================================================
+ */
+
+void screen_geo_create(lv_obj_t *parent)
+{
+    int32_t name_lh   = lv_font_get_line_height(&plex_sans_cond_25);
+    int32_t region_lh = lv_font_get_line_height(&plex_sans_cond_22);
+    int32_t btn_w     = (CONTENT_W - GAP_MD) / 2;
+
+    /* ---------- s_type ---------- */
+    s_type = make_sheet(parent);
+    lv_obj_add_event_cb(s_type, on_type_deleted, LV_EVENT_DELETE, NULL);
+
+    int32_t y = make_title(s_type);
+    y += GAP_SM;
+
+    s_ta = lv_textarea_create(s_type);
+    lv_obj_set_size(s_ta, CONTENT_W, FIELD_H);
+    lv_obj_set_pos(s_ta, PAD, y);
+    lv_textarea_set_one_line(s_ta, true);
+    lv_textarea_set_placeholder_text(s_ta, STR_GEO_PLACEHOLDER);
+    lv_textarea_set_max_length(s_ta, SCREEN_GEO_QUERY_MAX - 1);
+    lv_obj_set_style_text_font(s_ta, &plex_sans_cond_25, 0);
+    widget_style_field(s_ta);
+    lv_obj_add_event_cb(s_ta, ta_ready_cb, LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(s_ta, ta_cancel_cb, LV_EVENT_CANCEL, NULL);
+    y += FIELD_H + GAP_MD;
+
+    /* Suchen carries the green pairing theme.h already names for "the good
+     * path" (the WLAN screen's saved-network tokens); Zurück stays neutral. */
+    lv_obj_t *btn_search = make_button(s_type, btn_w, BTN_H, STR_GEO_BTN_SEARCH,
+                                       THEME_SURFACE_GREEN, THEME_BORDER_GREEN,
+                                       THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_search, PAD, y);
+    lv_obj_add_event_cb(btn_search, search_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *btn_back1 = make_button(s_type, btn_w, BTN_H, STR_BACK,
+                                      THEME_SURFACE_SEL, THEME_BORDER_IDLE,
+                                      THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_back1, PAD + btn_w + GAP_MD, y);
+    lv_obj_add_event_cb(btn_back1, exit_clicked_cb, LV_EVENT_CLICKED, NULL);
+    y += BTN_H + GAP_MD;
+
+    /* Full screen width (0, not PAD) for the largest possible keys, filling
+     * everything below the buttons so it never overlaps the field above.
+     *
+     * lv_obj_align(), NOT lv_obj_set_pos(). lv_keyboard's constructor does
+     * `lv_obj_align(obj, LV_ALIGN_BOTTOM_MID, 0, 0)` on itself
+     * (lv_keyboard.c), and in LVGL 9 x/y are an OFFSET FROM THE ALIGNMENT
+     * once one is set — so lv_obj_set_pos(kb, 0, 240) does not put the
+     * keyboard 240 px down the screen, it puts it 240 px BELOW THE BOTTOM
+     * EDGE, where nothing can be seen and nothing can be tapped. The screen
+     * renders perfectly and simply has no keyboard on it. Measured on the
+     * panel with tools/grab_screen.py, which is the only reason it was
+     * caught: every other widget on this screen positions itself with
+     * set_pos and lands where it is told, because nothing else in this
+     * codebase aligns itself in its own constructor. */
+    s_kb = lv_keyboard_create(s_type);
+    lv_obj_set_size(s_kb, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT - y);
+    lv_obj_align(s_kb, LV_ALIGN_TOP_LEFT, 0, y);
+    widget_style_keyboard(s_kb);
+    lv_keyboard_set_textarea(s_kb, s_ta);
+    lv_keyboard_set_mode(s_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+
+    /* ---------- s_res ---------- */
+    s_res = make_sheet(parent);
+    lv_obj_set_hidden(s_res, true);
+
+    int32_t ry = make_title(s_res);
+
+    s_lbl_status = make_label(s_res, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    lv_obj_set_width(s_lbl_status, CONTENT_W);
+    lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_MODE_DOTS);
+    /* Never blank, even before the first search (AGENTS.md §1). */
+    apply_status(STR_GEO_IDLE, THEME_TEXT_LABEL);
+    lv_obj_set_pos(s_lbl_status, PAD, ry);
+    ry += name_lh + GAP_MD;
+
+    int32_t btn_y = THEME_SCREEN_HEIGHT - PAD - BTN_H;
+
+    lv_obj_t *btn_again = make_button(s_res, btn_w, BTN_H, STR_GEO_BTN_SEARCH,
+                                      THEME_SURFACE_SEL, THEME_BORDER_IDLE,
+                                      THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_again, PAD, btn_y);
+    lv_obj_add_event_cb(btn_again, again_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *btn_back2 = make_button(s_res, btn_w, BTN_H, STR_BACK,
+                                      THEME_SURFACE_SEL, THEME_BORDER_IDLE,
+                                      THEME_TEXT_PRIMARY);
+    lv_obj_set_pos(btn_back2, PAD + btn_w + GAP_MD, btn_y);
+    lv_obj_add_event_cb(btn_back2, exit_clicked_cb, LV_EVENT_CLICKED, NULL);
+
+    /* The scrollable hit list, filling what is left between the status line
+     * and the buttons. Vertical only, with momentum, like every other list on
+     * this device. */
+    s_list = lv_obj_create(s_res);
+    lv_obj_remove_style_all(s_list);
+    lv_obj_set_pos(s_list, PAD, ry);
+    lv_obj_set_size(s_list, CONTENT_W, btn_y - GAP_MD - ry);
+    lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_row(s_list, 0, 0);
+    lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_scrollable(s_list, true);
+    lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
+    lv_obj_set_scroll_momentum(s_list, true);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
+
+    /* A hidden pool row takes no flex layout space, so the first visible hit
+     * always lands at the top of the list with no extra handling. */
+    for (int i = 0; i < GEO_MAX_ROWS; i++) {
+        create_row(s_list, i, name_lh, region_lh);
+    }
+
+    /* Last, deliberately: until every widget exists there is nothing safe for
+     * the search task to write into. */
+    s_alive = true;
+}
+
+void screen_geo_debug_tap(int idx)
+{
+    if (!s_alive || idx < 0 || idx >= s_n_places) {
+        return;
+    }
+    lv_obj_send_event(s_rows[idx].row, LV_EVENT_CLICKED, NULL);
+}
+
+void screen_geo_set_search_cb(geo_search_cb cb) { s_search_cb = cb; }
+void screen_geo_set_pick_cb(geo_pick_cb cb)     { s_pick_cb = cb; }
+void screen_geo_set_exit_cb(geo_exit_cb cb)     { s_exit_cb = cb; }

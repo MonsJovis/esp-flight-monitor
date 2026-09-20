@@ -4,11 +4,13 @@
  * long-press on the chrome bar (DESIGN.md §6), never by swipe. That framing
  * drives every choice in screen_settings.c:
  *
- *   - Location is three tappable cards (Gloggnitz / Pattaya / Eigener Ort),
- *     never a coordinate form. AGENTS.md §6: "switching location should be
- *     one tap, not a coordinate entry form." "Eigener Ort" shows its stored
- *     coordinates read-only; there is a TODO where that card is built
- *     marking coordinate entry as intentionally unimplemented.
+ *   - Location is four tappable cards (Gloggnitz / Wien / Pattaya / Eigener
+ *     Ort), never a coordinate form. AGENTS.md §6: "switching location should
+ *     be one tap, not a coordinate entry form." "Eigener Ort" shows the place
+ *     the search last found — "Innsbruck · Tirol" — or, until he has searched
+ *     once, its stored coordinates. Setting it is one row further down
+ *     ("Ort suchen", §5.8, screen_geo.h) rather than an entry field competing
+ *     with the one-tap preset switch that is the point of this section.
  *   - Every tappable row is >= 56 px tall, every label he has to read is
  *     >= 24 px (DESIGN.md §3's Near tier, ~40 cm), and the active location
  *     card carries a word ("Aktiv") as well as its magenta fill — DO-257A
@@ -46,8 +48,10 @@ void screen_settings_create(lv_obj_t *parent);
 /* Cheap per-call update: reflects every field of `s` onto the already-built
  * widget tree — which location card is active (fill + border + the "Aktiv"
  * word), the radius and brightness sliders and their numeric read-outs, the
- * auto-dim switch and its window text, and the read-only coordinates shown
- * on the "Eigener Ort" card. Never creates or destroys a widget, so it is
+ * auto-dim switch and its window text, and the second line of the "Eigener
+ * Ort" card (the searched place's name, or its coordinates until there is
+ * one — the font changes with it, which is why that line is re-styled here
+ * and not only re-texted). Never creates or destroys a widget, so it is
  * safe to call whenever the integrator's copy of `settings_t` changes —
  * after loading from NVS, and again after a settings_changed_cb round-trip.
  *
@@ -98,6 +102,12 @@ void screen_settings_set_wifi_cb(settings_wifi_cb cb);
 /* Fired when "Zurück" is tapped. This screen is reached by long-press and is
  * not in the swipe deck (DESIGN.md §6), so leaving it is entirely this
  * callback's job — wire it back to whatever screen was showing before. */
+/* Called when he taps "Ort suchen". Opens §5.8 (screen_geo.h); this screen
+ * knows nothing about it beyond that somebody else will handle it, the same
+ * arrangement the WLAN row has. */
+typedef void (*settings_geo_cb)(void);
+void screen_settings_set_geo_cb(settings_geo_cb cb);
+
 typedef void (*settings_exit_cb)(void);
 void screen_settings_set_exit_cb(settings_exit_cb cb);
 

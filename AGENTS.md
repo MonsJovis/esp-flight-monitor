@@ -5,8 +5,8 @@ Operating manual for AI agents working in this repo. Read this before touching c
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
 > ([docs/PLAN.md](./docs/PLAN.md)); sixty decisions are written up with their reasoning and
-> their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is **28,069
-> checks across nine suites, 0 failed**.
+> their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is **32,380
+> checks across ten suites, 0 failed**.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -177,6 +177,8 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 
 - `s` screenshot — `1`–`4` show a captured fixture — `0` back to live
 - `g` next page — `i` toggle the detail layer — `e` settings — `k` WLAN — `d` scroll to end
+- `q` open Ort suchen — `Q` run a real search on it — `z` search and take the first hit
+  — `Z` draw its "nothing found" and "no answer" states
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
@@ -202,6 +204,7 @@ free community HTTP APIs. Every endpoint below was live-tested on 2026-09-18.
 Positions  →  GET  http://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}
 Routes     →  POST http://adsb.im/api/0/routeset            (batched!)
 Type names →  const table in flash: ICAO code → "Airbus A320neo"
+Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&language=de
 ```
 
 ### Why this combination
@@ -214,6 +217,16 @@ Type names →  const table in flash: ICAO code → "Airbus A320neo"
 - **`adsb.im/routeset` is batched** — one POST resolves every callsign on screen, instead
   of N TLS handshakes. It also returns city names and a `plausible` flag that filters
   nonsense matches. Verified: `AUA453` → `LOWW-EGLL` / Vienna → London.
+- **Open-Meteo is the only free geocoder that answers over plain HTTP.** Measured
+  2026-09-20 with this project's own User-Agent: Open-Meteo `200`, no redirect;
+  `nominatim.openstreetmap.org` `301` → https; `photon.komoot.io` `301` → https. Since the
+  whole memory argument below rests on never opening a TLS connection on the data path,
+  that settles it. It pays a second time: each hit carries its IANA **timezone**, which is
+  what lets §6's "the clock follows the location" hold for a place that is not a preset.
+  The cost is that it finds PLACES and not street addresses — which does not matter here,
+  because the default radius is 30 nm (55 km) and moving the query point by the 600 m
+  between a town centre and a house on its edge changes nothing about which aircraft come
+  back. Only ever requested when somebody taps Suchen in §5.8; nothing polls it.
 - **Type names belong in flash, not on the network.** `adsb.lol` gives `t` = `A20N`; a
   ~200-entry table costs a few KB and removes a whole API dependency. Built:
   `main/data/tbl_actype.c`, `tbl_airline.c`, `tbl_airport.c` — all three were resized
@@ -297,10 +310,26 @@ not read a manual. Design for that:
 - **Provisioning must survive a non-technical user in a foreign country.** Settled in §8:
   an **on-device** network list that appears by itself when no known network is in range.
   Not a captive portal — that assumes a phone, a second network join and a browser.
-- **Switching location should be one tap**, not a coordinate entry form. Two named presets
-  ("Gloggnitz", "Pattaya") plus an advanced custom option.
+- **Switching location should be one tap**, not a coordinate entry form. Three named
+  presets (Gloggnitz, Wien, Pattaya) plus an advanced custom option.
+  **Built, 2026-09-20 — and the conclusion was not what this line assumed.** "Eigener Ort"
+  shipped in M6 as a card with no way to set it: `custom_lat`/`custom_lon` were whatever
+  `settings_defaults()` had put there, and a TODO in `screen_settings.c` marked coordinate
+  entry as intentionally unimplemented *because a numeric keypad is the very form this rule
+  forbids*. That reasoning was right and its conclusion was wrong. The way to set a
+  location without a coordinate form is to **search for it by name** — §5.8 "Ort suchen",
+  one row under the cards. He types a town, taps Suchen, taps the right hit out of a list;
+  he never sees a coordinate and never types a decimal point.
 - **Timezone changes with the location** — CEST and ICT are 5–6 h apart depending on the
   season. Bind the timezone to the location preset; do not make him set a clock.
+  **This was broken for LOC_CUSTOM the whole time and nobody could have noticed**, because
+  nobody could reach that preset with real coordinates in it: its row in `k_presets[]` said
+  `"UTC0"`, so tapping "Eigener Ort" moved the panel clock two hours without moving the
+  device an inch. A searched place now carries its own POSIX rule
+  (`settings_t.custom_tz`, from the geocoder's IANA zone via `main/net/tz_table.h`), and
+  `settings_tz()` is what the clock is set from. **Call `settings_tz(&settings)`, never
+  `location_tz(settings.preset)`** — the second one cannot know about a custom place and
+  answers Gloggnitz for it.
 - Consider auto-detecting the location preset from the WiFi SSID he connects to.
 
 ## 7. Gotchas that will cost you a day
@@ -332,6 +361,22 @@ not read a manual. Design for that:
   face costs **zero** FPS; at one it costs 6%. The full font set is 735 KiB and buys back
   nothing by shrinking. Do not re-open this without a new measurement.
 
+- **`lv_keyboard` positions itself, and `lv_obj_set_pos()` then means something else.**
+  Its constructor calls `lv_obj_align(obj, LV_ALIGN_BOTTOM_MID, 0, 0)` on itself
+  (`lv_keyboard.c`), and in LVGL 9 an object's x/y become an OFFSET FROM ITS ALIGNMENT once
+  one is set. So `lv_obj_set_pos(kb, 0, 240)` — which is how every other widget in this
+  codebase is placed, and which reads as obviously correct — asks for a keyboard 240 px
+  **below the bottom edge of the panel**. The screen renders perfectly, with no keyboard on
+  it, and nothing is logged. **The WLAN password step shipped like this from M6 until
+  2026-09-20** and nobody saw it, because that step needs a finger on an unknown network
+  and so was never once reached from the build host. Use `lv_obj_align(kb,
+  LV_ALIGN_TOP_LEFT, 0, y)`. Both keyboards are styled by `main/ui/widget_input.c`, which
+  says the same thing where someone writing the next one will read it.
+- **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
+  a 2 px band of `#525152` all round — a grey line under every list divider and a grey
+  column down both edges of a list. Nothing in the source asks for it, so nothing in the
+  source looks wrong; it was found by reading the panel's framebuffer back and probing
+  pixels. `widget_kill_button_chrome()`.
 - **In LVGL 9 every `lv_obj_create()` is a touch target, and no event ever bubbles.**
   The `lv_obj` constructor sets `obj->clickable = 1` (labels are the exception — theirs
   sets it false), and LVGL passes an event to a parent only if the child carries
@@ -453,7 +498,10 @@ the per-project survey.
 
 **Data licences:** adsb.lol is ODbL 1.0. adsb.fi is personal/non-commercial only and
 requires attribution. adsbdb's route data may be displayed but **not mirrored into another
-database**. Show an attribution line in the UI.
+database**. Open-Meteo's geocoding data is GeoNames under **CC BY 4.0**, and its free tier
+is non-commercial. Show an attribution line in the UI — there are two now, at the foot of
+Einstellungen (`STR_ATTRIBUTION`, `STR_ATTRIBUTION_2`), because all of it does not fit on
+one line at that size and a truncated attribution is not a cosmetic problem.
 
 ## 10. Conventions
 

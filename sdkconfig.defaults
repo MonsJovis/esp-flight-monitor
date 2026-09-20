@@ -38,6 +38,14 @@ CONFIG_ESP_TLS_INSECURE=n
 # 100 px PSRAM-resident font against.
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+# The on-screen keyboards (WLAN, Ortssuche) keep a MONTSERRAT face rather than
+# a Plex one, because their backspace, shift, enter and close keys are
+# LV_SYMBOL_* codepoints in LVGL's private use area and DESIGN.md §3's Plex
+# subset has no entry for those — a Plex keyboard would render four blank keys
+# and log nothing (AGENTS.md §7). 14 is far below DESIGN.md §3's 24 px near
+# floor for a key an elderly user has to hit, so 24 is built too and that is
+# what the keys use. Costs ~20 KB of flash against 16 MB.
+CONFIG_LV_FONT_MONTSERRAT_24=y
 # CONFIG_LV_USE_PERF_MONITOR is deliberately off: it overlays the bottom-right
 # corner of every screen. Turn it on to re-run the M1 benchmark, not to ship.
 # CONFIG_LV_USE_PERF_MONITOR is not set

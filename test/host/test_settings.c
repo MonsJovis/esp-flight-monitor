@@ -1,6 +1,7 @@
 /* Settings model: presets, the dim schedule, and the clamping that stands
  * between a corrupt NVS blob and a black panel. */
 #include "test_util.h"
+#include <stdint.h>
 #include "settings.h"
 
 int main(void)
@@ -263,6 +264,172 @@ int main(void)
         CHECK_INT(s.brightness_pct, 100);
         CHECK_INT(s.dim_brightness_pct, 25);
         CHECK(s.dim_brightness_pct < s.brightness_pct);
+    }
+
+    /* ==================================================================
+     * The NVS blob
+     *
+     * This is the code that decides whether a device that has just taken a
+     * firmware update still knows where it is. There is exactly one such
+     * device, it is not in the room, and for half the year it is 9,000 km
+     * away — so the migration path is tested harder than anything else in
+     * this file.
+     * ================================================================== */
+
+    /* The version 1 layout, transcribed. This is deliberately a SECOND copy
+     * of the struct as it stood before the place search added two fields:
+     * settings.c has its own, and if the two ever disagree that is the test
+     * doing its job. It is not #included from anywhere, because a shared
+     * definition would move when settings_t moves and prove nothing. */
+    typedef struct {
+        location_preset_t preset;
+        double            custom_lat, custom_lon;
+        int               radius_nm;
+        int               brightness_pct;
+        bool              auto_dim;
+        int               dim_from_hour;
+        int               dim_to_hour;
+        int               dim_brightness_pct;
+    } v1_settings_t;
+
+    typedef struct {
+        uint32_t      version;
+        v1_settings_t s;
+    } v1_blob_t;
+
+    GROUP("blob: a round trip through the current layout");
+    {
+        settings_t in, out;
+        settings_defaults(&in);
+        in.preset         = LOC_CUSTOM;
+        in.custom_lat     = 47.2683;
+        in.custom_lon     = 11.4008;
+        in.radius_nm      = 45;
+        in.brightness_pct = 70;
+        in.auto_dim       = false;
+        in.dim_from_hour  = 23;
+        in.dim_to_hour    = 6;
+        snprintf(in.custom_label, sizeof in.custom_label, "%s", "Innsbruck \xC2\xB7 Tirol");
+        snprintf(in.custom_tz, sizeof in.custom_tz, "%s", "CET-1CEST,M3.5.0,M10.5.0/3");
+
+        unsigned char buf[512];
+        CHECK(settings_blob_size() <= sizeof buf);
+        settings_encode_blob(&in, buf);
+
+        CHECK(settings_decode_blob(buf, settings_blob_size(), &out));
+        CHECK_INT(out.preset, LOC_CUSTOM);
+        CHECK_NEAR(out.custom_lat, 47.2683, 0.0001);
+        CHECK_NEAR(out.custom_lon, 11.4008, 0.0001);
+        CHECK_INT(out.radius_nm, 45);
+        CHECK_INT(out.brightness_pct, 70);
+        CHECK_INT(out.auto_dim, 0);
+        CHECK_INT(out.dim_from_hour, 23);
+        CHECK_INT(out.dim_to_hour, 6);
+        CHECK_STR(out.custom_label, "Innsbruck \xC2\xB7 Tirol");
+        CHECK_STR(out.custom_tz, "CET-1CEST,M3.5.0,M10.5.0/3");
+    }
+
+    GROUP("blob: a version 1 blob keeps everything it had");
+    {
+        /* What a device flashed in M6 has sitting in NVS right now. */
+        v1_blob_t old = {
+            .version = 1u,
+            .s = {
+                .preset             = LOC_PATTAYA,
+                .custom_lat         = 47.6691,
+                .custom_lon         = 15.9303,
+                .radius_nm          = 60,
+                .brightness_pct     = 80,
+                .auto_dim           = true,
+                .dim_from_hour      = 21,
+                .dim_to_hour        = 8,
+                .dim_brightness_pct = 15,
+            },
+        };
+
+        settings_t out;
+        CHECK(settings_decode_blob(&old, sizeof old, &out));
+
+        /* Every field he ever set, still set. The failure this guards against
+         * is not a crash — it is a device that comes back up in Austria while
+         * standing in Thailand, with the brightness reset, and nothing on
+         * screen to say why. */
+        CHECK_INT(out.preset, LOC_PATTAYA);
+        CHECK_INT(out.radius_nm, 60);
+        CHECK_INT(out.brightness_pct, 80);
+        CHECK_INT(out.auto_dim, 1);
+        CHECK_INT(out.dim_from_hour, 21);
+        CHECK_INT(out.dim_to_hour, 8);
+        CHECK_INT(out.dim_brightness_pct, 15);
+        CHECK_NEAR(out.custom_lat, 47.6691, 0.0001);
+        CHECK_NEAR(out.custom_lon, 15.9303, 0.0001);
+
+        /* And the two fields version 1 never had are EMPTY, not garbage read
+         * off the end of a shorter buffer. Empty is a state the settings card
+         * has a line for; garbage is a label full of stack. */
+        CHECK_STR(out.custom_label, "");
+        CHECK_STR(out.custom_tz, "");
+        /* Which means the clock falls back to Gloggnitz rather than to UTC. */
+        out.preset = LOC_CUSTOM;
+        CHECK_STR(settings_tz(&out), "CET-1CEST,M3.5.0,M10.5.0/3");
+    }
+
+    GROUP("blob: the two layouts are distinguishable at all");
+    {
+        /* The decoder tells them apart by SIZE. If the new fields had been
+         * added in a way that left the struct the same size, a v1 blob would
+         * be read as a v2 one and the label would be whatever those bytes
+         * happened to be. */
+        CHECK(settings_blob_size() != sizeof(v1_blob_t));
+        CHECK(settings_blob_read_size() >= settings_blob_size());
+        CHECK(settings_blob_read_size() >= sizeof(v1_blob_t));
+    }
+
+    GROUP("blob: nothing else is accepted");
+    {
+        settings_t out;
+        unsigned char buf[512];
+
+        /* Right size, wrong version word: a downgrade, or a future layout
+         * this firmware has never heard of. Defaults, not a reinterpretation. */
+        settings_defaults(&out);
+        settings_encode_blob(&out, buf);
+        buf[0] = 99;
+        CHECK(!settings_decode_blob(buf, settings_blob_size(), &out));
+        CHECK_INT(out.preset, LOC_GLOGGNITZ);
+        CHECK_INT(out.radius_nm, 30);
+
+        /* Right version word, wrong size: a truncated or torn write. */
+        settings_encode_blob(&out, buf);
+        CHECK(!settings_decode_blob(buf, settings_blob_size() - 1, &out));
+        CHECK(!settings_decode_blob(buf, settings_blob_size() + 1, &out));
+        CHECK(!settings_decode_blob(buf, 0, &out));
+        CHECK(!settings_decode_blob(NULL, settings_blob_size(), &out));
+        CHECK(!settings_decode_blob(buf, sizeof(v1_blob_t), &out));  /* v1 size, v2 version */
+        CHECK(!settings_decode_blob(buf, settings_blob_size(), NULL));
+    }
+
+    GROUP("blob: a corrupt blob still cannot produce a black screen");
+    {
+        /* Random bytes at exactly the right length and with the right version
+         * word — the one case that gets past both checks. Everything in it is
+         * nonsense, and settings_sanitise() inside the decoder is what stops
+         * that nonsense reaching the backlight or the poll radius. */
+        settings_t out;
+        unsigned char buf[512];
+        memset(buf, 0x7F, sizeof buf);
+        uint32_t v = 2u;
+        memcpy(buf, &v, sizeof v);
+
+        CHECK(settings_decode_blob(buf, settings_blob_size(), &out));
+        CHECK(out.brightness_pct >= 10 && out.brightness_pct <= 100);
+        CHECK(out.radius_nm >= 10 && out.radius_nm <= 100);
+        CHECK(out.preset >= 0 && out.preset < LOC_COUNT);
+        CHECK(out.dim_from_hour >= 0 && out.dim_from_hour <= 23);
+        CHECK(out.dim_brightness_pct <= out.brightness_pct);
+        /* And the two strings are terminated, whatever was in those bytes. */
+        CHECK_INT(strlen(out.custom_label), SETTINGS_LABEL_LEN - 1);
+        CHECK(strlen(out.custom_tz) <= SETTINGS_TZ_LEN - 1);
     }
 
     return test_summary();

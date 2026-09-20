@@ -64,6 +64,8 @@
 #include "ui/nav.h"
 #include "ui/screen_settings.h"
 #include "ui/screen_wifi.h"
+#include "ui/screen_geo.h"
+#include "net/geocode.h"
 #include "ui/screen_list.h"
 #include "ui/screen_radar.h"
 #include "data/view_build.h"
@@ -354,7 +356,10 @@ static void apply_settings(void)
     double lat, lon;
     settings_coords(&g_settings, &lat, &lon);
     flight_source_set_location(lat, lon, g_settings.radius_nm);
-    timesync_set_tz(location_tz(g_settings.preset));
+    /* settings_tz(), not location_tz(): a place he found with the search
+     * carries its own POSIX rule, and AGENTS.md §6 binds the clock to the
+     * location rather than making him set one. */
+    timesync_set_tz(settings_tz(&g_settings));
 
     apply_brightness();
     /* The OTA task installs only inside the night window, so it needs to hear
@@ -363,7 +368,7 @@ static void apply_settings(void)
 
     ESP_LOGW(TAG, "settings applied: %s (%.4f/%.4f) r=%d nm tz=%s",
              location_name(g_settings.preset), lat, lon,
-             g_settings.radius_nm, location_tz(g_settings.preset));
+             g_settings.radius_nm, settings_tz(&g_settings));
 }
 
 /* Credentials are typed in here and stored in NVS. They must never appear in a
@@ -524,7 +529,7 @@ static void ui_task(void *arg)
         apply_brightness();
 
         if (!sntp_started && wifi_is_connected()) {
-            if (timesync_start(location_tz(g_settings.preset)) == ESP_OK) {
+            if (timesync_start(settings_tz(&g_settings)) == ESP_OK) {
                 sntp_started = true;
             }
         }
@@ -855,6 +860,143 @@ static void open_wifi(void)
     start_wifi_scan();
 }
 
+/* ---- The place search (§5.8) --------------------------------------------
+ *
+ * Same shape as the WiFi scan above, for the same reason: geocode_lookup()
+ * opens a connection and waits on a free community service, which is seconds
+ * on the display task and therefore not on the display task. One task per
+ * search, created on tap and gone again when the answer has been handed back
+ * under display_lock().
+ *
+ * The query is copied into a file-scope buffer rather than passed as the
+ * task argument: screen_geo.c hands out a pointer into its own text area and
+ * says so, and that text area belongs to an overlay that may be deleted
+ * before the task ever runs. One search can be in flight at a time, which is
+ * also all he can start — the screen is showing "Suche Orte..." and its
+ * Suchen button is on the other sub-screen. */
+static char s_geo_query[SCREEN_GEO_QUERY_MAX];
+
+/* Set by the 'z' console command: take the first hit automatically instead of
+ * waiting for a finger. Tapping a result row is the one step of this feature
+ * that cannot be driven from the build host, and it is the step where the
+ * settings are written, the clock is re-based and the poll location moves —
+ * so without this, "does picking a place actually move the device" would be
+ * a question only Markus could answer, by opening a screen he has no reason
+ * to open. D4/D41: drive it from here and read the framebuffer back. */
+static bool s_geo_autopick;
+
+static void on_geo_pick(const geo_place_t *place);
+
+static void geo_search_task(void *arg)
+{
+    (void)arg;
+    static geo_place_t found[GEOCODE_MAX_RESULTS];
+
+    int n = geocode_lookup(s_geo_query, found, GEOCODE_MAX_RESULTS);
+
+    display_lock(0);
+    if (nav_overlay_open()) {
+        /* Negative codes all mean the same thing to him — the search did not
+         * answer — and screen_geo.c turns any of them into that one
+         * sentence. The distinction stays in geocode.c's log line, which is
+         * where it is useful. */
+        screen_geo_set_results(found, n);
+    }
+    display_unlock();
+
+    if (s_geo_autopick && n > 0) {
+        s_geo_autopick = false;
+        ESP_LOGW(TAG, "autopick: %s", found[0].label);
+        /* Through the row's own click event, not straight to on_geo_pick():
+         * the interesting part of this path is that picking a hit deletes
+         * this screen from inside one of its own event callbacks, and
+         * calling the callback directly would skip exactly that. */
+        display_lock(0);
+        screen_geo_debug_tap(0);
+        display_unlock();
+    }
+    vTaskDelete(NULL);
+}
+
+static void on_geo_search(const char *query)
+{
+    if (query == NULL) return;
+    snprintf(s_geo_query, sizeof s_geo_query, "%s", query);
+    /* 4 KB matches the WiFi scan task beside it. cJSON parses the response on
+     * this stack, but into a heap document, and the 8 KB response buffer is a
+     * PSRAM allocation inside geocode_lookup() — nothing large lives here. */
+    xTaskCreate(geo_search_task, "geosearch", 4096, NULL, 4, NULL);
+}
+
+/* The two fixed-length string pairs that this function copies between are
+ * declared in different headers on purpose — main/data does not include
+ * main/net anywhere else in this tree — so nothing but this stops them
+ * drifting apart into a silent truncation. test/host/test_geo.c checks the
+ * same pair, which covers the host build; this covers the firmware. */
+_Static_assert(SETTINGS_LABEL_LEN == GEO_LABEL_LEN,
+               "settings_t.custom_label and geo_place_t.label must match");
+_Static_assert(SETTINGS_TZ_LEN == GEO_TZ_LEN,
+               "settings_t.custom_tz and geo_place_t.tz must match");
+
+/* He tapped one of the hits. This is the whole point of the screen: the
+ * device moves, the clock follows it, and both are remembered. */
+static void on_geo_pick(const geo_place_t *place)
+{
+    if (place == NULL) return;
+
+    g_settings.preset     = LOC_CUSTOM;
+    g_settings.custom_lat = place->lat;
+    g_settings.custom_lon = place->lon;
+    snprintf(g_settings.custom_label, sizeof g_settings.custom_label, "%s", place->label);
+    snprintf(g_settings.custom_tz, sizeof g_settings.custom_tz, "%s", place->tz);
+
+    settings_sanitise(&g_settings);
+    settings_save(&g_settings);
+    apply_settings();
+    ESP_LOGW(TAG, "moved to a searched place: %.4f/%.4f tz=%s",
+             g_settings.custom_lat, g_settings.custom_lon, g_settings.custom_tz);
+
+    /* Back to Einstellungen, where the "Eigener Ort" card now says where he
+     * has just put the device. Landing anywhere else would leave him looking
+     * at a result list with no sign that the tap did anything. */
+    open_settings();
+}
+
+static void build_geo_screen(lv_obj_t *parent)
+{
+    screen_geo_create(parent);
+    screen_geo_set_search_cb(on_geo_search);
+    screen_geo_set_pick_cb(on_geo_pick);
+    screen_geo_set_exit_cb(open_settings);   /* back to where he came from */
+}
+
+static void open_geo(void)
+{
+    display_lock(0);
+    nav_open_overlay(build_geo_screen, "ortsuche");
+    display_unlock();
+}
+
+/* Pretends the search came back empty, then that it did not come back at
+ * all. The same idea as 'Y' for the battery: these two states are the ones a
+ * hotel network produces and the ones nobody can produce on demand at a
+ * desk, so the device is asked to draw them rather than waited on.
+ *
+ * Both say something in words — AGENTS.md §1, never a blank panel — and they
+ * deliberately say DIFFERENT things: one is his typo to fix, the other is
+ * the device's problem and nothing he types will help. */
+static void geo_demo_states(void)
+{
+    open_geo();
+    display_lock(0);
+    screen_geo_set_results(NULL, 0);          /* nothing by that name */
+    display_unlock();
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    display_lock(0);
+    screen_geo_set_results(NULL, -1);         /* no answer at all */
+    display_unlock();
+}
+
 static void on_settings_changed(const settings_t *s)
 {
     if (s == NULL) return;
@@ -872,6 +1014,7 @@ static void build_settings_screen(lv_obj_t *parent)
     screen_settings_create(parent);
     screen_settings_set_cb(on_settings_changed);
     screen_settings_set_wifi_cb(open_wifi);
+    screen_settings_set_geo_cb(open_geo);
     screen_settings_set_exit_cb(close_overlay);
     screen_settings_update(&g_settings);
 }
@@ -881,6 +1024,38 @@ static void open_settings(void)
     display_lock(0);
     nav_open_overlay(build_settings_screen, "einstellungen");
     display_unlock();
+}
+
+/* Opens the place search and runs one, from the serial console.
+ *
+ * The search screen cannot be exercised from the build host otherwise: the
+ * only way to a result list is to type a word on the on-screen keyboard,
+ * and there is no keyboard on the build host. That made the RESULTS state
+ * unreachable for tools/grab_screen.py, which is how every other screen in
+ * this repo was checked (D4, D41) — so "does the hit list actually look
+ * right" would have been a question only Markus could answer, about a screen
+ * he has no reason to open.
+ *
+ * Deliberately a real request against the real endpoint, not a fixture: what
+ * is being checked here is the whole path, and a canned list would have
+ * proved the layout while hiding a URL that 404s. */
+static void geo_demo_search(void)
+{
+    /* Unconditionally, not "only if no overlay is open" — which is what this
+     * said first and which quietly made the command a no-op whenever
+     * Einstellungen happened to be up. A stress run then reported forty
+     * cycles and had performed twenty, which is the kind of test harness bug
+     * that reads as a passing test. */
+    open_geo();
+    /* The query comes from location_name(), not from a literal here. Partly
+     * because tools/check_strings.py is right that a German place name
+     * written into main.c is indistinguishable from a label that leaked —
+     * and partly because this is the better demo anyway: it searches for a
+     * place the device already knows, so the hit list can be read against
+     * the card two screens away. LOC_WIEN in particular returns four places
+     * across two countries, which is exactly the case the second line on
+     * each row exists for. */
+    on_geo_search(location_name(LOC_WIEN));
 }
 
 /* Hand the screen to a debug view: stop the UI task touching it, and wait out
@@ -1069,6 +1244,10 @@ static void on_cmd(char c)
     else if (c == 'g') { display_lock(0); nav_go_to((nav_page() + 1) % (int)(sizeof k_pages / sizeof k_pages[0]), true); display_unlock(); }
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
+    else if (c == 'q') open_geo();
+    else if (c == 'Q') geo_demo_search();
+    else if (c == 'z') { s_geo_autopick = true; geo_demo_search(); }
+    else if (c == 'Z') geo_demo_states();
     else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
@@ -1125,7 +1304,7 @@ void app_main(void)
      * credentials at boot, which is never true of a device arriving somewhere
      * new — exactly the case this product is built around. */
     settings_load(&g_settings);
-    timesync_set_tz(location_tz(g_settings.preset));
+    timesync_set_tz(settings_tz(&g_settings));
 
     double lat, lon;
     settings_coords(&g_settings, &lat, &lon);

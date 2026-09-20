@@ -141,9 +141,53 @@
 /* "22:00 — 07:00". U+2014 EM DASH again, as the range separator. */
 #define FMT_DIM_WINDOW             "%02d:00 \xE2\x80\x94 %02d:00"
 
-/* Read-only "Eigener Ort" coordinates. U+00B0 DEGREE SIGN. Decimal point
- * stays a point here: these are coordinates, not a quantity he reads. */
+/* The "Eigener Ort" coordinates, shown on that card until he has searched
+ * for somewhere — after which the card shows the place's NAME instead,
+ * because "Innsbruck · Tirol" tells him where the device thinks it is and
+ * "47.2683°, 11.4008°" does not. U+00B0 DEGREE SIGN. The decimal point stays
+ * a point: these are coordinates, not a quantity he reads. */
 #define FMT_CUSTOM_COORDS          "%.4f\xC2\xB0, %.4f\xC2\xB0"
+
+/* ---- Ortssuche (§5.8, screen_geo.c) ----------------------------------- */
+
+/* The row in Einstellungen that opens the search, and the search screen's
+ * own title. One wording for one thing: the row he taps and the screen he
+ * lands on say the same words, so nothing has to be re-recognised. */
+#define STR_GEO_TITLE              "Ort suchen"
+
+/* The text field before he types. Not "Suchbegriff" — he is looking for a
+ * place, and naming the thing is friendlier than naming the mechanism. */
+#define STR_GEO_PLACEHOLDER        "Ort"
+
+#define STR_GEO_BTN_SEARCH         "Suchen"
+
+/* The status line, which is never blank (AGENTS.md §1), in the four states
+ * it can be in. The WLAN screen above is built the same way and for the same
+ * reason — a stale or empty line reads as "did that tap register?".
+ *
+ * NOTE on "..." — three ASCII periods, not U+2026. The font subset has no
+ * ellipsis glyph and LVGL draws a missing glyph as nothing at all. Same trap,
+ * same deliberate workaround as the WLAN block above. Do not "fix" them. */
+#define STR_GEO_IDLE               "Noch nichts gesucht"
+#define STR_GEO_SEARCHING          "Suche Orte..."
+#define STR_GEO_ONE                "1 Ort gefunden"
+#define FMT_GEO_MANY               "%d Orte gefunden"
+
+/* He typed something real and the world has no such place. A sentence, not
+ * "0 Treffer": the device tells him what happened in words everywhere else. */
+#define STR_GEO_NONE               "Kein Ort mit diesem Namen"
+
+/* The request did not come back. Deliberately about the SEARCH and not about
+ * the network, because the flight data may well still be arriving — a line
+ * that said "keine Verbindung" would contradict a radar that is visibly
+ * working one screen away. */
+#define STR_GEO_FAILED             "Die Suche hat nicht geantwortet"
+
+/* Joins two German parts with U+00B7 MIDDLE DOT, the same "and also" this
+ * device uses in every other list. It builds both of the search's display
+ * lines (main/net/geo_parse.c): "Tirol · Österreich" under a result, and
+ * "Innsbruck · Tirol" on the settings card afterwards. */
+#define FMT_GEO_JOIN               "%s \xC2\xB7 %s"
 
 /* Data attribution, required by licence and not decoration: adsb.lol's
  * position data is ODbL 1.0, and adsb.im supplies the routes (AGENTS.md
@@ -154,6 +198,16 @@
  * U+00B7 MIDDLE DOT as the separator, matching every other list on the
  * device. */
 #define STR_ATTRIBUTION            "Flugdaten adsb.lol (ODbL) \xC2\xB7 Routen adsb.im"
+
+/* A SECOND line, added when the place search (§5.8) did. Open-Meteo's
+ * geocoding data is GeoNames under CC BY 4.0, which requires attribution the
+ * same way adsb.lol's ODbL does — so it is named for the same reason and in
+ * the same place, not because the line looked short.
+ *
+ * Two lines rather than one longer one: at plex_mono_12 the combined string
+ * is about 470 px and the content column is 440, so a single line would have
+ * been truncated — which for an attribution is not a cosmetic problem. */
+#define STR_ATTRIBUTION_2          "Orte Open-Meteo \xC2\xB7 GeoNames (CC BY 4.0)"
 
 /* ---- Akku (main/power/battery_policy.c) ------------------------------- */
 

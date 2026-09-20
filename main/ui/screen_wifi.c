@@ -26,6 +26,7 @@
 #include "theme.h"
 #include "fonts/fonts.h"
 #include "strings_de.h"
+#include "widget_input.h"
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
@@ -183,6 +184,7 @@ static lv_obj_t *make_button(lv_obj_t *parent, int32_t w, int32_t h, const char 
 {
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_size(btn, w, h);
+    widget_kill_button_chrome(btn);
     lv_obj_set_style_bg_color(btn, bg, 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(btn, border, 0);
@@ -295,6 +297,7 @@ static void create_row(lv_obj_t *parent, int idx)
 
     row->row = lv_button_create(parent);
     lv_obj_set_size(row->row, CONTENT_W, ROW_H);
+    widget_kill_button_chrome(row->row);
     lv_obj_set_style_radius(row->row, THEME_BASE_UNIT, 0);
     lv_obj_set_hidden(row->row, true); /* pool starts empty; screen_wifi_set_networks() reveals what's in range */
     lv_obj_add_event_cb(row->row, row_event_cb, LV_EVENT_CLICKED, row);
@@ -624,6 +627,7 @@ void screen_wifi_create(lv_obj_t *parent)
     lv_textarea_set_placeholder_text(s_pw_ta, STR_WIFI_PW_PLACEHOLDER);
     lv_textarea_set_max_length(s_pw_ta, PW_MAX_PASS_LEN);
     lv_obj_set_style_text_font(s_pw_ta, &plex_sans_cond_25, 0);
+    widget_style_field(s_pw_ta);
     lv_obj_add_event_cb(s_pw_ta, pw_ta_ready_cb, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(s_pw_ta, pw_ta_cancel_cb, LV_EVENT_CANCEL, NULL);
 
@@ -654,10 +658,31 @@ void screen_wifi_create(lv_obj_t *parent)
 
     /* Keyboard: full screen width (0, not PAD) for the largest possible
      * touch targets, filling everything below the buttons so it never has
-     * to overlap the text area above it (task brief). */
+     * to overlap the text area above it (task brief).
+     *
+     * THIS KEYBOARD WAS OFF-SCREEN FROM M6 UNTIL 2026-09-20. The line below
+     * used to be lv_obj_set_pos(s_pw_kb, 0, py), which every other widget on
+     * this screen is positioned with and which is wrong for exactly one
+     * widget class: lv_keyboard's constructor aligns itself BOTTOM_MID
+     * (lv_keyboard.c), and in LVGL 9 x/y are an offset FROM the alignment
+     * once one is set — so this asked for a keyboard `py` pixels below the
+     * bottom edge of the panel. The password step rendered perfectly, with
+     * no keyboard on it and no way to type a password into it, and nothing
+     * in the code or the logs said so.
+     *
+     * It survived because the password step cannot be reached from the build
+     * host: it needs a finger on an unknown network, so every check of this
+     * screen in this repo stopped at the network list. Found while building
+     * the Ortssuche keyboard next door, which hit the same wall and was
+     * caught by tools/grab_screen.py (D4, D41). AGENTS.md §11's cousin: code
+     * that reads correctly and was never once executed on the glass.
+     *
+     * The styling is shared with that screen rather than copied — see
+     * widget_input.h. */
     s_pw_kb = lv_keyboard_create(s_pw);
-    lv_obj_set_pos(s_pw_kb, 0, py);
     lv_obj_set_size(s_pw_kb, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT - py);
+    lv_obj_align(s_pw_kb, LV_ALIGN_TOP_LEFT, 0, py);
+    widget_style_keyboard(s_pw_kb);
     lv_keyboard_set_mode(s_pw_kb, LV_KEYBOARD_MODE_TEXT_LOWER);
 
     /* Last, deliberately: until every widget exists there is nothing safe

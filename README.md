@@ -165,10 +165,23 @@ requests earn a `429` and then a multi-minute `503`. Route lookups are batched �
 resolves every callsign on screen — and cached to NVS, so a route survives a reboot and is
 never asked for twice. A route does not change mid-flight.
 
+Place names, for setting where the device is standing, come from
+**[Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)** — one
+request when somebody taps Suchen, and none otherwise. It was chosen over Nominatim and
+Photon for a reason that looks like a detail and is not: it answers over plain HTTP, and
+the other two redirect to HTTPS. This device carries no TLS on its data path because a
+handshake wants about 40 KB of internal heap and the board has roughly 24 KB free. It also
+returns each place's timezone, which is what lets the clock follow the location without
+anyone setting one.
+
 > Contains information from **adsb.lol**, which is made available under the
 > [Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/).
 > Any rights in individual contents of the database are licensed under the
 > [Database Contents License](https://opendatacommons.org/licenses/dbcl/1-0/).
+>
+> Place data from **Open-Meteo**, derived from **[GeoNames](https://www.geonames.org/)**
+> and made available under the
+> [Creative Commons Attribution 4.0 licence](https://creativecommons.org/licenses/by/4.0/).
 
 ## Reading the repo
 

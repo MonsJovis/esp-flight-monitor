@@ -1450,3 +1450,132 @@ finger has ever reached. When he said he still could not get in, the natural rea
 "1.2 s is too long" and the correct reading was "no event arrives at all". AGENTS.md §11
 rule 1 is about comments that drift from code; this is its cousin: a handler bound to an
 object the hardware never hands anything to looks exactly like working code.
+
+## D63 — "Eigener Ort" gets a place search, and the geocoder picked itself
+
+**What was wrong:** the settings screen had a fourth location card, "Eigener Ort", and no
+way on earth to set it. `custom_lat`/`custom_lon` were only ever written by
+`settings_defaults()`, so the card showed Gloggnitz's coordinates and would have shown them
+forever. Tapping it selected a preset that pointed at the same place as the card above it —
+except for the clock, which jumped two hours, because the preset table gave `LOC_CUSTOM` a
+timezone of `"UTC0"`. A card whose only effect was to break the clock.
+
+The TODO beside it was not lazy; it was half-right. It argued that a numeric keypad is
+exactly the "coordinate entry form" AGENTS.md §6 forbids, and it is. What it missed is that
+a keypad is not the only alternative to a form. **You set a location by searching for it by
+name.**
+
+**Which geocoder, and why it was not a matter of taste.** Measured on 2026-09-20 with this
+project's own User-Agent:
+
+| | plain HTTP | street addresses | timezone |
+|---|---|---|---|
+| Open-Meteo geocoding | **`200`, no redirect** | no | **yes, IANA** |
+| Nominatim (OSM) | `301` → https | yes | no |
+| Photon (komoot) | `301` → https | yes | no |
+
+The plain-HTTP column decides it. AGENTS.md §4 has no TLS on the data path because a
+handshake wants ~40 KB of internal heap on a board with ~24 KB free, and that decision is
+load-bearing for everything else in the network layer. The cert bundle *is* linked, for
+OTA — so an HTTPS geocode was technically available. It was still the wrong trade for a
+capability that buys 600 m of precision inside a 55 km radius.
+
+Because the second column is the one that looks like a loss, say plainly what it costs:
+**this finds places, not addresses.** "Gloggnitz" resolves; "Semmeringstraße 11" does not.
+At a 30 nm default radius, the difference between a town centre and a house on its edge
+changes which aircraft come back not at all, and `adsb.lol`'s bearing to a target 15 km out
+moves by about two degrees. Markus was asked and chose this over the address search he had
+originally asked for, once the numbers were on the table.
+
+The third column is the one nobody asked for and it may be the most valuable. AGENTS.md §6
+says the timezone follows the location and he never sets a clock. A searched place has to
+keep that promise, and Open-Meteo hands over `"Europe/Vienna"` with every hit.
+
+**Which newlib cannot use.** ESP-IDF carries no zoneinfo database; `setenv("TZ", …)`
+understands only a POSIX rule like `CET-1CEST,M3.5.0,M10.5.0/3`. So there is a table, and
+it is **generated, not typed**: `tools/build_tz_table.py` reads the POSIX footer out of each
+TZif file in the system tzdata (RFC 8536 §3.3) — the exact string the people who maintain
+those rules for a living wrote. 114 zones, 48 distinct rules, ~7 KB. Typing them by hand
+means typing `M3.5.0/3` correctly sixty times and then being wrong about Israel, which
+changes its DST rule by government decision. Anything outside the table falls back to a
+whole-hour offset from the longitude, which is deliberately a dumb answer: it can be an
+hour out in a DST country, and it never pretends to know a rule it does not have.
+
+`Europe/Vienna` resolving byte-identically to the string AGENTS.md §6 already carried for
+Gloggnitz is pinned in `test_geo.c`, because a searched Austrian place running a different
+clock from the preset beside it on the same screen would be absurd.
+
+**The NVS blob had to grow, and that is the dangerous part.** `custom_label` and
+`custom_tz` moved every field after them, so the blob changed size and the load path's
+`len == sizeof blob` test would have rejected it — a device that takes this update comes up
+on defaults, back in Gloggnitz, brightness reset, with nothing on screen to say why. There
+is exactly one such device and for half the year it is 9,000 km from anyone who could fix
+it. So version 1 is transcribed into `settings.c` verbatim and migrated field by field.
+
+The migration also came out from behind `#ifndef HOST_TEST`, where nothing could test it:
+`settings_decode_blob()`/`settings_encode_blob()` are pure and `settings_load()`/`_save()`
+are now thin wrappers that only move bytes. Fifteen new checks cover a v1 round trip, both
+discriminators, a right-size-wrong-version blob, a wrong-size-right-version blob, and 512
+bytes of `0x7F` wearing a valid version word. What the host suite still cannot prove is that
+`settings_v1_t` matches the bytes a device actually wrote in M6 — only the device settles
+that, and it did: it came up reporting `brightness=45%`, which is neither a default nor a
+clamp bound, so those are his settings and not a reconstruction.
+
+**Not done, deliberately:** no type-ahead. One request per tap on Suchen, and nothing polls
+the endpoint. Also no umlaut keys — `?name=Munchen` finds München, measured, and a keyboard
+layout is a bigger change than this feature deserved.
+
+## D64 — The WLAN keyboard had never been on the screen
+
+**What was wrong:** `lv_keyboard` places itself. Its constructor calls
+`lv_obj_align(obj, LV_ALIGN_BOTTOM_MID, 0, 0)`, and in LVGL 9 an object's x/y become an
+offset *from its alignment* the moment one is set. So `lv_obj_set_pos(kb, 0, py)` — which
+is how every other widget in this codebase is positioned, and which reads as obviously
+correct — asks for a keyboard `py` pixels **below the bottom edge of the panel**.
+
+`screen_wifi.c` has done exactly that since M6. The password step rendered perfectly: the
+network name, the field, the show/hide toggle, Verbinden and Abbrechen, and no keyboard,
+with no way to type a password into it and nothing logged anywhere.
+
+**Why nobody found it.** That step needs a finger on an *unknown* network. Every check of
+the WLAN screen in this repo went through the build host, and the build host stops at the
+network list — `tools/grab_screen.py` can photograph any screen it can reach, and it could
+not reach this one. D58 hardened that same screen against two panics found by stress
+navigation; neither pass ever got as far as looking at the password step.
+
+It surfaced because the Ortssuche keyboard hit the identical wall one screen away, where it
+*was* reachable from the host, and the framebuffer came back with 240 px of black where a
+keyboard should be.
+
+**What came out of it.** Three things, in the order they were found by reading pixels back
+rather than by reading code:
+
+1. `lv_obj_align()`, not `lv_obj_set_pos()`, for a keyboard. Both screens.
+2. LVGL's default theme is **light**, and an unstyled keyboard is a near-white slab across
+   the bottom of a panel whose ground is `#0A0B0D` specifically because pure black
+   maximises halation for aging eyes (DESIGN.md §2). On a device that dims itself at 22:00
+   to avoid exactly that.
+3. Styling `LV_PART_ITEMS` darkens the letters and leaves **nine near-white control keys**
+   sitting among them — `lv_keyboard` marks shift, `1#`, `ABC`, backspace, enter, close and
+   the two cursor keys `LV_BUTTONMATRIX_CTRL_CHECKED`, and the default theme gives
+   `LV_STATE_CHECKED` a style of its own. And every `lv_button` carries a default shadow
+   that renders here as a 2 px `#525152` band — a grey line under every list divider and a
+   grey column down both edges of a list. Probed out of the framebuffer at x=22, y=199;
+   nothing in the source asks for a shadow, so nothing in the source looks wrong.
+
+The styling lives in `main/ui/widget_input.c`, shared rather than copied — a deliberate
+break from the `make_label()`/`make_button()` convention next door. Those are eight lines
+and it does not matter if two screens differ by a pixel. This is thirty lines of colour
+that must be identical on both, because it is the same keyboard on the same device and a
+man who has learnt one has learnt the other.
+
+**The part worth remembering.** AGENTS.md §11 rule 1 is "the comment had drifted from the
+code, and the review believed the comment". This is its cousin, and D62's: **code that
+reads correctly and was never once executed on the glass.** D62 was a long-press handler
+bound to an object no finger could reach; this is a keyboard positioned off the edge of the
+world. Both survived every review and every host test, and both took a photograph.
+
+The 'q', 'Q', 'z' and 'Z' console commands exist because of it. The Ortssuche screen's
+result list, its two failure states and the whole pick-a-place-and-move-the-device path can
+all be driven from the build host now — D4 and D41's rule applied to a screen whose
+interesting states otherwise need a finger and a broken network.
