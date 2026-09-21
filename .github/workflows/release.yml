@@ -1,0 +1,107 @@
+# Publish a firmware build the device will accept.
+#
+# Triggered by a tag, because the tag is the version: the build takes
+# PROJECT_VER from it, and tools/check_release.py reads the version back out
+# of the finished .bin to prove the two agree. A published image that
+# disagrees with its manifest is not a cosmetic problem — main/net/ota_policy.c
+# compares the manifest against the string inside the image, so the device
+# would decline the fix it was sent and say nothing about it.
+#
+# TWO JOBS ON PURPOSE. Only `build` is given the signing key, and it is the
+# only job that runs a third party's code (the ESP-IDF image). `publish` holds
+# no secret beyond the automatic GITHUB_TOKEN and calls nothing but `gh`. The
+# release path is now the most attractive thing in this repo to attack — it
+# ends at a device in somebody's living room — so it uses first-party actions
+# only. Do not add a convenience action to it.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Before anything is built, let alone published.
+      - name: Host suite
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          make -C test/host
+
+      - name: Signing key
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::secrets.SIGNING_KEY is empty. An unsigned build of" \
+                 "this firmware aborts on boot, so this run must not continue."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > secure_boot_signing_key.pem
+
+      - name: Build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          export PROJECT_VER="${GITHUB_REF_NAME#v}"
+          echo "building $PROJECT_VER from $GITHUB_REF_NAME"
+          idf.py build
+
+      # Version, project name, size against the real slot, and the signature
+      # against the PUBLIC key committed in the repo — so a build signed with
+      # the wrong key is caught here rather than by a device that then refuses
+      # every future update.
+      #
+      # The same call writes the manifest, from the numbers it just verified.
+      # It is one tool rather than a check here and a heredoc below, because
+      # the manifest and the checks are the same facts and two copies of them
+      # is how they come to disagree.
+      - name: Release gate, and the manifest
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          VER="${GITHUB_REF_NAME#v}"
+          BIN="esp-flight-monitor-${VER}.bin"
+          mkdir -p dist
+          cp build/esp-flight-monitor.bin "dist/${BIN}"
+          python3 tools/check_release.py "dist/${BIN}" "$GITHUB_REF_NAME" \
+            --image-name "${BIN}" \
+            --manifest dist/manifest.json \
+            --url-base "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*

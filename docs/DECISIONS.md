@@ -2077,3 +2077,106 @@ the same mistake in opposite directions: the link probe allocated 16 KB of PSRAM
 and never freed it on the path everyone takes, and `wifi_bars()`'s floor of -100 dBm turned
 a real scan reading of -101 to -105 into "nothing measured" — the one thing its own header
 promises zero is reserved for.
+
+## D72 — A release the device will accept, signed by a key that never enters the repo
+
+**2026-09-21.** The OTA client has been finished since M8 and switched off ever since, for
+one reason: there was nowhere to update *from*. PLAN.md M8 says so plainly — "there is no
+release infrastructure yet, so it ships off". This is that infrastructure. **No firmware
+code changed.** `ota.c` and `ota_policy.c` were already right; what was missing was a
+publisher.
+
+**GitHub Releases, because the redirect was already handled.** `https_get()` in `ota.c`
+follows redirects by hand, and the comment above that loop names the reason: "the obvious
+place to put a manifest is a GitHub release asset, and that answers 302 every single
+time". The device has been able to do this since before there was anything to fetch. The
+URL is `.../releases/latest/download/manifest.json` — 84 bytes against an `OTA_URL_LEN` of
+192 — and the manifest inside names the *versioned* asset, so the manifest and the image
+it points at cannot drift apart.
+
+**The repo is public now, and that is what made signing worth doing.** HTTPS proves where
+an image came from, not who built it. Once the release pipeline is public, it is the most
+attractive thing here to attack, and it ends at a panel in an eighty-year-old man's living
+room. So: Secure Boot V2's signature scheme with **no hardware secure boot** — no eFuse
+burned, nothing one-way, the bootloader still replaceable over USB. Secured against the
+network, not against a screwdriver, which is the right trade for a device whose threat
+model is a stranger with a release token rather than a stranger in the kitchen.
+
+**RSA-3072, not ECDSA**, and this is worth writing down because the docs read as though it
+were a free choice. `SECURE_SIGNED_APPS_ECDSA_V2_SCHEME` depends on
+`SECURE_BOOT_V2_ECC_SUPPORTED`, which is ESP32-C2. The S3 is an RSA part and the Kconfig
+choice defaults accordingly.
+
+**Where the trust actually comes from, which is not where you would guess.** With no eFuse
+to read, `get_secure_boot_key_digests()` in
+`bootloader_support/src/secure_boot_v2/secure_boot_signatures_app.c` takes the trusted
+digest **from the running app's own signature block**. The device will accept an update
+only if it is signed by the same key that signed whatever is currently running. Two
+consequences fall straight out of that, and both are permanent:
+
+- **The key cannot be rotated remotely.** Whichever key signs the image that goes on the
+  device pins it for that device's life. Lose the private key and the panel can never be
+  updated again without opening the case.
+- **The transition is safe in exactly one direction.** The build running today has no
+  verification code at all, so it will install the first signed image without checking
+  anything. From then on, every image is checked. That is why the desk test installs 0.2.0
+  from an unsigned 0.1.0 and only *then* proves verification with a second hop — a hop that
+  does not exercise the check is not a test of the check.
+
+**Every build signs, including yours.** `CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y`, key
+path in `sdkconfig.defaults`, key itself gitignored. This is not convenience. An app built
+with these options and left unsigned does not fail to link and does not fail to flash — it
+aborts on boot:
+
+```
+secure_boot_v2: No signatures were found for the running app
+secure_boot: This app is not signed, but check signature on update is enabled in config.
+```
+
+"Sign it afterwards" is one forgotten command away from a panel that does not come up, so
+there is no afterwards. A clone with its own fresh key builds and runs perfectly; it
+simply cannot update the one device flashed with the real one.
+
+**`PROJECT_VER` stopped being a thing anyone has to remember.** It was a literal in
+`CMakeLists.txt` with a comment asking a human to bump it in the same commit that
+publishes a build. That is AGENTS.md §11 rule 1 written as a to-do: the cost of missing it
+is not a wrong version string, it is a device that compares every future release against
+0.1.0, concludes it is already up to date, and **silently declines the fix it was sent**
+for the rest of its life. It now comes from the git tag, and a local build gets
+`0.0.0-dev` — honest, and below everything.
+
+**The gate reads the artifact, not the build system.** `tools/check_release.py` opens the
+finished `.bin` and checks the app descriptor at offset 0x20 (magic `0xABCD5432`, version
+at +0x10, project name at +0x30) — the same struct `esp_app_get_description()` hands to
+`ota.c` at runtime, so it is literally the string the device will compare. It also
+verifies the Secure Boot V2 signature against the committed public key, and the size
+against the real `ota_0` entry in `partitions.csv`. Asking CMake what version CMake was
+told to build would have been the `check_font_coverage.py` hole again (§11 rule 2): a gate
+that agrees with itself whatever happened in between.
+
+It was watched failing before it was trusted, on all four cases that matter: a wrong
+version, the unsigned binary `idf.py` leaves next to the signed one, an image signed with
+a **different** key, and 200 KB of random bytes. The third is the one worth having.
+
+**The manifest is written by the same tool that checks the image.** It started as a
+heredoc in the workflow YAML, which meant the version, the byte count and the filename
+existed twice — once in Python being verified and once in shell being published. That is
+the shape §11 rule 1 describes, so it is now one `--manifest` flag on
+`check_release.py`, emitting the numbers it has just verified. The tool also asserts that
+`OTA_URL_LEN` and `MANIFEST_MAX` still say 192 and 4096 in the firmware headers, so its
+copy of those limits cannot drift away in silence.
+
+**Two jobs, and only one of them sees the key.** `build` runs in the ESP-IDF container with
+`secrets.SIGNING_KEY`; `publish` runs on a clean runner with nothing but the automatic
+token and calls `gh`. No third-party actions anywhere on the release path — a convenience
+action there is a convenience action with the signing key in its environment.
+
+**`dependencies.lock` is committed now.** `idf_component.yml` pins only
+`waveshare/esp32_s3_touch_lcd_4b: ^2.0.0`, and the drivers under it float on ranges. An
+unpinned CI resolve could build an `esp_lcd_st7701` that was never the one measured on
+this unit and then push it 9,000 km. The lock costs 6 KB.
+
+**What this does not cover.** The image download and the slot switch are still the two
+things in this project that have never run (M8), and publishing is what finally makes
+testing them possible. Until that test is done on the desk, the honest status of OTA is
+unchanged: the manifest path is proven, the install path is not.

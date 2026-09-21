@@ -1,0 +1,58 @@
+# Every push and every pull request. No secrets, so this runs for forks too.
+#
+# It builds the firmware as well as running the host suite, and it does that
+# with a THROWAWAY signing key generated in the job. Two reasons: the build
+# refuses to finish without a key at all now (CONFIG_SECURE_BOOT_BUILD_SIGNED_
+# BINARIES), and signing against a key nobody keeps proves the whole release
+# chain — build, sign, verify — on every commit, while the real key stays in
+# exactly one place.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # 32,668 checks across twelve suites, plus the font, string and
+      # console-key gates. Needs no board and no network; IDF_PATH is already
+      # exported in this image, which is what test/host/Makefile wants for
+      # cJSON.
+      - name: Host suite
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          make -C test/host
+
+      - name: Throwaway signing key
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          espsecure.py generate_signing_key --version 2 --scheme rsa3072 \
+            secure_boot_signing_key.pem
+          espsecure.py extract_public_key --version 2 \
+            --keyfile secure_boot_signing_key.pem ci_key.pub.pem
+
+      - name: Build
+        shell: bash
+        env:
+          PROJECT_VER: 0.0.0-ci
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      - name: Release gate
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          python3 tools/check_release.py build/esp-flight-monitor.bin 0.0.0-ci \
+            --key ci_key.pub.pem

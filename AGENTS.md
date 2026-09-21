@@ -4,7 +4,7 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); seventy-one decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); seventy-two decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
 > **32,668 checks across twelve suites, 0 failed**.
 >
@@ -166,6 +166,19 @@ seconds from a clean tree:
 ```bash
 make -C test/host        # 32,668 checks, plus the font, string and console-key gates
 ```
+
+**Before your first `idf.py build`, generate a signing key.** Every build is signed now
+(D72), and an unsigned build of this firmware does not fail to link — it builds, flashes,
+and then aborts on boot with "No signatures were found for the running app". One command,
+once per machine:
+
+```bash
+idf.py secure-generate-signing-key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
+```
+
+That is a *fresh* key, and that is fine: a device you flash yourself will run it happily.
+It is not the key the published releases are signed with, so it cannot update the one
+device in the field — which is the point of the whole arrangement.
 
 For anything visual, the panel reports on itself; you do not have to be in the room:
 
@@ -627,13 +640,32 @@ because the convention was broken once each.
   stdin is not a TTY), sends the password straight down the serial link and keeps nothing.
   `wifi_creds_list()` returns SSIDs only. No code path logs a password. Do not add one,
   and do not ask Markus to type a password into a chat window.
-- **The repo is private on purpose.** §6 of this file lists three residential addresses and
-  the README says who lives at them. Do not make it public, do not paste §6 into an issue,
-  a commit message or a third-party service, and do not push it anywhere new without
-  asking.
+- ~~**The repo is private on purpose.**~~ **Amended by the owner, 2026-09-21: the repo is
+  PUBLIC.** It was made public so releases could be published to an unauthenticated HTTPS
+  URL the device can fetch from (D72). The reason the old rule existed has not gone away,
+  it was accepted: §6 of this file lists three residential addresses with coordinates,
+  §1 and the README say who lives at them and that he splits the year between them,
+  `main/data/settings.c` carries the same three as presets, and `docs/screens/` shows
+  one set of coordinates and one real SSID. All of it is in the history of all sixty-eight
+  commits, including some commit subject lines, so none of it can be taken back by editing
+  a file. The owner was shown that list and chose to publish anyway. **Do not "restore"
+  this rule, and do not quietly redact §6 either** — half a redaction on a public history
+  is worse than none, because it reads as a mistake rather than a decision.
+
+  What is still not negotiable, and now matters more rather than less:
+  - **The signing key never enters the repo.** `secure_boot_signing_key.pem` is gitignored
+    and lives in the GitHub Actions secret `SIGNING_KEY`. Only `tools/ota_signing_key.pub.pem`,
+    the public half, is committed. Never paste the private key into a transcript, an issue
+    or a third-party service — a public repo plus that key is a firmware push to a device
+    in somebody's living room.
+  - **Nothing else new goes in.** A public repo is not an invitation to add the next
+    address, SSID or screenshot. What is published is what was reviewed and accepted; a
+    fresh leak is not covered by that decision.
 - **OTA is `https://` only** — refused in `ota_set_url()` and again by
   `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=n`. It ships with no URL stored, so a fresh device
-  contacts nothing.
+  contacts nothing. Since D72 an image must also be **signed** by the key above, verified
+  by the running app against its own signature block, so HTTPS is no longer the only thing
+  standing between a release and the panel.
 
 ## 11. How this repo has actually failed
 

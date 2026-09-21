@@ -1,9 +1,13 @@
 # ESP-IDF
 build/
+log/            # idf.py drops tool stdout/stderr here
 sdkconfig
 sdkconfig.old
 managed_components/
-dependencies.lock
+# dependencies.lock is COMMITTED on purpose (D72). idf_component.yml pins only
+# waveshare/esp32_s3_touch_lcd_4b ^2.0.0 and the drivers under it float on
+# ranges, so an unpinned CI resolve can build a panel driver that was never the
+# one measured on this unit — and then push it to a device 9,000 km away.
 .vscode/
 
 # Host tests
@@ -21,6 +25,18 @@ tools/fonts/*.otf
 # Secrets — WiFi credentials live in NVS, never here (AGENTS.md §10)
 secrets.h
 main/secrets.h
+
+# The OTA image-signing key (D72). Every build is signed with it, so it has to
+# exist locally — and it must never be committed, never be pasted into a chat
+# window, and never leave this machine except into the GitHub Actions secret.
+# Lose it and no device running a signed build can be updated again without
+# being opened up and reflashed over USB.
+secure_boot_signing_key.pem
+*_signing_key.pem
+# ...but the PUBLIC half is committed on purpose: it is what
+# tools/check_release.py verifies against, and it lets anyone check a
+# published image without being trusted with anything.
+!*.pub.pem
 
 # macOS
 .DS_Store

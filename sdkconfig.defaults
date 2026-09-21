@@ -144,6 +144,54 @@ CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=n
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 
+# ---- Image signing (docs/DECISIONS.md D72) --------------------------------
+# HTTPS proves where the image came FROM. It does not prove who BUILT it, and
+# once the repo is public the release pipeline is the obvious thing to attack:
+# whoever can publish a release owns a device in somebody's living room.
+#
+# This is Secure Boot V2's signature scheme WITHOUT hardware secure boot. No
+# eFuse is burned, nothing is one-way, and the bootloader is still replaceable
+# over USB — the device is secured against the network, not against a
+# screwdriver. That is the right trade here.
+#
+# RSA-3072, because that is what this silicon takes. The ECDSA variant
+# (CONFIG_SECURE_SIGNED_APPS_ECDSA_V2_SCHEME) is ESP32-C2 only; ESP32-S3 is an
+# SECURE_BOOT_V2_RSA_SUPPORTED chip and the choice defaults accordingly.
+#
+# WHERE THE TRUST COMES FROM, since it is not obvious and it decides how this
+# is rolled out: with no eFuse to read, get_secure_boot_key_digests() in
+# bootloader_support/src/secure_boot_v2/secure_boot_signatures_app.c takes the
+# trusted digest FROM THE RUNNING APP'S OWN SIGNATURE BLOCK. The device accepts
+# an update only when it is signed by the same key that signed whatever is
+# running. So the key is pinned by the first signed image and can never be
+# rotated remotely.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+
+# Sign during the build rather than as a separate step afterwards. This is not
+# convenience: an app built with the options above and left UNSIGNED aborts on
+# boot —
+#
+#   secure_boot_v2: No signatures were found for the running app
+#   secure_boot: This app is not signed, but check signature on update is
+#                enabled in config. It won't be possible to verify any update.
+#
+# — so "sign it afterwards" is one forgotten command away from a panel that
+# does not come up. Every build signs, including yours.
+#
+# The key is NOT in this repo and never will be (.gitignore). Generate one
+# before the first build:
+#
+#   idf.py secure-generate-signing-key --version 2 --scheme rsa3072 \
+#          secure_boot_signing_key.pem
+#
+# A clone with its own fresh key builds and runs perfectly well; it simply
+# cannot update the one device that was flashed with this key, which is the
+# entire point.
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="secure_boot_signing_key.pem"
+
 # TLS buffers live in PSRAM, not internal SRAM. Measured, not assumed: with the
 # framebuffer and WiFi up, this board has ~35 KB of internal heap free and its
 # largest free block is 15 KB, while mbedtls_ssl_setup() wants a 16 KB inbound

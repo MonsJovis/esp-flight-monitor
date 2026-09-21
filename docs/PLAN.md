@@ -349,14 +349,37 @@ caused by the sweep:
 - [x] OTA update — written from scratch rather than adapted: `net/ota.c` +
       `net/ota_policy.c`. HTTPS only, rollback on, installs only inside the night dim
       window because flash writes tear this panel. **Off unless an update URL is stored
-      in NVS**, and there is no release infrastructure yet, so it ships off. D44–D45.
+      in NVS.** D44–D45.
+- [x] **Release infrastructure — D72.** The repo is public, `.github/workflows/release.yml`
+      publishes a signed image and its manifest on every `v*` tag, and
+      `tools/check_release.py` reads the finished binary back to prove its version and
+      signature before anything is uploaded. Images are signed (Secure Boot V2 scheme, no
+      hardware secure boot, RSA-3072), `PROJECT_VER` comes from the tag instead of from a
+      literal somebody has to remember, and `dependencies.lock` is committed so a CI
+      resolve cannot ship a driver that was never measured on this unit. **No firmware
+      code changed** — the client had been finished since M8 and only ever lacked a
+      publisher.
 - [x] README with photos and a one-paragraph "what it does" — six real framebuffer
       captures, not mockups, plus the full ODbL notice.
 
 **Done.** What is verified and what is not, precisely: the manifest path is proven on the
 device end to end (DNS, TLS, root-bundle validation, 2,262 bytes byte-exact, parse, field
-rejection). The image download and slot switch are not — that needs a hosted build and
-there is nowhere to host one. The policy layer is host-tested to 14,055 checks.
+rejection). The policy layer is host-tested to 14,081 checks.
+
+**The image download and slot switch are still not.** D72 removed the reason they could
+not be — there is somewhere to host a build now, and the manifest the workflow generates
+has been fed to the device's own `ota_manifest_parse()` on the host and accepted. But the
+two things that have never executed on hardware are still the two things that have never
+executed on hardware, and no amount of pipeline changes that. The desk test is:
+
+- [ ] Publish `v0.2.0`, store the URL with `u`, force the night window from Einstellungen,
+      and watch a real download, slot switch, probation and confirm.
+- [ ] Publish `v0.3.0` and repeat — **this** hop is the one that exercises signature
+      verification, because 0.2.0 is the first build that checks.
+- [ ] Offer an image signed with a throwaway key and confirm it is refused.
+
+Do all three while the panel is on the desk and reachable over USB. After it leaves, a
+failed OTA is not debuggable.
 
 Three defects surfaced while building it, all worth more than the feature (D45): a 4 KB
 task stack that presented its overflow as an I²C fault in the touch driver; a TLS

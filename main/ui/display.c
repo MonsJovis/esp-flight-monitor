@@ -1,3 +1,22 @@
+/* Display and touch bring-up.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * Portions Copyright Waveshare / Espressif Systems, from the
+ * esp32_s3_touch_lcd_4b BSP, used under the Apache License 2.0.
+ *
+ * About sixty lines of this file reproduce the BSP's init path rather than
+ * calling bsp_display_start(), because the BSP keeps the
+ * esp_lcd_panel_handle_t in a file-static with no accessor and this project
+ * needs it twice: to read the framebuffer back over USB (D4) and to vary the
+ * framebuffer count for the M1 bandwidth measurement (D5). AGENTS.md §9 says
+ * copying it is fine and the headers must be kept — this is that header,
+ * added late. See THIRD-PARTY.md.
+ *
+ * The file as a whole therefore carries Apache-2.0 rather than the project's
+ * MIT: it is the stricter of the two and the two are compatible, so the
+ * combined file is governed by it. That is the honest label for a file with
+ * somebody else's code in it, and it costs a reuser nothing.
+ */
 #include "display.h"
 #include "esp_log.h"
 #include "bsp/esp-bsp.h"

@@ -77,9 +77,13 @@ official GitHub releases on demand:
 | IBM Plex Mono | Medium (500) | Data + chrome: 32 / 17 / 13 / 12 px | [`@ibm/plex-mono@2.5.0`](https://github.com/IBM/plex/releases/tag/%40ibm%2Fplex-mono%402.5.0) |
 
 Repo: <https://github.com/IBM/plex>. Licence text ships inside each
-release zip as `LICENSE.txt` (identical OFL-1.1 text for both families);
-it is not duplicated in this repo — see the release pages above for the
-canonical copy.
+release zip as `LICENSE.txt` (identical OFL-1.1 text for both families).
+**It is reproduced in full in [THIRD-PARTY.md](../THIRD-PARTY.md)**, which
+it has to be: the generated `main/ui/fonts/*.c` are glyph bitmaps converted
+from the original outlines, so they are a derivative of the Font Software and
+OFL-1.1 §2 requires the licence to travel with them. This paragraph used to
+say the text was not duplicated here, which was true until the repo went
+public and stopped being defensible the moment it did.
 
 ### Why SemiBold for hero, Medium for body/data
 

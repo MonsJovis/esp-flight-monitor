@@ -138,13 +138,48 @@ those is visible. The gates:
 
 It spends half the year 9,000 km away, so it can update itself — but only if you tell it
 where from, and it leaves the workshop not knowing. Press `u` on the serial console and
-paste an `https://` manifest URL:
+paste the manifest URL:
+
+```
+https://github.com/MonsJovis/esp-flight-monitor/releases/latest/download/manifest.json
+```
+
+That is a GitHub release asset, which answers `302` every time; the device follows the
+redirect itself. Behind it is the file each release publishes next to the image:
 
 ```json
-{ "version": "0.2.0",
-  "url": "https://example.org/esp-flight-monitor-0.2.0.bin",
-  "size": 2313536 }
+{
+  "version": "0.2.0",
+  "url": "https://github.com/MonsJovis/esp-flight-monitor/releases/download/v0.2.0/esp-flight-monitor-0.2.0.bin",
+  "size": 2428928
+}
 ```
+
+**Publishing one** is a tag. `.github/workflows/release.yml` runs the whole host suite,
+builds with `PROJECT_VER` taken from the tag, signs the image, checks the finished binary
+against the tag it is being published under, writes that manifest from the numbers it just
+verified, and uploads both:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+**Images are signed**, and the device checks. This is Secure Boot V2's signature scheme
+without hardware secure boot: no fuses are burned and the bootloader is still replaceable
+over USB, but a firmware image has to be signed by the same key that signed whatever is
+already running, so controlling the URL is no longer enough to control the device. The
+public half is in `tools/ota_signing_key.pub.pem`; the private half is in a GitHub Actions
+secret and nowhere else.
+
+That has one consequence if you build this yourself: **generate a key before your first
+build**, because an unsigned build aborts on boot rather than failing to compile.
+
+```bash
+idf.py secure-generate-signing-key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
+```
+
+A fresh key is fine — a panel you flash yourself will run your builds happily. It just
+cannot update the one already in Austria, which is the point.
 
 It checks about once a day and installs **only inside the night dim window**. That is a
 precaution rather than a measurement: small NVS writes were measured on this unit and do
