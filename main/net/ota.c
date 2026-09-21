@@ -39,6 +39,32 @@ static const char *TAG = "ota";
 #define MANIFEST_TIMEOUT 10000  /* ms */
 #define MANIFEST_MAX_REDIRECTS 5
 
+/* esp_http_client's header buffer. Its default is DEFAULT_HTTP_BUF_SIZE, which
+ * is 512 bytes, and 512 bytes is not enough to talk to GitHub — the first real
+ * attempt failed with "HTTP_CLIENT: Out of buffer" after the TLS handshake had
+ * already succeeded, which reads like a network fault and is not one.
+ *
+ * Measured against the live release, not guessed. Fetching
+ * .../releases/latest/download/manifest.json takes two hops:
+ *
+ *   hop 1  ->  Location: 97 bytes      (the versioned release asset)
+ *   hop 2  ->  Location: 918 bytes     (a signed objects.githubusercontent.com URL)
+ *              content-security-policy: 3,683 bytes
+ *
+ * The buffer has to hold the LONGEST SINGLE HEADER LINE, so the CSP header is
+ * what sets the floor, and it is a header nobody here controls — GitHub can
+ * lengthen it whenever they like. 8 KB is a little over twice the observed
+ * worst case.
+ *
+ * It costs no internal heap. CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL is 4096 on
+ * this build, so a malloc above that goes to PSRAM, and these two are 8192
+ * deliberately rather than 4096 partly for that reason. The device has ~30 KB
+ * of internal heap in steady state and 4.5 MB of PSRAM free.
+ *
+ * The TX buffer needs it too, and less obviously: after hop 1 the request line
+ * carries that 918-byte URL, which does not fit in 512 either. */
+#define HTTP_HEADER_BUF  8192
+
 /* Result of the last successful check, so install does not re-fetch. */
 static ota_manifest_t s_pending;
 static bool           s_have_pending;
@@ -147,6 +173,8 @@ static int https_get(const char *url, char *buf, size_t bufsz)
          * itself, here a redirect is ordinary and following it is correct. */
         .disable_auto_redirect = false,
         .max_redirection_count = 5,
+        .buffer_size    = HTTP_HEADER_BUF,
+        .buffer_size_tx = HTTP_HEADER_BUF,
     };
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (c == NULL) {
@@ -335,6 +363,11 @@ void ota_install_and_reboot(void)
         .user_agent = HTTP_USER_AGENT,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .keep_alive_enable = true,
+        /* The same 512-byte default, the same GitHub headers, and esp_https_ota
+         * follows its own redirects — so this path had exactly the bug the
+         * manifest path did. It simply had not been run yet to show it. */
+        .buffer_size    = HTTP_HEADER_BUF,
+        .buffer_size_tx = HTTP_HEADER_BUF,
     };
     esp_https_ota_config_t cfg = { .http_config = &http };
 

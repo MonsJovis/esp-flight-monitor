@@ -2187,7 +2187,33 @@ that has only run in one place has told you less than it appears to. It is now d
 with a `#ifndef` guard in the file rather than fixed with a compiler flag, so the
 translation unit is self-contained instead of depending on which libc it meets.
 
-**What this does not cover.** The image download and the slot switch are still the two
-things in this project that have never run (M8), and publishing is what finally makes
-testing them possible. Until that test is done on the desk, the honest status of OTA is
+**And the desk test found the bug it existed to find, on the first real fetch.** The
+device refused the live manifest with `ota: manifest: connect failed: ESP_FAIL`, which
+reads like a network fault and is not one — the line above it said
+`esp-x509-crt-bundle: Certificate validated`, three times. The TLS handshake had
+succeeded. The actual error was `HTTP_CLIENT: Out of buffer`.
+
+`esp_http_client`'s header buffer defaults to `DEFAULT_HTTP_BUF_SIZE`, 512 bytes, and
+GitHub does not fit in 512 bytes. Measured against the live release:
+`releases/latest/download/manifest.json` takes two hops; hop 2 answers with a 918-byte
+`Location` and a **3,683-byte `content-security-policy`**. The buffer must hold the
+longest single header line, so the CSP header sets the floor — and it is a header nobody
+here controls. `HTTP_HEADER_BUF` is now 8192 on both the manifest fetch and the image
+download, which costs no internal heap: `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` is 4096, so
+an allocation above that goes to PSRAM. The TX buffer needed it too, less obviously —
+after hop 1 the request line carries that 918-byte URL.
+
+This is D45's lesson a second time ("a TLS allocation failure that presented as a network
+error"), and the reason it was worth insisting the test happen on the desk: **the running
+build could not fetch the manifest, so it could not have been sent the fix.** It went on
+over USB. From 9,000 km away that is not a repair.
+
+It also caught a foot-gun in the build itself. `PROJECT_VER` is read at CMake *configure*
+time and cached, so rebuilding with a new version in the environment quietly produced a
+binary still carrying the old one. `check_release.py` refused it — the artifact said
+0.2.0 while the tag said 0.3.0 — which is precisely why the gate reads the binary instead
+of asking the build system.
+
+**What this does not cover.** The slot switch is still the one thing in this project that
+has never run (M8), and publishing is what finally makes testing it possible. Until that test is done on the desk, the honest status of OTA is
 unchanged: the manifest path is proven, the install path is not.
