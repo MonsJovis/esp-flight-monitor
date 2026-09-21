@@ -598,8 +598,19 @@ identical request the poller does (same URL, same 16 KB buffer, same timeout —
 and `POLL_HTTP_TIMEOUT_MS` moved into flight_source.h so it uses the numbers rather than a
 copy). Measured then: **-76 to -81 dBm**, the SSID on two channels (a repeater), and the real
 poll request taking **10-27 s with a third never completing, against a 10 s timeout**.
-Responses of 1-3 KB, so it is retransmission, not bandwidth. The backoff and its
-reconnect-reset were already correct and were never the problem. D69.
+The backoff and its reconnect-reset were already correct and were never the problem.
+
+Then the probe's headline was wrong the other way: it trips adsb.lol's documented throttle
+on every run (15 requests, 2 s apart, throttled at ~7) and counted each 429 as a link
+failure — "8/15 (53%)" on a run whose four consecutive real fetches took under a second for
+13.7 KB each. Throttled attempts are now separated out. **Two wrong headline numbers from
+one diagnostic in one session, in opposite directions.**
+
+What the numbers say: **at -74 dBm the real request takes ~900 ms for 15 KB; at -80 dBm it
+takes 10-60 s and mostly does not finish.** A five-decibel swing across the cliff edge, not
+a slope. `POLL_HTTP_TIMEOUT_MS` 10 s → 25 s and the route POST 8 s → 20 s, reasoned from
+those measurements — but NOT demonstrated to help, because the link recovered before a fair
+before/after could be taken. D69.
 
 **And a third harness bug of the shape M10 records twice** — the check ran, reported
 nothing, and had not looked. `tools/grab_screen.py` reads frame buffer 0 of two, so a

@@ -1911,6 +1911,27 @@ only 1-3 KB, so this is not bandwidth; it is retransmission on a link that is as
 barely working. `POLL_BUF_SZ` and `POLL_HTTP_TIMEOUT_MS` moved into flight_source.h so the
 probe uses the numbers themselves rather than a copy of them.
 
+**And the probe's headline number was still wrong, the other way.** It fires fifteen
+requests two seconds apart at an API documented to throttle at about the seventh
+(AGENTS.md §5), so it trips that throttle on every single run — and counted each 429 as a
+link failure. It reported "8/15 succeeded (53%)" on a run whose four consecutive real
+fetches took 877, 970, 1065 and 966 ms and returned 13.7 KB each. A perfectly healthy link,
+reported as half broken, by the one number the command exists to produce. Throttled attempts
+are now counted and printed separately, and the rate is over the attempts that actually
+reached the API: the same link then reads **6/6 (100%), 9 throttled, mean 898 ms**.
+
+Two wrong headline numbers from one diagnostic in one session, in opposite directions.
+
+**What the numbers actually say.** At -74 to -76 dBm the real request takes about 900 ms and
+returns 15 KB. At -80 dBm it takes 10 to 60 seconds and mostly does not finish. That is a
+five-decibel swing across the cliff edge of 2.4 GHz, not a gradual degradation, and it is
+why the panel alternates between full and empty in the same room. `POLL_HTTP_TIMEOUT_MS`
+went from 10 s to 25 s (and the route POST from 8 to 20) because requests measured at 10-27 s
+were being cut off by their own deadline — a longer timeout issues FEWER requests, so it
+cannot annoy the API §5 protects. It is reasoned from the measurement; it has NOT been shown
+to raise the success rate, because the link recovered to 900 ms before a fair before/after
+could be taken.
+
 That is the whole answer to the owner's question, and neither half of it could be measured
 before: the radio hears the AP about as well as his phone does and has a far worse antenna
 to hear it with, and the request the device depends on takes twice its own deadline. The

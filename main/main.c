@@ -707,7 +707,7 @@ static void probe_link(void)
      * timeout as flight_source.c's poll. "ok" now means "the thing the device
      * does would have worked". */
     const int tries = 15;
-    int ok = 0;
+    int ok = 0, throttled = 0;
     int64_t best = INT64_MAX, worst = 0, total = 0;
 
     char *buf = heap_caps_malloc(POLL_BUF_SZ, MALLOC_CAP_SPIRAM);
@@ -732,22 +732,45 @@ static void probe_link(void)
         int64_t t0 = esp_timer_get_time();
         int n = http_get(url, buf, POLL_BUF_SZ, POLL_HTTP_TIMEOUT_MS, &status, &trunc);
         int64_t dt = (esp_timer_get_time() - t0) / 1000;
-        if (n >= 0 && status == 200) {
+        /* A 429 IS NOT A LINK FAILURE — it is the API telling us we asked too
+         * often, which is this probe's own doing: adsb.lol throttles at about
+         * the seventh rapid request (AGENTS.md §5) and this fires fifteen two
+         * seconds apart, so it WILL trip it every run. Counting those as
+         * failures put the headline at "8/15 (53%)" on a run whose four
+         * consecutive real fetches took 877, 970, 1065 and 966 ms and returned
+         * 13.7 KB each — a perfectly healthy link, reported as half broken.
+         * The one number this command exists to produce, wrong, for the same
+         * reason the 1 KB buffer made it wrong the other way. */
+        bool throttle = source_is_throttle_status(status);
+        bool good     = (n >= 0 && status == 200);
+        if (good) {
             ok++;
             total += dt;
             if (dt < best)  best = dt;
             if (dt > worst) worst = dt;
+        } else if (throttle) {
+            throttled++;
         }
+        /* The three verdict words stay INSIDE the log call. Lifting them into
+         * a `const char *verdict` variable, which reads better, is what made
+         * tools/check_strings.py flag them: a literal in a variable could
+         * reach a label, a literal in an ESP_LOGW argument cannot. The gate
+         * was right and the exemption it offered was not worth taking. */
         ESP_LOGW(TAG, "  %2d/%d  %-4s  %5lld ms  http=%d  %6d B%s",
-                 i + 1, tries, (n >= 0 && status == 200) ? "ok" : "FAIL",
+                 i + 1, tries, good ? "ok" : throttle ? "thr" : "FAIL",
                  (long long)dt, status, n, trunc ? " TRUNCATED" : "");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     wifi_ap_record_t ap;
     int rssi = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) ? ap.rssi : 0;
-    ESP_LOGW(TAG, "link probe: %d/%d succeeded (%d%%), rssi=%d dBm", ok, tries,
-             ok * 100 / tries, rssi);
+    /* The rate is over the attempts that actually reached the API, so that a
+     * self-inflicted throttle cannot be read as a bad link. Both counts are
+     * printed: they answer different questions. */
+    int reached = tries - throttled;
+    ESP_LOGW(TAG, "link probe: %d/%d of the attempts that got through succeeded (%d%%), "
+                  "%d throttled by the API, rssi=%d dBm",
+             ok, reached, reached > 0 ? ok * 100 / reached : 0, throttled, rssi);
     if (ok > 0) {
         ESP_LOGW(TAG, "  latency  best=%lld ms  worst=%lld ms  mean=%lld ms",
                  (long long)best, (long long)worst, (long long)(total / ok));

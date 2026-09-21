@@ -32,7 +32,11 @@ static const char *TAG = "flight_source";
  * below SRC_POLL_INTERVAL_MS so a slow poll can never overlap the next one. */
 /* POLL_HTTP_TIMEOUT_MS and POLL_BUF_SZ now live in flight_source.h, so the
  * 'p' probe can make exactly this request. */
-#define ROUTE_HTTP_TIMEOUT_MS  8000
+/* Same reasoning as POLL_HTTP_TIMEOUT_MS in the header, and the same measured
+ * link: eight seconds on a marginal connection means "ROUTE WIRD GESUCHT"
+ * that never resolves, which is the one thing §5.2's searching state was
+ * built to avoid becoming permanent. */
+#define ROUTE_HTTP_TIMEOUT_MS  20000
 
 /* AGENTS.md §6: a 30 nm poll is ~4-8 KB; 16 KB leaves headroom for the
  * 100 nm case without letting a malicious/broken response grow unbounded. */

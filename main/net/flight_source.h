@@ -49,7 +49,22 @@ typedef enum {
  * these numbers is a diagnostic that drifts away from the thing it is meant
  * to be measuring. */
 #define POLL_BUF_SZ            (16 * 1024)
-#define POLL_HTTP_TIMEOUT_MS   10000
+
+/* 25 s, not 10, and the number is measured rather than chosen.
+ *
+ * Ten seconds is ample on a good link — at home the same request completes in
+ * 120-680 ms. It is not ample at the edge of coverage, which is where this
+ * device spends half its year (AGENTS.md §6). Probed on a -80 dBm link in
+ * Spain: the identical request took **10 to 27 seconds**, returning only
+ * 1-3 KB, and roughly two in three polls were cut off by the old deadline.
+ * The panel sat empty while a phone in the same room browsed happily, and
+ * every cut-off poll doubled the backoff on top.
+ *
+ * Raising it cannot annoy the API, which is what AGENTS.md §5's timing rules
+ * exist to protect: a longer timeout issues FEWER requests, not more. The
+ * only cost is that a genuinely dead link takes 25 s to say so instead of 10,
+ * and the backoff after it already dwarfs that. */
+#define POLL_HTTP_TIMEOUT_MS   25000
 
 #define ROUTE_REQ_BUF_SZ       8192
 #define ROUTE_RESP_BUF_SZ     24576
