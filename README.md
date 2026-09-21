@@ -218,6 +218,16 @@ anyone setting one.
 > and made available under the
 > [Creative Commons Attribution 4.0 licence](https://creativecommons.org/licenses/by/4.0/).
 
+## Licence
+
+This project's own code is [MIT](LICENSE).
+
+It also reuses other people's code, fonts and data — the Waveshare BSP's display init
+path, the route parser from sky_overhead, the rotated aircraft glyph from ThingPulse,
+IBM Plex, and flight data from adsb.lol and Open-Meteo. Those come under their own
+terms, which travel with them into any fork and into every firmware image built from
+this. [THIRD-PARTY.md](THIRD-PARTY.md) lists what, from whom, and under which licence.
+
 ## Reading the repo
 
 | | |
