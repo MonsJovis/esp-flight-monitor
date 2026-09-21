@@ -14,10 +14,14 @@ Operating manual for AI agents working in this repo. Read this before touching c
 > them; where it did, it says so inline. Do not "restore" an amended rule to what it used
 > to say.
 >
-> **Three things are still unexercised:** OTA's image download and slot switch (the manifest
-> path is proven on device), the printed desk stand, and the battery — the PMIC driver is
-> written and every register reads back correct on the unit, but no cell has been connected
-> to this board yet (D61, PLAN.md M9).
+> **Two things are still unexercised:** the printed desk stand, and the battery — the PMIC
+> driver is written and every register reads back correct on the unit, but no cell has been
+> connected to this board yet (D61, PLAN.md M9).
+>
+> **OTA is no longer one of them.** 2026-09-21: the unit downloaded 0.4.0 from a real
+> GitHub release, verified its RSA-3072 signature against its own running image, switched
+> slots, rebooted, and confirmed itself — and refused an image signed with a different key,
+> staying where it was. D72.
 
 ## 1. What this is
 

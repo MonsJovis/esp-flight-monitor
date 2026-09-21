@@ -366,20 +366,35 @@ caused by the sweep:
 device end to end (DNS, TLS, root-bundle validation, 2,262 bytes byte-exact, parse, field
 rejection). The policy layer is host-tested to 14,081 checks.
 
-**The image download and slot switch are still not.** D72 removed the reason they could
-not be — there is somewhere to host a build now, and the manifest the workflow generates
-has been fed to the device's own `ota_manifest_parse()` on the host and accepted. But the
-two things that have never executed on hardware are still the two things that have never
-executed on hardware, and no amount of pipeline changes that. The desk test is:
+**The image download and slot switch have now run — 2026-09-21, on the unit.** All three
+of the checks this section was waiting on are done:
 
-- [ ] Publish `v0.2.0`, store the URL with `u`, force the night window from Einstellungen,
-      and watch a real download, slot switch, probation and confirm.
-- [ ] Publish `v0.3.0` and repeat — **this** hop is the one that exercises signature
-      verification, because 0.2.0 is the first build that checks.
-- [ ] Offer an image signed with a throwaway key and confirm it is refused.
+- [x] **Real download and slot switch.** `0.3.0 -> 0.4.0` from
+      `releases/download/v0.4.0/esp-flight-monitor-0.4.0.bin`, written to `<ota_1>` at
+      `0x520000`, ~26 s for 2,428,928 B. Bootloader then reported `Loaded app from
+      partition at offset 0x520000`.
+- [x] **Signature verified on the device**, and by the mechanism D72 describes rather than
+      one assumed: `secure_boot_v2: Take trusted digest key(s) from running app` →
+      `#0 app key digest == #0 trusted key digest` → `Verifying with RSA-PSS...` →
+      `Signature verified successfully!`
+- [x] **Probation and confirm.** `new image 0.4.0 confirmed: ESP_OK`, after the new build
+      had held WiFi.
+- [x] **A wrong key is refused.** An image built at 0.5.0 and signed with a throwaway key
+      was offered and declined: `Secure boot signature verification failed` /
+      `image valid, signature bad` / `update failed: ESP_ERR_OTA_VALIDATE_FAILED — staying
+      on 0.4.0`. "image valid, signature bad" is the line that matters — the download was
+      intact, so this was the signature check and not a corruption false positive. The
+      boot partition was never switched and no bad-version record was left behind.
 
-Do all three while the panel is on the desk and reachable over USB. After it leaves, a
-failed OTA is not debuggable.
+Forcing the night window needed no new code and no finger on the glass: `o` cycles the
+location, Pattaya is `ICT-7`, and five hours ahead of CEST put the clock inside the
+22:00–07:00 window. Cycling all the way round restored `Eigener Ort` exactly.
+
+**What the test found is worth more than the test passing.** The very first fetch failed —
+`esp_http_client`'s 512-byte default header buffer against GitHub's 918-byte `Location`
+and 3,683-byte CSP header. The running build could not fetch the manifest, so it could not
+have been sent the fix; it went on over USB. That is the whole argument for doing this on
+the desk (D72).
 
 Three defects surfaced while building it, all worth more than the feature (D45): a 4 KB
 task stack that presented its overflow as an I²C fault in the touch driver; a TLS

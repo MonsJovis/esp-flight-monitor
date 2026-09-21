@@ -2214,6 +2214,23 @@ binary still carrying the old one. `check_release.py` refused it — the artifac
 0.2.0 while the tag said 0.3.0 — which is precisely why the gate reads the binary instead
 of asking the build system.
 
-**What this does not cover.** The slot switch is still the one thing in this project that
-has never run (M8), and publishing is what finally makes testing it possible. Until that test is done on the desk, the honest status of OTA is
+**It works, and it was watched working.** 0.3.0 pulled 0.4.0 from a real release: 2.4 MB
+into `<ota_1>` in about 26 seconds, signature verified by exactly the mechanism described
+above — `Take trusted digest key(s) from running app`, `#0 app key digest == #0 trusted
+key digest`, RSA-PSS — then a slot switch, a reboot from `0x520000`, and
+`new image 0.4.0 confirmed: ESP_OK` once it had held WiFi. Then the case that matters
+more: an image signed with a throwaway key was offered and refused, with
+`image valid, signature bad`. The download was intact and the signature was not, which is
+the check doing its job rather than a corruption false positive. The device stayed on
+0.4.0 and never switched the boot partition.
+
+Forcing the night window took no new code and no finger on the glass. `o` cycles the
+location, Pattaya is `ICT-7`, and five hours ahead of CEST put the clock inside
+22:00–07:00; cycling all the way round restored `Eigener Ort` exactly. A console key that
+already exists for one reason turned out to be the lever for another.
+
+**What this does not cover.** Nothing in M8 now — but the honest limit is that all of this
+was proven on one device, on one network, against one host. The night-window gate in
+particular has still never fired on its own schedule; it was reached by moving the clock
+to it. Until that test is done on the desk, the honest status of OTA is
 unchanged: the manifest path is proven, the install path is not.
