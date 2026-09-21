@@ -184,8 +184,10 @@ cannot update the one already in Austria, which is the point.
 It checks about once a day and installs **only inside the night dim window**. That is a
 precaution rather than a measurement: small NVS writes were measured on this unit and do
 *not* tear the panel (espressif/esp-bsp#570 does not reproduce here), but a 2 MB image
-write is a different workload and has never been run with anyone watching the screen. At
-3 a.m. it costs nothing to assume the worse case.
+write is a different workload. One has now run — 2.4 MB in about 26 seconds — and it
+still is not a measurement, because the person present was reading the serial log rather
+than looking at the glass. So the question the window exists for is open in the same way
+it always was. At 3 a.m. it costs nothing to assume the worse case.
 
 A freshly written image boots on probation: it has to stay on WiFi for two minutes before
 it confirms itself, and if it cannot, the bootloader puts the working build back. Plain

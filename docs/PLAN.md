@@ -1,6 +1,6 @@
 # Implementation Plan
 
-> **Status, 2026-09-19.** **M0–M8 are built and verified on the real unit against live
+> **Status, 2026-09-21.** **M0–M8 are built and verified on the real unit against live
 > traffic.** Every checklist item in the plan is closed, including the one no tool could
 > close: the German was read through by a native speaker (M7).
 >
@@ -366,8 +366,8 @@ caused by the sweep:
 device end to end (DNS, TLS, root-bundle validation, 2,262 bytes byte-exact, parse, field
 rejection). The policy layer is host-tested to 14,081 checks.
 
-**The image download and slot switch have now run — 2026-09-21, on the unit.** All three
-of the checks this section was waiting on are done:
+**The image download and slot switch have now run — 2026-09-21, on the unit.** Every
+check this section was waiting on is done:
 
 - [x] **Real download and slot switch.** `0.3.0 -> 0.4.0` from
       `releases/download/v0.4.0/esp-flight-monitor-0.4.0.bin`, written to `<ota_1>` at

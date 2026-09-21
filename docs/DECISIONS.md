@@ -777,8 +777,10 @@ build that worked.
 validation, HTTP 200, 2,262 bytes received byte-exact, cJSON parse, and our own field check
 correctly rejecting a body that is valid JSON but not a manifest. The image download, flash
 write and slot switch are **not** exercised end to end: that needs a hosted signed build, and
-there is nowhere to host one yet. The policy layer is exhaustively host-tested (14,055
-checks, including all 13,824 combinations of hour × window against the dimmer's own answer).
+there is nowhere to host one yet. **Amended 2026-09-21 (D72):** they have since run on the
+unit against a real release, including a wrong-key image being refused. The policy layer
+is exhaustively host-tested (14,055 checks, including all 13,824 combinations of
+hour × window against the dimmer's own answer).
 
 ## D45 — Three bugs that only appeared once TLS ran
 
@@ -2232,5 +2234,8 @@ already exists for one reason turned out to be the lever for another.
 **What this does not cover.** Nothing in M8 now — but the honest limit is that all of this
 was proven on one device, on one network, against one host. The night-window gate in
 particular has still never fired on its own schedule; it was reached by moving the clock
-to it. Until that test is done on the desk, the honest status of OTA is
-unchanged: the manifest path is proven, the install path is not.
+to it. And the reason that window exists is still unmeasured: a 2.4 MB write did finally
+run, but whoever was present was reading the serial log, not looking at the panel, so
+whether a full image write tears this display is exactly as open as it was before. The
+next install is the chance to answer it — watch the glass, or grab framebuffers through
+it.

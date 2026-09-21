@@ -2,7 +2,7 @@
 
 Operating manual for AI agents working in this repo. Read this before touching code.
 
-> **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
+> **Status, 2026-09-21.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
 > ([docs/PLAN.md](./docs/PLAN.md)); seventy-two decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
