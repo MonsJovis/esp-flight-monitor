@@ -11,9 +11,11 @@
 > München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
 >
-> **32,380 host checks across eleven suites, 0 failed**, plus two gates that run with them:
-> a font-coverage check (LVGL draws a missing glyph as *nothing*) and a string audit
-> (every German word must come from `main/strings_de.h`). Every screenshot in README.md is
+> **32,668 host checks across twelve suites, 0 failed**, plus three gates that run with
+> them: a font-coverage check (LVGL draws a missing glyph as *nothing*), a string audit
+> (every German word must come from `main/strings_de.h`) and a console-key check (every
+> key the firmware answers to has to be written down in all three places that describe
+> the console). Every screenshot in README.md is
 > the panel's own framebuffer read back over USB by `tools/grab_screen.py`.
 >
 > Past M8 the deck grew teeth: the radar marks are carried forward between polls so they
@@ -681,6 +683,31 @@ framebuffer back (D4, D41):
   every inset on that row was off by it while every width was computed from `CONTENT_W`.
   The visible result was an ellipsis drawn through the green tick. `screen_geo.c`'s rows had
   the identical defect and are fixed with it.
+
+**A review of the branch then found fifteen things, and the panel found a sixteenth**
+(D71). The two that mattered were both "the panel silently stops": `s_detail_open` was a
+flag main.c kept about an overlay nav.c owns, so opening Einstellungen over the detail
+layer left it true and neither Radar nor Liste was ever repainted again; and nothing told
+nav.c when `lv_obj_clean()` freed its widgets, so its NULL guards were dead code and the
+next overlay deleted freed memory. Both are now derived rather than remembered — the
+overlay is identified by its BUILDER, and an `LV_EVENT_DELETE` handler forgets the deck.
+
+Exercising that by hand turned up a crash older than this whole branch and missed by every
+stress run in the repo: `screen_list.c`'s visibility timer reads its container thirty times
+a minute for the life of the process, and `f` or `b` frees it. The stress sequence now
+presses those two keys. 228 presses across overlays, debug views and fixtures, no crash
+markers, 58 KB internal free afterwards.
+
+Also fixed: the WiFi teardown race the explicit re-pick made reachable (and the review's
+own prescription for it, which would not have worked — the event lands after the clear
+either way, so it has to be consumed); a 16 KB PSRAM leak per link probe; `wifi_bars()`
+reading a genuine -101 dBm scan result as "nothing measured"; the geocoder left as the only
+short timeout on the device after D70 widened the other two; `widget_busy_set_active()`
+restarting its sweep on every call while documenting itself as idempotent; two more
+labels with the `DOTS`-needs-a-height defect; UTF-8 truncation that could cut an umlaut in
+half on its way into NVS and into a URL; the full/not-charging line sitting on an OCV knee
+with no hysteresis; two unserved waits on failed `xTaskCreate`; and a timezone test that
+compared a buffer with itself.
 
 **Not verified:** the no-link state on a real outage. The device has an association here,
 and the simulation is what stands in for walking out of range — which is exactly what `W`

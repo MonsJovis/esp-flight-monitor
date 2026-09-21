@@ -2017,3 +2017,63 @@ milestones. `screen_geo.c`'s rows are built from the same pattern and had the sa
 both now zero their padding so the insets in the code are the insets on the panel.
 
 Neither was found by reading. Both were photographed.
+
+---
+
+## D71 — A review round: fifteen findings, two crashes, and one fix that was wrong
+
+**2026-09-21.** A review of the whole branch reported fifteen findings. All fifteen were
+real and all fifteen are fixed. What is worth writing down is the three things the round
+taught that the findings themselves do not say.
+
+**The two that mattered were both "the panel silently stops".** `s_detail_open` was a bool
+main.c maintained about an overlay nav.c owns, and `nav_open_overlay()` closes whatever is
+already there before opening the next one — so tapping an aircraft and then long-pressing
+into Einstellungen deleted the detail layer behind main.c's back and left the flag true.
+Its one reader chooses what to repaint, so from that moment neither Radar nor Liste was
+ever updated again. `ui_resume()`'s own comment describes exactly this failure; this was a
+second door into it, and the fix is to stop keeping the flag at all —
+`nav_overlay_is(build_detail_screen)` asks the file that knows. **By the BUILDER, not by
+the name string**: a caller comparing against a spelling can mistype the spelling and get
+a silent `false` forever, and a function pointer either links or it does not.
+
+The second was the same shape one level down: nothing ever told nav.c its widgets were
+gone. `nav_create()` cleared `s_overlay` on the way *in*, which covers the caller that
+rebuilds the deck and not the two that do not — `dbg_fontcard.c` and `dbg_bench.c` both
+call `lv_obj_clean(lv_screen_active())` to take the panel over. Every pointer in nav.c was
+then dangling and its NULL guards were dead code. An `LV_EVENT_DELETE` handler on the
+tileview fixes it the way screen_wifi.c already does: LVGL tells the file, so nothing has
+to remember to call anything.
+
+**And the review's own fix for one finding would not have worked.** It correctly spotted
+that `attempt_connect()` clears its event bits *after* `esp_wifi_disconnect()`, and
+prescribed clearing them first. That does not help: the disconnect is asynchronous, the
+handler answers every `WIFI_EVENT_STA_DISCONNECTED` by setting `WIFI_FAIL_BIT`, and the
+event lands after the clear either way. The fix is to **consume** the teardown —
+`xEventGroupWaitBits(..., pdTRUE, ...)` before the connect — not to move the clear. The
+finding was worth its weight; the remedy attached to it was not, which is the ordinary
+relationship between a reviewer and a fix and the reason applying one unread is not the
+same as reviewing.
+
+**Then the panel found a crash the review had not**, in the same area and older than the
+whole branch. Exercising finding 2's sequence by hand — `e`, `f`, `1` — panicked in
+`lv_obj_get_parent()` from an LVGL timer: `screen_list.c`'s visibility poller reads
+`s_cont` thirty times a minute for the life of the process, and `lv_obj_clean()` frees it.
+Reachable since the timer landed in `8080dc8`, and missed by every stress run in this repo
+because they churn overlays and never press the two keys that clean the screen. The quieter
+half: `screen_list_create()` runs again on every `ui_resume()`, so each debug view left
+another timer behind pointing at the same freed object. Fixed with the handle and the
+delete callback together; the stress sequence now includes `f` and `b`.
+
+**And one fix of mine was wrong for one flash.** Pinning the settings card's coordinate
+label to one line used `plex_mono_17`'s line height — but `screen_settings_update()` puts
+`plex_sans_cond_22` on that same label when a place has been searched, and the taller face
+was drawn into a box shorter than itself with its descenders sliced off. Caught by
+photographing the card rather than by rebuilding and trusting it. The label now allows for
+the taller of the two faces, which is what the card below it had always done and said so.
+
+**Two of the fifteen were mistakes in things this session had just written**, and both are
+the same mistake in opposite directions: the link probe allocated 16 KB of PSRAM per press
+and never freed it on the path everyone takes, and `wifi_bars()`'s floor of -100 dBm turned
+a real scan reading of -101 to -105 into "nothing measured" — the one thing its own header
+promises zero is reserved for.

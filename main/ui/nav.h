@@ -49,6 +49,25 @@ void nav_open_overlay(void (*create)(lv_obj_t *parent), const char *name);
 void nav_close_overlay(void);
 bool nav_overlay_open(void);
 
+/* True when an overlay is up AND it is the one `create` built — the same
+ * function pointer passed to nav_open_overlay().
+ *
+ * Ask this rather than keeping a flag of your own. main.c kept a
+ * `s_detail_open` bool, and nav_open_overlay() closes whatever is already
+ * there before opening the next one — so tapping an aircraft and then
+ * long-pressing into Einstellungen deleted the detail layer without anyone
+ * telling main.c, and the flag stayed true for the rest of the session. Its
+ * one reader is the branch that decides what to repaint, so from then on
+ * neither Radar nor Liste was ever updated again: the panel simply stopped,
+ * with nothing in the log. The state belongs to whoever owns the overlay, and
+ * that is this file.
+ *
+ * Identified by the BUILDER, not by the `name` string beside it: the name is
+ * for the log, and a caller comparing against a spelling of it can mistype
+ * the spelling and get a silent false forever. A function pointer cannot be
+ * mistyped — it either links or it does not. */
+bool nav_overlay_is(void (*create)(lv_obj_t *parent));
+
 /* One line of chrome in the bottom strip, right-aligned beside the page dots,
  * for a condition that belongs to the DEVICE rather than to any one screen —
  * today that means the battery, and nothing else.

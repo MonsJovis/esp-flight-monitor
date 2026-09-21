@@ -110,7 +110,23 @@ static volatile bool s_ui_suspended = false;
 #define PAGE_RADAR 0
 #define PAGE_LISTE 1
 
-static bool s_detail_open;
+/* WHICH overlay is up is nav.c's business, not a flag of ours.
+ *
+ * This used to be a `static bool s_detail_open` that every opener and closer
+ * had to remember to maintain, and one path never did: nav_open_overlay()
+ * closes whatever is already there, so tapping an aircraft and then
+ * long-pressing into Einstellungen deleted the detail layer behind main.c's
+ * back. The flag stayed true, ui_task() below kept taking the
+ * screen_overhead_update() branch, and with that screen's s_alive guard the
+ * write became a silent no-op — so Radar and Liste were never repainted
+ * again and the panel just stopped. ui_resume()'s own comment describes that
+ * failure; this was the second door into it.
+ *
+ * Derived, not tracked. A flag that duplicates someone else's state is a flag
+ * that will disagree with it. */
+static void build_detail_screen(lv_obj_t *parent);
+static bool detail_open(void) { return nav_overlay_is(build_detail_screen); }
+
 static int  s_detail_from = PAGE_RADAR;
 
 static void open_detail(void);   /* defined with the overlays, below */
@@ -709,7 +725,7 @@ static void ui_task(void *arg)
                  * layer is the honest move: silently swapping in a different
                  * aircraft under the same heading is how a panel teaches him
                  * not to trust it. */
-                if (s_detail_open) {
+                if (detail_open()) {
                     close_detail();
                 }
             }
@@ -731,10 +747,21 @@ static void ui_task(void *arg)
         }
 
         display_lock(0);
+        /* ASKED AGAIN, INSIDE THE LOCK, for the reason power_tick() spells
+         * out at length: ui_suspend() sets the flag and waits 120 ms, and
+         * everything above this line — a poll snapshot, extrapolation, a
+         * re-sort — can outlast that. Testing it before taking the lock
+         * narrows the window and does not close it; a debug view could pass
+         * the test, take the lock, call lv_obj_clean(), and this task would
+         * then acquire the lock and paint into freed widgets. */
+        if (s_ui_suspended) {
+            display_unlock();
+            continue;
+        }
         /* Only what is actually on screen is repainted. The other page is
          * behind the tileview and repainting it costs PSRAM bandwidth for
          * nothing; when the detail layer is up it covers both. */
-        if (s_detail_open) {
+        if (detail_open()) {
             screen_overhead_update(&vm);
         } else if (nav_page() == PAGE_LISTE) {
             screen_list_update(ac, n, rt, n);
@@ -837,6 +864,12 @@ static void probe_link(void)
         ESP_LOGW(TAG, "  latency  best=%lld ms  worst=%lld ms  mean=%lld ms",
                  (long long)best, (long long)worst, (long long)(total / ok));
     }
+    /* The URL-build failure path above freed this; the path everyone actually
+     * takes did not. POLL_BUF_SZ is 16 KB of the same PSRAM the poll buffer
+     * and the LVGL draw buffers come out of, and 'p' is pressed repeatedly by
+     * definition — it is the command for investigating a link that keeps
+     * failing. A dozen presses was ~200 KB gone until reboot. */
+    free(buf);
 }
 
 /* Radar first, Liste beside it. The hero screen is no longer in the deck at
@@ -936,8 +969,21 @@ static void start_wifi_scan_ex(bool tap_unsaved)
         screen_wifi_set_status(NULL, wifi_is_connected(), true);
     }
     display_unlock();
-    xTaskCreate(wifi_scan_task, "wifiscan", 4096,
-                tap_unsaved ? (void *)(intptr_t)1 : NULL, 4, NULL);
+    if (xTaskCreate(wifi_scan_task, "wifiscan", 4096,
+                    tap_unsaved ? (void *)(intptr_t)1 : NULL, 4, NULL) != pdPASS) {
+        /* The screen is already showing "Suche Netzwerke..." with the bar
+         * sweeping under it, and nothing is now going to answer. D66: the bar
+         * is for a wait with an END, and a wait nobody is serving has none.
+         * Both sibling paths in this file handle their own create failure;
+         * this one did not. */
+        ESP_LOGE(TAG, "could not start the scan task");
+        display_lock(0);
+        if (nav_overlay_open()) {
+            screen_wifi_set_networks(NULL, NULL, -1, NULL, 0);
+            screen_wifi_set_status(NULL, wifi_is_connected(), false);
+        }
+        display_unlock();
+    }
 }
 
 static void start_wifi_scan(void)
@@ -1031,26 +1077,39 @@ static void start_join_watch(const char *ssid)
     }
 
     char *copy = malloc(WIFI_SSID_LEN);
-    if (copy == NULL) {
-        display_lock(0);
-        s_join_watch = false;
-        display_unlock();
-        return;                       /* the screen keeps its optimistic line */
-    }
-    snprintf(copy, WIFI_SSID_LEN, "%s", ssid);
-    if (xTaskCreate(wifi_join_task, "wifijoin", 4096, copy, 4, NULL) != pdPASS) {
-        free(copy);
-        display_lock(0);
-        s_join_watch = false;
-        display_unlock();
-        /* Nothing will watch it, so nothing would ever end the wait — say so
-         * now rather than sweep a bar for a join nobody is following. */
-        display_lock(0);
-        if (nav_overlay_open()) {
-            screen_wifi_set_status(ssid, wifi_is_connected(), false);
+    if (copy != NULL) {
+        snprintf(copy, WIFI_SSID_LEN, "%s", ssid);
+        if (xTaskCreate(wifi_join_task, "wifijoin", 4096, copy, 4, NULL) == pdPASS) {
+            return;                   /* the task calls wifi_reconnect_now() */
         }
-        display_unlock();
+        free(copy);
     }
+
+    /* BOTH FAILURE PATHS STILL HAVE TO ASK FOR THE RECONNECT. It is the whole
+     * point of the tap, and it was being skipped: wifi_reconnect_now() is
+     * called from inside wifi_join_task() and on the already-watching
+     * short-circuit, so a failed malloc or a failed task create returned
+     * having stored the credentials and triggered nothing — the network he
+     * chose would not be tried until wifi.c's own backoff next came round,
+     * which is up to a minute. The malloc path additionally left "Verbinde
+     * mit ..." on the glass with the bar running under it, for a join nobody
+     * was following.
+     *
+     * So: ask anyway, then end the wait honestly. No watcher means no
+     * outcome, and D66 says a bar is for a wait with an end. */
+    display_lock(0);
+    s_join_watch = false;
+    display_unlock();
+
+    ESP_LOGE(TAG, "could not start the join watcher; asking for the "
+                  "reconnect anyway, unwatched");
+    wifi_reconnect_now();
+
+    display_lock(0);
+    if (nav_overlay_open()) {
+        screen_wifi_set_status(ssid, wifi_is_connected(), false);
+    }
+    display_unlock();
 }
 
 static void on_wifi_join(const char *ssid, const char *password)
@@ -1121,7 +1180,6 @@ static void close_detail(void)
 {
     display_lock(0);
     nav_close_overlay();
-    s_detail_open = false;
     s_has_selection = false;      /* the subject dies with the layer */
     nav_go_to(s_detail_from, true);
     display_unlock();
@@ -1139,7 +1197,6 @@ static void open_detail(void)
     display_lock(0);
     nav_open_overlay(build_detail_screen, "detail");
     display_unlock();
-    s_detail_open = true;
 }
 
 static void build_wifi_screen(lv_obj_t *parent)
@@ -1582,16 +1639,11 @@ static void ui_resume(void)
     /* The deck was rebuilt, so the badge that was on it is gone. Forget what
      * we believed was showing or the next poll will decide nothing changed. */
     power_forget_ui();
-    /* And the detail layer is gone with it. lv_obj_clean() above deleted the
-     * overlay, but s_detail_open would have stayed true — and the update
-     * branch at the foot of ui_task() reads it, so the live view would have
-     * gone on calling screen_overhead_update() on a screen that no longer
-     * exists. That used to be a write through freed labels; with
-     * screen_overhead.c's s_alive guard it is a silent no-op instead, which
-     * is worse in one specific way: neither Radar nor Liste is ever updated
-     * again and the panel simply stops moving. Same class as the badge memo
-     * above — the deck was rebuilt, so forget what was on it. */
-    s_detail_open   = false;
+    /* The detail layer went with it, and nav_create() above has already
+     * forgotten the overlay — which is the whole reason "is the detail layer
+     * up" is now asked of nav.c rather than remembered here. This used to be
+     * a `s_detail_open = false` and it was the only thing standing between a
+     * debug view and a panel that never repainted again. */
     s_has_selection = false;
     s_ui_suspended = false;
     ESP_LOGW(TAG, "live view restored");
@@ -1745,7 +1797,16 @@ static void on_cmd(char c)
          * draw. A check that reports a state it never rendered is the harness
          * bug this milestone found three times already, so the command opens
          * the layer it needs rather than assuming a finger did. */
-        if (!s_detail_open) {
+        /* And if a debug view has the panel, take it back FIRST. `f` and `b`
+         * call lv_obj_clean() on the active screen, so opening the detail
+         * layer on top of that would build it over a root with no deck under
+         * it — and until nav.c learnt to forget a deleted deck, it would
+         * delete freed memory on the way. Resuming rebuilds the deck, which
+         * is what open_detail() expects to find. */
+        if (s_ui_suspended) {
+            ui_resume();
+        }
+        if (!detail_open()) {
             open_detail();
         }
         ui_suspend();
@@ -1787,7 +1848,7 @@ static void on_cmd(char c)
     else if (c == 'u') update_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
-    else if (c == 'i') { if (s_detail_open) close_detail(); else open_detail(); }
+    else if (c == 'i') { if (detail_open()) close_detail(); else open_detail(); }
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
     else if (c == 'y') battery_console();
     else if (c == 'Y') battery_sim_cycle();

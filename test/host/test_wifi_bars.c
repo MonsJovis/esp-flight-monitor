@@ -36,6 +36,13 @@ static void test_ladder(void)
     CHECK_INT(wifi_bars(-81), 1);
     CHECK_INT(wifi_bars(-95), 1);
     CHECK_INT(wifi_bars(-100), 1);
+    /* A beacon scan across a building really does report these, and they are
+     * readings, not noise. The floor was -100 and drew them as an empty
+     * meter — "nothing measured" — which is the one thing zero is reserved
+     * for. Caught by review, not by the panel. */
+    CHECK_INT(wifi_bars(-101), 1);
+    CHECK_INT(wifi_bars(-105), 1);
+    CHECK_INT(wifi_bars(-120), 1);
 }
 
 static void test_measured_boundary(void)
@@ -66,12 +73,12 @@ static void test_no_reading(void)
      * survives. */
     CHECK_INT(wifi_bars(5), 0);
     CHECK_INT(wifi_bars(-9), 0);
-    CHECK_INT(wifi_bars(-101), 0);
-    CHECK_INT(wifi_bars(-128), 0);
+    CHECK_INT(wifi_bars(-121), 0);
+    CHECK_INT(wifi_bars(-128), 0);   /* an int8_t sentinel, not a measurement */
 
     /* And the two values immediately inside the window still read. */
     CHECK_INT(wifi_bars(-10), 4);
-    CHECK_INT(wifi_bars(-100), 1);
+    CHECK_INT(wifi_bars(-120), 1);
 }
 
 static void test_monotonic(void)
@@ -82,7 +89,7 @@ static void test_monotonic(void)
      * threshold typed in the wrong order would pass every spot check above
      * and fail here. */
     int prev = 0;
-    for (int dbm = -100; dbm <= -10; dbm++) {
+    for (int dbm = -120; dbm <= -10; dbm++) {
         int b = wifi_bars(dbm);
         CHECK(b >= 1 && b <= WIFI_BARS_MAX);
         CHECK(b >= prev);

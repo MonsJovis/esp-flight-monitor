@@ -420,7 +420,28 @@ void screen_settings_create(lv_obj_t *parent)
              * name, which is what the row below these cards now does (§5.8,
              * screen_geo.h). */
             s_card_coords = make_label(card, &plex_mono_17, THEME_TEXT_LABEL);
-            lv_obj_set_width(s_card_coords, CONTENT_W - 2 * CARD_PAD_H);
+            /* A FIXED ONE-LINE BOX, not just a fixed width — the third place
+             * on this device to need the same pin. LV_LABEL_LONG_MODE_DOTS
+             * only ellipsises when the rendered text is TALLER than the
+             * object (lv_label.c), so a width with LV_SIZE_CONTENT height
+             * grows a second line instead of truncating. This card is sized
+             * for one, and what goes in here is no longer a pair of
+             * coordinates: since §5.8 it is a geocoded place name, up to 72
+             * bytes of "Sankt Johann im Pongau · Salzburg", which overruns
+             * the column and would be drawn over the "Ort suchen" row below.
+             * See AGENTS.md §7 and D69. */
+            /* THE TALLER OF THE TWO FACES, because this label wears both:
+             * screen_settings_update() puts plex_mono_17 on it for
+             * coordinates and plex_sans_cond_22 on it for a place name. Pinned
+             * to the mono height, the sans line was drawn into a box shorter
+             * than itself and its descenders were sliced off — photographed
+             * on the panel, one flash after this pin went in. The card below
+             * already sizes itself for the taller one and says so; the label
+             * has to make the same allowance. */
+            int32_t coords_lh = lv_font_get_line_height(&plex_mono_17);
+            int32_t label_lh  = lv_font_get_line_height(&plex_sans_cond_22);
+            lv_obj_set_size(s_card_coords, CONTENT_W - 2 * CARD_PAD_H,
+                            coords_lh > label_lh ? coords_lh : label_lh);
             lv_label_set_long_mode(s_card_coords, LV_LABEL_LONG_MODE_DOTS);
             lv_obj_set_pos(s_card_coords, CARD_PAD_H, CARD_PAD_V + body_lh + GAP_INNER);
         }

@@ -47,6 +47,12 @@ static bool               g_started;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+/* How long attempt_connect() waits for its own esp_wifi_disconnect() to be
+ * reported before it stops caring. Half a second is far longer than the
+ * driver takes to raise the event locally; the point is not to wait for the
+ * network, only to stop racing our own teardown. */
+#define WIFI_DISCONNECT_SETTLE_MS 500
+
 static int64_t wifi_backoff_ms(int attempt)
 {
     int64_t delay = WIFI_RECONNECT_BASE_MS;
@@ -179,7 +185,35 @@ static bool attempt_connect(void)
     connecting_ssid[sizeof connecting_ssid - 1] = '\0';
     xSemaphoreGive(g_cred_mutex);
 
+    /* DROP THE OLD ASSOCIATION, THEN WAIT FOR THE DROP TO LAND.
+     *
+     * esp_wifi_disconnect() is asynchronous: the teardown comes back as a
+     * WIFI_EVENT_STA_DISCONNECTED on the event task, and event_handler()
+     * answers every one of those by setting WIFI_FAIL_BIT. Clear the bits and
+     * call esp_wifi_connect() without waiting for it and that stale bit
+     * arrives a millisecond later — so the xEventGroupWaitBits() below
+     * returns FAIL at once for an attempt still in flight. The pick is logged
+     * as failed, the backoff doubles, and the association it is complaining
+     * about may well be succeeding behind it.
+     *
+     * Clearing the bits BEFORE the disconnect does not help; the event is
+     * still delivered afterwards either way. The fix is to consume it:
+     * pdTRUE takes the bit off the group, so this both waits for the teardown
+     * and removes it. A timeout is not a failure — it means the event never
+     * came, and the clear below covers that case too.
+     *
+     * Harmless until M11, which is why it sat here: this path was only ever
+     * reached while already disconnected, so there was no association to drop
+     * and no event to race. D69's "an explicit pick outranks already
+     * associated" made it the normal case — the one where he has walked over
+     * and tapped the stronger network, which is exactly when a spurious
+     * failure is least welcome. */
+    bool had_link = g_connected;
     esp_wifi_disconnect();
+    if (had_link) {
+        xEventGroupWaitBits(g_evt, WIFI_FAIL_BIT, pdTRUE, pdFALSE,
+                            pdMS_TO_TICKS(WIFI_DISCONNECT_SETTLE_MS));
+    }
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
     xEventGroupClearBits(g_evt, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);

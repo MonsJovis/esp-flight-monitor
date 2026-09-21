@@ -18,6 +18,7 @@
 #include "geocode.h"
 #include "widget_input.h"
 #include "widget_busy.h"
+#include "fmt_de.h"   /* utf8_copy — the query is full of umlauts */
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — there are none in this file. Every word it shows
@@ -455,12 +456,21 @@ static void trimmed_query(char *out, size_t out_sz)
     while (end > start && (src[end - 1] == ' ' || src[end - 1] == '\t')) {
         end--;
     }
+    /* Copied through utf8_copy() rather than memcpy'd to a byte count.
+     *
+     * lv_textarea_set_max_length() counts CODEPOINTS — 47 of them — and this
+     * buffer counts BYTES. The German layer has ä ö ü ß on it, so a query
+     * made of them runs to 94 bytes and the cut landed inside a character.
+     * What came out was a stray lead byte on the end of the query, which
+     * geo_build_url() then percent-encoded into the request as %C3. */
     size_t n = end - start;
-    if (n > out_sz - 1) {
-        n = out_sz - 1;
+    char trimmed[SCREEN_GEO_QUERY_MAX];
+    if (n > sizeof trimmed - 1) {
+        n = sizeof trimmed - 1;
     }
-    memcpy(out, src + start, n);
-    out[n] = '\0';
+    memcpy(trimmed, src + start, n);
+    trimmed[n] = '\0';
+    (void)utf8_copy(out, out_sz, trimmed);
 }
 
 /* Everything the screen itself does when a search starts: flip to the results
@@ -552,7 +562,7 @@ void screen_geo_create(lv_obj_t *parent)
     lv_obj_set_pos(s_ta, PAD, y);
     lv_textarea_set_one_line(s_ta, true);
     lv_textarea_set_placeholder_text(s_ta, STR_GEO_PLACEHOLDER);
-    lv_textarea_set_max_length(s_ta, SCREEN_GEO_QUERY_MAX - 1);
+    lv_textarea_set_max_length(s_ta, SCREEN_GEO_QUERY_CHARS);
     lv_obj_set_style_text_font(s_ta, &plex_sans_cond_25, 0);
     widget_style_field(s_ta);
     lv_obj_add_event_cb(s_ta, ta_ready_cb, LV_EVENT_READY, NULL);

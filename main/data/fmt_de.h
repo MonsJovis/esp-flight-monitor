@@ -78,6 +78,29 @@ size_t fmt_date_de(const struct tm *t, char *out, size_t n);
 /* "09:47" (24-hour, zero-padded) */
 size_t fmt_time_de(const struct tm *t, char *out, size_t n);
 
+/* ---- 6. UTF-8-safe truncation ------------------------------------------ */
+
+/* Copies `src` into `out` (at most `n` bytes including the NUL) and NEVER
+ * leaves half a character behind. Returns the number of bytes written,
+ * excluding the NUL, like every other formatter here.
+ *
+ * EVERY GERMAN WORD ON THIS DEVICE IS MULTI-BYTE SOMEWHERE. strncpy() and a
+ * memcpy-to-a-byte-count both cut at byte `n`, which lands inside a sequence
+ * whenever the character straddling the limit is an umlaut, an ß, a · or a °
+ * — and LVGL draws a stray lead byte as nothing at all, silently, the same
+ * missing-glyph trap AGENTS.md §7 describes. Two places were doing it: the
+ * geocoder's 72-byte display labels ("Sankt Johann im Pongau · Salzburg" is
+ * 34 characters in 35 bytes and they get longer), which are then written to
+ * NVS and redrawn for the life of the device; and the Ortssuche query buffer,
+ * which counts 48 BYTES against a text area that limits 47 CODEPOINTS — so a
+ * long umlauted search was cut mid-character and percent-encoded into the URL
+ * as a stray %C3.
+ *
+ * Truncation still happens; it just happens at a character boundary. A short
+ * `n` that cannot hold even the first character yields an empty string rather
+ * than a fragment. */
+size_t utf8_copy(char *out, size_t n, const char *src);
+
 #ifdef __cplusplus
 }
 #endif

@@ -65,6 +65,17 @@ typedef struct {
  * four hours, so 20 % is about fifty minutes of warning. */
 #define BAT_LOW_PCT        20
 #define BAT_LOW_CLEAR_PCT  25   /* hysteresis: a gauge sitting on 20 must not blink the badge */
+/* The full/not-charging line, and it needs a band for the same reason the two
+ * below do — more so, because of where it sits. The charger terminates at
+ * 4.1 V (BAT_CHARGE_TARGET_MV) and the cell then relaxes to about 4.04-4.08 V,
+ * and 90 % is exactly a knee of the OCV table (k_ocv[1] = {4050, 90}). On the
+ * fallback curve — the documented first-cycle case, before the gauge has
+ * learnt the cell — a few millivolts of ADC noise walked the reading back and
+ * forth across it every poll, and the two states either side are not a
+ * cosmetic pair: one says "voll geladen" and the other is the alarm for a
+ * charger that is plugged in and not charging. */
+#define BAT_FULL_PCT       90
+#define BAT_FULL_CLEAR_PCT 85
 #define BAT_CRIT_PCT        7
 #define BAT_CRIT_CLEAR_PCT 12
 

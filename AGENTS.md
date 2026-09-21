@@ -4,9 +4,9 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); sixty-nine decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); seventy-one decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
-> **32,380 checks across eleven suites, 0 failed**.
+> **32,668 checks across twelve suites, 0 failed**.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -164,7 +164,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 32,380 checks, plus the font, string and console-key gates
+make -C test/host        # 32,668 checks, plus the font, string and console-key gates
 ```
 
 For anything visual, the panel reports on itself; you do not have to be in the room:
@@ -452,6 +452,15 @@ not read a manual. Design for that:
   does NOT cover this — it clears the shadow and the outline, not the padding. Any
   `lv_button` used as a layout container wants an explicit `lv_obj_set_style_pad_all(b, 0, 0)`
   so that the insets in the code are the insets on the panel.
+- **An LVGL timer outlives the object it reads, and every debug view frees that object.**
+  `lv_timer_create()` runs until something deletes it; `lv_obj_clean(lv_screen_active())`,
+  which `dbg_fontcard.c` and `dbg_bench.c` both call, deletes widgets and tells nobody. A
+  poller reading a screen's own pointer is then a LoadProhibited a quarter of a second
+  later, from a stack with no application frame in it. Keep the handle, delete it from an
+  `LV_EVENT_DELETE` handler on the object it reads, and guard the callback — the same
+  arrangement `widget_busy.c` uses to tie an animation's life to its object (D58). Note
+  also that a `*_create()` called again on `ui_resume()` creates a SECOND timer: the old
+  one has to go first.
 - **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
   a 2 px band of `#525152` all round — a grey line under every list divider and a grey
   column down both edges of a list. Nothing in the source asks for it, so nothing in the

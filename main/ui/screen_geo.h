@@ -40,10 +40,22 @@
 extern "C" {
 #endif
 
-/* Longest query the field accepts. German place names run long
- * ("Sankt Martin im Sulmtal" is 23) but nothing useful is longer than this,
- * and geo_build_url()'s encoder is sized to match. */
-#define SCREEN_GEO_QUERY_MAX 48
+/* Longest query the field accepts, in CHARACTERS — which is what
+ * lv_textarea_set_max_length() counts. German place names run long
+ * ("Sankt Martin im Sulmtal" is 23) but nothing useful is longer. */
+#define SCREEN_GEO_QUERY_CHARS 47
+
+/* And the buffer it is copied into, in BYTES.
+ *
+ * THESE ARE DIFFERENT NUMBERS AND CONFLATING THEM WAS A BUG. It was one
+ * constant, 48, used as both — so the field accepted 47 characters while the
+ * buffer held 47 bytes, and the German layer this device ships puts ä ö ü ß
+ * on the keyboard at two bytes each. The copy cut at byte 47, inside a
+ * character, and geo_build_url() percent-encoded the orphaned lead byte into
+ * the request as a stray %C3. 64 matches geo_build_url()'s own "64-byte
+ * query" assumption; anything past it is truncated at a character boundary by
+ * utf8_copy(). */
+#define SCREEN_GEO_QUERY_MAX 64
 
 /* Builds the widget tree ONCE, as a full-bleed (480x480) child of `parent`.
  * Call exactly once per process lifetime — matches every other

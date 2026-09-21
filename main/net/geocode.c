@@ -14,12 +14,25 @@ static const char *TAG = "geocode";
  * path ever being the normal path. */
 #define GEOCODE_BUF_SZ    (8 * 1024)
 
-/* Longer than the 6 s poll timeout in flight_source.c on purpose. A poll that
- * is slow can simply be retried twelve seconds later and he never knows; a
- * search that times out is a man standing in front of the device having
- * typed a word, so it is worth waiting a little longer before telling him it
- * did not work. */
-#define GEOCODE_TIMEOUT_MS 10000
+/* 20 s. A search that times out is a man standing in front of the device
+ * having typed a word, so it is worth waiting before telling him it did not
+ * work — a poll that is slow just gets retried twelve seconds later and he
+ * never knows.
+ *
+ * THE COMMENT HERE USED TO SAY "longer than the 6 s poll timeout in
+ * flight_source.c", and it had been wrong twice over: that timeout was 10 s
+ * when this was written, and D70 raised it to 25 s on measured evidence —
+ * requests taking 10 to 27 seconds on a -80 dBm link. So this one was left as
+ * the only short timeout on the device, on exactly the link the other two
+ * were widened for, and the place search would report "Die Suche hat nicht
+ * geantwortet" while the radar filled normally.
+ *
+ * What makes 20 s affordable now and did not before is M11's bar: until
+ * there was one moving thing on the screen, a long wait and a hung device
+ * looked identical and the only defence was to give up early. The bar says
+ * the device is still working, so the wait can be as long as the link
+ * actually needs. DESIGN.md §4. */
+#define GEOCODE_TIMEOUT_MS 20000
 
 int geocode_lookup(const char *query, geo_place_t *out, int max)
 {

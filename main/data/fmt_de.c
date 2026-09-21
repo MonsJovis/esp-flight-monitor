@@ -247,3 +247,39 @@ size_t fmt_time_de(const struct tm *t, char *out, size_t n)
     snprintf(full, sizeof full, "%02d:%02d", t->tm_hour, t->tm_min);
     return safe_copy(out, n, full);
 }
+
+/* ---- 6. UTF-8-safe truncation ------------------------------------------ */
+
+size_t utf8_copy(char *out, size_t n, const char *src)
+{
+    if (out == NULL || n == 0) {
+        return 0;
+    }
+    if (src == NULL) {
+        out[0] = '\0';
+        return 0;
+    }
+
+    size_t len = strlen(src);
+    if (len <= n - 1) {
+        memcpy(out, src, len);
+        out[len] = '\0';
+        return len;
+    }
+
+    /* Too long, so it has to be cut — walk back off any continuation byte.
+     *
+     * UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF) and no lead byte
+     * ever is, so stepping back while the byte at the cut is a continuation
+     * lands exactly on the start of the character that straddled the limit,
+     * and dropping that character is what leaves the string whole. At most
+     * three steps — a UTF-8 sequence is four bytes — so the loop cannot run
+     * away even on malformed input. */
+    size_t cut = n - 1;
+    while (cut > 0 && ((unsigned char)src[cut] & 0xC0) == 0x80) {
+        cut--;
+    }
+    memcpy(out, src, cut);
+    out[cut] = '\0';
+    return cut;
+}

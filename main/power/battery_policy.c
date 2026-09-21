@@ -108,8 +108,16 @@ void battery_eval(const battery_raw_t *in, const battery_status_t *prev,
     if (in->vbus_good) {
         if (charging_now(in->chg_status)) {
             out->state = BAT_CHARGING;
-        } else if (in->chg_status == BAT_CHG_DONE || out->percent >= 90) {
-            /* Both arms are needed. The charger reports DONE for a while and
+        } else if (in->chg_status == BAT_CHG_DONE ||
+                   out->percent >= (prev && prev->state == BAT_FULL
+                                        ? BAT_FULL_CLEAR_PCT : BAT_FULL_PCT)) {
+            /* Both arms are needed, and the second one has a band around it
+             * (BAT_FULL_PCT / BAT_FULL_CLEAR_PCT) for the same reason the
+             * low and critical warnings below do — it was the only threshold
+             * on this screen without one, and the only one sitting exactly on
+             * a knee of the OCV table.
+             *
+             * The charger reports DONE for a while and
              * then falls back to "not charging" (REG01 = 101b) once it has
              * left the termination state, so a healthy full cell spends most
              * of its life in the same register value as a charger that has

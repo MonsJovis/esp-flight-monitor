@@ -53,7 +53,11 @@ extern "C" {
  * showing it as empty would say the radio heard nothing, which is exactly
  * what it did not do. Anything a scan reports gets at least one bar; only
  * WIFI_RSSI_NONE and values outside what a 2.4 GHz receiver can physically
- * report come back as 0. */
+ * report come back as 0.
+ *
+ * That promise is why the floor in the .c is -120 and not the radio's ~-100
+ * noise floor: a beacon scan really does report -101 to -105 across a
+ * building, and a review caught those being drawn as "nothing measured". */
 int wifi_bars(int rssi_dbm);
 
 #ifdef __cplusplus

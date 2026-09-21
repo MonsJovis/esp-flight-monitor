@@ -86,9 +86,18 @@ static void test_tz(void)
     CHECK_STR(geo_tz_posix("America/New_York", -74.0, tz, sizeof tz),
               "EST5EDT,M3.2.0,M11.1.0");
     /* Both spellings of the Ukrainian capital are in the table: tzdata
-     * renamed Kiev to Kyiv and data sources moved at different times. */
-    CHECK_STR(geo_tz_posix("Europe/Kyiv", 30.5, tz, sizeof tz),
-              geo_tz_posix("Europe/Kiev", 30.5, tz, sizeof tz));
+     * renamed Kiev to Kyiv and data sources moved at different times.
+     *
+     * TWO BUFFERS, DELIBERATELY. This was one — both calls wrote into `tz`
+     * and returned it, so CHECK_STR compared the buffer with itself and
+     * passed for any table at all, including one where both spellings were
+     * missing and both fell through to the longitude guess. A check that
+     * cannot fail is not a check. */
+    char tz_kyiv[64], tz_kiev[64];
+    CHECK_STR(geo_tz_posix("Europe/Kyiv", 30.5, tz_kyiv, sizeof tz_kyiv),
+              geo_tz_posix("Europe/Kiev", 30.5, tz_kiev, sizeof tz_kiev));
+    /* And pin the value, so that "both agree" cannot mean "both guessed". */
+    CHECK_STR(tz_kyiv, "EET-2EEST,M3.5.0/3,M10.5.0/4");
 
     GROUP("geo_tz_posix: the longitude fallback");
     /* The POSIX sign is INVERTED against how people say it out loud: an

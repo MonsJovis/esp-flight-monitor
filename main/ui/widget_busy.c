@@ -63,18 +63,13 @@ void widget_busy_set_active(lv_obj_t *busy, bool active)
         return;
     }
 
-    /* Unconditionally, in both directions. Starting a second animation on the
-     * same var would leave two of them fighting over one x (lv_anim_start
-     * replaces an animation with the same var AND exec_cb, but only that
-     * pair), and stopping one that was never running is free. */
-    lv_anim_delete(ind, set_x_cb);
-
     if (!active) {
+        /* Delete rather than only hide: see the header. Stopping one that was
+         * never running is free. */
+        lv_anim_delete(ind, set_x_cb);
         lv_obj_set_hidden(busy, true);
         return;
     }
-
-    lv_obj_set_hidden(busy, false);
 
     /* The sweep's endpoints are the real widths, so they have to exist. A
      * screen that switches this on during construction — before LVGL has laid
@@ -85,6 +80,34 @@ void widget_busy_set_active(lv_obj_t *busy, bool active)
     if (track_w <= 0) {
         return;
     }
+    int32_t want_ind_w = track_w * IND_NUM / IND_DEN;
+
+    /* ALREADY SWEEPING THE RIGHT SWEEP? THEN LEAVE IT ALONE.
+     *
+     * The header promises this is idempotent in both directions, and it was
+     * not: every call with active == true deleted the animation and started a
+     * new one, which puts the segment back at x = 0. screen_overhead.c calls
+     * it on every UI tick while a route lookup is outstanding — once every
+     * 2000 ms, against a 1400 ms round trip — so the segment visibly snapped
+     * back to the left edge roughly twice per cycle. An indicator that jumps
+     * is the one thing D66 argues the sweep must not do, and the caller was
+     * doing exactly what the header told it it could.
+     *
+     * The test is the segment's width, not a flag: the one caller that
+     * resizes its track (the route bar is only as wide as the sentence above
+     * it, and that sentence changes) needs a genuine restart when it does,
+     * and needs nothing when it does not. */
+    if (lv_anim_get(ind, set_x_cb) != NULL && lv_obj_get_width(ind) == want_ind_w) {
+        lv_obj_set_hidden(busy, false);
+        return;
+    }
+
+    /* Not running, or running at the wrong size. Starting a second animation
+     * on the same var without this would leave two of them fighting over one
+     * x (lv_anim_start replaces an animation with the same var AND exec_cb,
+     * but only that pair). */
+    lv_anim_delete(ind, set_x_cb);
+    lv_obj_set_hidden(busy, false);
 
     /* The segment is re-derived from the track's CURRENT width every time,
      * not fixed at construction. One caller resizes its track per update —
@@ -93,7 +116,7 @@ void widget_busy_set_active(lv_obj_t *busy, bool active)
      * fraction would creep towards covering the whole of a narrower bar,
      * which is a full bar, which is the one thing an indeterminate indicator
      * must never look like. */
-    int32_t ind_w = track_w * IND_NUM / IND_DEN;
+    int32_t ind_w = want_ind_w;
     lv_obj_set_width(ind, ind_w);
 
     lv_anim_t a;

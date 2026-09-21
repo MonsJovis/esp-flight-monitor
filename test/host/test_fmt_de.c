@@ -24,6 +24,76 @@ static const char *const ADV8[8] = {
     "südlich", "südwestlich", "westlich", "nordwestlich",
 };
 
+/* utf8_copy() — truncation that never leaves half a character behind.
+ *
+ * The reason this is worth a group of its own: every German word on this
+ * device is multi-byte somewhere, and a lone lead byte draws as NOTHING in
+ * LVGL with no error anywhere (AGENTS.md §7). Two callers were cutting at a
+ * byte count — the geocoder's 72-byte display labels, which then go to NVS
+ * and are redrawn for the life of the device, and the Ortssuche query, which
+ * was percent-encoded into the URL with the orphan still on it.
+ */
+static void test_utf8_copy(void)
+{
+    GROUP("utf8_copy: truncation lands on a character");
+
+    char out[32];
+
+    /* Fits: through unchanged. */
+    CHECK_INT(utf8_copy(out, sizeof out, "Wien"), 4);
+    CHECK_STR(out, "Wien");
+
+    /* Pure ASCII truncation is the ordinary case and still works. */
+    CHECK_INT(utf8_copy(out, 5, "Salzburg"), 4);
+    CHECK_STR(out, "Salz");
+
+    /* "Ö" is 0xC3 0x96. A 2-byte-plus-NUL budget holds exactly it. */
+    CHECK_INT(utf8_copy(out, 3, "\xC3\x96sterreich"), 2);
+    CHECK_STR(out, "\xC3\x96");
+
+    /* One byte less and the whole character has to go, rather than half of
+     * it. THIS is the case that was broken: the old code wrote 0xC3 and a
+     * NUL. */
+    CHECK_INT(utf8_copy(out, 2, "\xC3\x96sterreich"), 0);
+    CHECK_STR(out, "");
+
+    /* The same, one character in: "Tirol · Öst..." cut mid-Ö. The middle dot
+     * (U+00B7) is two bytes as well, and both must survive whole. */
+    CHECK_INT(utf8_copy(out, 8, "Tirol \xC2\xB7 \xC3\x96sterreich"), 6);
+    CHECK_STR(out, "Tirol ");
+    CHECK_INT(utf8_copy(out, 9, "Tirol \xC2\xB7 \xC3\x96sterreich"), 8);
+    CHECK_STR(out, "Tirol \xC2\xB7");
+
+    /* A three-byte character (U+20AC EURO SIGN, 0xE2 0x82 0xAC): every
+     * partial budget drops the whole thing, not one or two thirds of it. */
+    for (size_t n = 2; n <= 3; n++) {
+        CHECK_INT(utf8_copy(out, n, "\xE2\x82\xACx"), 0);
+        CHECK_STR(out, "");
+    }
+    CHECK_INT(utf8_copy(out, 4, "\xE2\x82\xACx"), 3);
+
+    /* A four-byte one (U+1F6E9, 0xF0 0x9F 0x9B 0xA9) — nothing on this device
+     * emits one, which is exactly why the walk-back has to be bounded rather
+     * than trusted. */
+    for (size_t n = 2; n <= 4; n++) {
+        CHECK_INT(utf8_copy(out, n, "\xF0\x9F\x9B\xA9"), 0);
+    }
+    CHECK_INT(utf8_copy(out, 5, "\xF0\x9F\x9B\xA9"), 4);
+
+    /* Degenerate inputs are a no-op, not a one-byte overrun — the same
+     * contract every other formatter in this file keeps. */
+    char guard[2] = { '#', '#' };
+    CHECK_INT(utf8_copy(guard, 0, "Wien"), 0);
+    CHECK(guard[0] == '#');
+    CHECK_INT(utf8_copy(out, sizeof out, NULL), 0);
+    CHECK_STR(out, "");
+    CHECK_INT(utf8_copy(NULL, sizeof out, "Wien"), 0);
+
+    /* Malformed input cannot hang the walk-back: a run of continuation bytes
+     * with no lead byte walks to zero and stops. */
+    CHECK_INT(utf8_copy(out, 3, "\x80\x80\x80\x80"), 0);
+}
+
 int main(void)
 {
     GROUP("nm_to_km / ft_to_m");
@@ -306,6 +376,8 @@ int main(void)
         CHECK((unsigned char)arr4[8] == 0x7Fu);
         CHECK((unsigned char)arr4[9] == 0x7Fu);
     }
+
+    test_utf8_copy();
 
     return test_summary();
 }

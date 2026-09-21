@@ -3,14 +3,21 @@
 
 /* The window a 2.4 GHz receiver can physically report.
  *
- * -100 dBm is roughly the noise floor of this radio; anything below it is not
- * a signal, it is a driver returning a default. The upper end is -10 rather
- * than 0 because a station sitting ON the antenna still reads about -20, so a
- * value above -10 is a bug somewhere upstream and not something to draw four
- * bars for. Both are treated as "no reading" rather than clamped: a meter
- * that quietly rounds nonsense into a plausible answer is how a wrong number
- * survives (AGENTS.md §11). */
-#define RSSI_FLOOR   (-100)
+ * THE FLOOR IS -120, NOT -100, and the difference is a real reading. It was
+ * -100 on the reasoning that the radio's noise floor is about there — true of
+ * a link, false of a SCAN. An ESP32 beacon scan routinely reports -101 to
+ * -105 for something at the far end of a building, and those came back as
+ * zero bars, which this header promises means "nothing measured". An empty
+ * meter beside a network the radio demonstrably heard is the exact confusion
+ * the zero is reserved to avoid. -120 is below anything a receiver reports
+ * and above the int8_t sentinels a driver falls back to.
+ *
+ * The upper end is -10 rather than 0 because a station sitting ON the antenna
+ * still reads about -20, so anything above -10 is a bug upstream and not
+ * something to draw four bars for. Both ends are treated as "no reading"
+ * rather than clamped: a meter that quietly rounds nonsense into a plausible
+ * answer is how a wrong number survives (AGENTS.md §11). */
+#define RSSI_FLOOR   (-120)
 #define RSSI_CEILING (-10)
 
 int wifi_bars(int rssi_dbm)

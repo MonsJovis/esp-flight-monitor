@@ -57,6 +57,10 @@ static int       s_n_pages;
 static int       s_page_idx;
 
 static lv_obj_t *s_overlay;
+/* WHICH overlay, identified by the function that built it. Callers used to
+ * keep their own flag for this and it went stale the moment a second overlay
+ * replaced the first without going through them — see nav_overlay_is(). */
+static void (*s_overlay_create)(lv_obj_t *parent);
 static void    (*s_longpress_cb)(void);
 
 static int64_t  s_last_touch_ms;
@@ -193,6 +197,43 @@ static void bubble_decorative(lv_obj_t *parent)
     }
 }
 
+/* THE WHOLE DECK IS GONE, AND LVGL IS THE ONLY THING THAT KNOWS.
+ *
+ * nav_create() cleared `s_overlay` on the way IN, which covers the caller
+ * that rebuilds the deck. It does not cover the callers that tear it down and
+ * do not rebuild it: dbg_fontcard.c and dbg_bench.c both call
+ * lv_obj_clean(lv_screen_active()) to take the panel over, which deletes the
+ * tileview, the dots, the badge, the meter and any open overlay — and tells
+ * this file nothing. Every pointer here was then dangling, and the NULL
+ * guards in nav_set_badge() and nav_set_signal() were dead code. Press 'e'
+ * to open an overlay, 'f' to draw the font card, then anything that opens an
+ * overlay again: nav_open_overlay() starts by calling lv_obj_delete() on the
+ * one it still believes in. That is the LoadProhibited nav_create()'s comment
+ * says was fixed, through the second door.
+ *
+ * Bound to the tileview because it is this file's root object: whatever
+ * deletes the deck deletes it too, whether that is lv_obj_clean() or a
+ * caller. Nothing has to remember to call anything, which is the only version
+ * of this that stays true — the same argument screen_wifi.c's on_main_deleted
+ * makes for its own tree. */
+static void on_deck_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_tiles  = NULL;
+    s_badge  = NULL;
+    s_signal = NULL;
+    /* The overlay is a sibling on the same root, so the clean that took the
+     * deck took it as well. Forgetting it here is what stops the next
+     * nav_open_overlay() from deleting freed memory. */
+    s_overlay        = NULL;
+    s_overlay_create = NULL;
+    for (int i = 0; i < NAV_MAX_PAGES; i++) {
+        s_page[i] = NULL;
+        s_dot[i]  = NULL;
+    }
+    s_n_pages = 0;
+}
+
 void nav_create(const nav_page_t *pages, int n_pages)
 {
     /* FORGET ANY OVERLAY FIRST. Every caller of this function has just
@@ -205,7 +246,8 @@ void nav_create(const nav_page_t *pages, int n_pages)
      *
      * Found by the M11 stress run rather than by reading, which is the point
      * of the stress run. */
-    s_overlay = NULL;
+    s_overlay        = NULL;
+    s_overlay_create = NULL;
 
     if (n_pages > NAV_MAX_PAGES) n_pages = NAV_MAX_PAGES;
     s_n_pages = n_pages;
@@ -223,6 +265,7 @@ void nav_create(const nav_page_t *pages, int n_pages)
     /* The tileview draws its own scrollbar across the bottom, right where the
      * page indicator lives. The dots already say which page this is. */
     lv_obj_set_scrollbar_mode(s_tiles, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(s_tiles, on_deck_deleted, LV_EVENT_DELETE, NULL);
     lv_obj_add_event_cb(s_tiles, on_tile_change, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_tiles, on_press, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_tiles, on_longpress, LV_EVENT_LONG_PRESSED, NULL);
@@ -384,6 +427,7 @@ void nav_open_overlay(void (*create)(lv_obj_t *parent), const char *name)
     lv_obj_set_style_border_width(s_overlay, 0, 0);
     lv_obj_set_style_pad_all(s_overlay, 0, 0);
     lv_obj_set_scrollbar_mode(s_overlay, LV_SCROLLBAR_MODE_OFF);
+    s_overlay_create = create;
     if (create) create(s_overlay);
     ESP_LOGI(TAG, "overlay open: %s", name ? name : "?");
     s_last_touch_ms = now_ms();
@@ -393,12 +437,18 @@ void nav_close_overlay(void)
 {
     if (s_overlay == NULL) return;
     lv_obj_delete(s_overlay);
-    s_overlay = NULL;
+    s_overlay        = NULL;
+    s_overlay_create = NULL;
     s_last_touch_ms = now_ms();
     ESP_LOGI(TAG, "overlay closed");
 }
 
 bool nav_overlay_open(void) { return s_overlay != NULL; }
+
+bool nav_overlay_is(void (*create)(lv_obj_t *parent))
+{
+    return s_overlay != NULL && create != NULL && s_overlay_create == create;
+}
 
 void nav_set_longpress_cb(void (*cb)(void)) { s_longpress_cb = cb; }
 

@@ -1,4 +1,5 @@
 #include "geo_parse.h"
+#include "fmt_de.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -212,21 +213,14 @@ static const char *str_field(const cJSON *obj, const char *key)
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
+/* Straight to utf8_copy(): this used to cut at byte dst_sz - 1, which lands
+ * inside a character whenever the one straddling the limit is an umlaut — and
+ * every field it copies is a place name off a geocoder. A lone lead byte
+ * draws as nothing in LVGL, silently, and this particular string is then
+ * written to NVS as `custom_label` and redrawn for the life of the device. */
 static void copy_str(char *dst, size_t dst_sz, const char *src)
 {
-    if (dst_sz == 0) {
-        return;
-    }
-    if (src == NULL) {
-        dst[0] = '\0';
-        return;
-    }
-    size_t n = strlen(src);
-    if (n > dst_sz - 1) {
-        n = dst_sz - 1;
-    }
-    memcpy(dst, src, n);
-    dst[n] = '\0';
+    (void)utf8_copy(dst, dst_sz, src);
 }
 
 /* Joins two parts with the middle dot this device uses for "and also"
@@ -243,7 +237,15 @@ static void join_de(char *dst, size_t dst_sz, const char *a, const char *b)
     bool has_b = (b != NULL && b[0] != '\0');
 
     if (has_a && has_b) {
-        snprintf(dst, dst_sz, FMT_GEO_JOIN, a, b);
+        /* Composed in full and then copied out, rather than snprintf()ing
+         * straight into dst: snprintf truncates at a byte, like everything
+         * else in C, and both halves of this are place names full of
+         * umlauts. The staging buffer is the widest field this ever writes
+         * into plus both inputs, so the join itself never truncates — only
+         * the copy does, and that one lands on a character. */
+        char joined[GEO_NAME_LEN + GEO_REGION_LEN + 8];
+        snprintf(joined, sizeof joined, FMT_GEO_JOIN, a, b);
+        (void)utf8_copy(dst, dst_sz, joined);
     } else if (has_a) {
         copy_str(dst, dst_sz, a);
     } else if (has_b) {

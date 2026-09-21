@@ -311,6 +311,61 @@ static void test_text(void)
     CHECK(none[0] == '#');
 }
 
+/* The full/not-charging line, and the band around it.
+ *
+ * It matters more than a cosmetic threshold: one side prints "voll geladen"
+ * and the other is the alarm for a charger that is plugged in and not
+ * charging (a TS pin still gating it, AGENTS.md §2). It was the only
+ * threshold in this file without hysteresis, and it sits exactly on a knee of
+ * the OCV table — k_ocv[1] = {4050, 90} — so on the fallback curve a few
+ * millivolts of ADC noise walked it back and forth every poll. */
+static void test_full_hysteresis(void)
+{
+    GROUP("full vs not-charging, and the band around it");
+
+    battery_raw_t r = healthy();
+    r.chg_status = BAT_CHG_STOP;   /* plugged in, charger says it is not charging */
+    r.gauge_pct  = -1;             /* gauge unlearned: fall back to the OCV curve */
+
+    /* Coming UP, the line is 90. */
+    r.mv = 4050;                                   /* exactly the knee */
+    battery_status_t st = eval1(&r);
+    CHECK_INT(st.state, BAT_FULL);
+
+    r.mv = 3950;                                   /* 75 % */
+    CHECK_INT(eval1(&r).state, BAT_ON_USB);
+
+    /* Once FULL, it takes a real drop to leave — not one noisy sample. This
+     * is the case that used to flip: 4050 -> 4040 -> 4050 is a few mV. */
+    battery_status_t full = { .state = BAT_FULL };
+    battery_status_t out;
+
+    r.mv = 4040;
+    battery_eval(&r, &full, &out);
+    CHECK_INT(out.state, BAT_FULL);
+    CHECK(out.percent < BAT_FULL_PCT);             /* below the entry line... */
+    CHECK(out.percent >= BAT_FULL_CLEAR_PCT);      /* ...but inside the band */
+
+    /* And it does still leave, when the cell has genuinely fallen away. */
+    r.mv = 3900;
+    battery_eval(&r, &full, &out);
+    CHECK(out.percent < BAT_FULL_CLEAR_PCT);
+    CHECK_INT(out.state, BAT_ON_USB);
+
+    /* The band never swallows the alarm the other way: a charger that is
+     * blocked on a genuinely empty cell still reports BAT_ON_USB however it
+     * got there. */
+    r.mv = 3650;                                   /* 25 % */
+    battery_eval(&r, &full, &out);
+    CHECK_INT(out.state, BAT_ON_USB);
+
+    /* DONE always wins, at any percentage — the charger saying so is better
+     * evidence than the curve. */
+    r.chg_status = BAT_CHG_DONE;
+    r.mv = 3650;
+    CHECK_INT(eval1(&r).state, BAT_FULL);
+}
+
 int main(void)
 {
     printf("\n== battery policy\n");
@@ -319,5 +374,6 @@ int main(void)
     test_gauge_plausibility();
     test_warnings();
     test_text();
+    test_full_hysteresis();
     return test_summary();
 }

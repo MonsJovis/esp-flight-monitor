@@ -25,13 +25,18 @@
 
 static const char *TAG = "flight_source";
 
-/* 6000 was too impatient for this radio. The panel's antenna sees the house AP
- * at about -67 dBm, where a connect that a laptop completes in 40 ms can take
- * seconds or lose a SYN outright — and a timeout costs a whole 12 s poll cycle
- * plus a backoff step, whereas waiting a few more seconds costs nothing. Kept
- * below SRC_POLL_INTERVAL_MS so a slow poll can never overlap the next one. */
-/* POLL_HTTP_TIMEOUT_MS and POLL_BUF_SZ now live in flight_source.h, so the
- * 'p' probe can make exactly this request. */
+/* POLL_HTTP_TIMEOUT_MS and POLL_BUF_SZ live in flight_source.h, so the 'p'
+ * probe can make exactly this request. The reasoning for the 25 s is there.
+ *
+ * THE COMMENT THAT USED TO BE HERE claimed the timeout was "kept below
+ * SRC_POLL_INTERVAL_MS so a slow poll can never overlap the next one". It is
+ * now 25 s against a 12 s cadence, so by its own words it should be a bug —
+ * and it never was, because the invariant was never real: poll_task() is one
+ * task running http_get() and then vTaskDelay(SRC_POLL_INTERVAL_MS) in
+ * sequence, and a sequence cannot overlap itself. A slow poll delays the next
+ * one; it does not race it. A plausible-sounding invariant that nothing
+ * enforces is worse than none, because the next person to raise the timeout
+ * reads it and believes they have broken something (AGENTS.md §11 rule 1). */
 /* Same reasoning as POLL_HTTP_TIMEOUT_MS in the header, and the same measured
  * link: eight seconds on a marginal connection means "ROUTE WIRD GESUCHT"
  * that never resolves, which is the one thing §5.2's searching state was

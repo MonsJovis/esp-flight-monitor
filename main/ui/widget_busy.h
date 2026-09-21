@@ -64,8 +64,14 @@ lv_obj_t *widget_busy_create(lv_obj_t *parent, int32_t w);
  * that never ends is not a cosmetic bug. So this deletes the animation rather
  * than only hiding the object.
  *
- * Idempotent in both directions, because the screens call it from status
- * handlers that fire more than once per state.
+ * GENUINELY idempotent in both directions, because the screens call it from
+ * status handlers that fire more than once per state — screen_overhead.c
+ * calls it once every UI tick for as long as a route lookup is outstanding.
+ * It said this before and was not: every "on" call restarted the animation,
+ * which puts the segment back at x = 0, so a 1400 ms sweep driven by a
+ * 2000 ms tick snapped back to the left edge twice a cycle. An "on" call now
+ * returns without touching LVGL unless the bar is stopped or its track has
+ * been resized.
  */
 void widget_busy_set_active(lv_obj_t *busy, bool active);
 

@@ -31,9 +31,19 @@ extern "C" {
 
 /* Never carry a fix further than this. Beyond it the aircraft has probably
  * turned, descended, or landed, and a confidently-drawn mark somewhere it is
- * not is worse than a mark that stopped moving. Two failed polls plus change:
- * the display goes still, which is itself the honest signal that the data has
- * stopped arriving. */
+ * not is worse than a mark that stopped moving. The display goes still, which
+ * is itself the honest signal that the data has stopped arriving.
+ *
+ * THIRTY SECONDS IS A STATEMENT ABOUT AIRCRAFT, NOT ABOUT THE POLLER, and
+ * this comment used to justify it the other way round — "two failed polls
+ * plus change" at the 12 s cadence. That arithmetic stopped holding when D70
+ * raised POLL_HTTP_TIMEOUT_MS to 25 s: one slow-but-successful poll now puts
+ * up to 37 s between snapshots, so the marks can go still for a few seconds
+ * before the answer lands. That is the right behaviour and not a reason to
+ * raise this number — at thirty seconds a 450 kt aircraft has moved 3.75 nm
+ * and may have turned, and drawing it confidently in the wrong place is the
+ * failure this constant exists to prevent. The justification is corrected
+ * rather than the value. */
 #define EXTRAPOLATE_MAX_AGE_S 30.0f
 
 /* Advances `ac` along its own track by `age_s` seconds, writing the result to

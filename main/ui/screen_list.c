@@ -186,6 +186,28 @@
  * than a heap-allocated context. Matches screen_overhead.c, screen_wifi.c.
  * ============================================================================
  */
+/* The visibility poller's handle, and whether this screen's widgets still
+ * exist. Both exist because of one crash, and it is a crash with two halves.
+ *
+ * lv_timer_create() below starts a timer that reads s_cont thirty times a
+ * minute for the life of the process. Every debug view in main/debug/ calls
+ * lv_obj_clean(lv_screen_active()), which frees s_cont and tells this file
+ * nothing — so pressing 'f' or 'b' with the deck up was a LoadProhibited in
+ * lv_obj_get_parent(), from an LVGL timer, about a quarter of a second later.
+ * Reachable since the timer landed and never once stepped on, because the
+ * stress runs that churn overlays do not press the two keys that clean the
+ * screen.
+ *
+ * The other half is quieter: screen_list_create() runs again on every
+ * ui_resume(), so each debug view left ANOTHER timer behind, all of them
+ * looking at the same freed pointer.
+ *
+ * The handle fixes the second and the delete callback fixes the first, and
+ * the callback is what makes it stay fixed — LVGL tells us, so nothing has to
+ * remember to call anything (screen_wifi.c's on_main_deleted, D58). */
+static lv_timer_t *s_vis_timer;
+static bool        s_alive;
+
 static lv_obj_t *s_cont;       /* full-bleed root, never scrolls */
 static lv_obj_t *s_lbl_header; /* chrome: count only, plex_mono_13, PINNED */
 static lv_obj_t *s_list;       /* the scrolling column */
@@ -638,6 +660,9 @@ static void scroll_to_top(void)
 static void visibility_timer_cb(lv_timer_t *t)
 {
     (void)t;
+    if (!s_alive || s_cont == NULL) {
+        return;   /* the tree is gone; see s_vis_timer's comment */
+    }
     /* s_cont, not s_list: s_list is hidden outright in the empty-sky state,
      * and a hidden object is never "visible", which would read as him
      * leaving the page every time the sky cleared. */
@@ -827,9 +852,28 @@ static void create_row(lv_obj_t *parent, int idx, int32_t body_lh, int32_t ident
  * ============================================================================
  */
 
+/* Cleared by LVGL itself when the deck is torn down, whether that is
+ * ui_resume() rebuilding it or a debug view taking the panel over. */
+static void on_cont_deleted(lv_event_t *e)
+{
+    (void)e;
+    s_alive = false;
+    if (s_vis_timer != NULL) {
+        lv_timer_delete(s_vis_timer);
+        s_vis_timer = NULL;
+    }
+    s_cont            = NULL;
+    s_list            = NULL;
+    s_lbl_header      = NULL;
+    s_spacer          = NULL;
+    s_lbl_empty       = NULL;
+    s_lbl_nearest_tag = NULL;
+}
+
 void screen_list_create(lv_obj_t *parent)
 {
     s_cont = lv_obj_create(parent);
+    lv_obj_add_event_cb(s_cont, on_cont_deleted, LV_EVENT_DELETE, NULL);
     lv_obj_remove_style_all(s_cont);
     lv_obj_set_size(s_cont, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
     lv_obj_set_pos(s_cont, 0, 0);
@@ -948,13 +992,29 @@ void screen_list_create(lv_obj_t *parent)
     set_hidden(s_list, true);
 
     /* One timer, created once, never per update — see the scroll-position
-     * block above for what it is for. */
+     * block above for what it is for, and s_vis_timer for why the handle is
+     * kept. Belt and braces: if a previous tree somehow left one behind, it
+     * goes now rather than joining this one. */
     s_was_visible = false;
-    lv_timer_create(visibility_timer_cb, VISIBILITY_POLL_MS, NULL);
+    if (s_vis_timer != NULL) {
+        lv_timer_delete(s_vis_timer);
+    }
+    s_vis_timer = lv_timer_create(visibility_timer_cb, VISIBILITY_POLL_MS, NULL);
+
+    /* Last, like every other screen here: until every widget exists there is
+     * nothing safe for the timer to read. */
+    s_alive = true;
 }
 
 void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int n_routes)
 {
+    /* The same guard every other screen in this directory carries. ui_task
+     * re-checks the suspend flag inside the display lock now, so this should
+     * be unreachable — "should be" is exactly what screen_overhead.c was
+     * before the M11 stress run found otherwise. */
+    if (!s_alive) {
+        return;
+    }
     if (ac == NULL || n < 0) {
         n = 0;
     }
