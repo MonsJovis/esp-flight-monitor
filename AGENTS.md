@@ -658,8 +658,10 @@ because the convention was broken once each.
 
   What is still not negotiable, and now matters more rather than less:
   - **The signing key never enters the repo.** `secure_boot_signing_key.pem` is gitignored
-    and lives in the GitHub Actions secret `SIGNING_KEY`. Only `tools/ota_signing_key.pub.pem`,
-    the public half, is committed. Never paste the private key into a transcript, an issue
+    and lives in the GitHub Actions secret `SIGNING_KEY`, with a backup in Markus's personal
+    1Password ("esp-flight-monitor — OTA signing key"). Only `tools/ota_signing_key.pub.pem`,
+    the public half, is committed. If the local copy is missing, restore it from 1Password —
+    never generate a new one for a release: the panel would refuse every image signed with it. Never paste the private key into a transcript, an issue
     or a third-party service — a public repo plus that key is a firmware push to a device
     in somebody's living room.
   - **Nothing else new goes in.** A public repo is not an invitation to add the next

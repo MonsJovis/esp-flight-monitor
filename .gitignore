@@ -27,9 +27,10 @@ secrets.h
 main/secrets.h
 
 # The OTA image-signing key (D72). Every build is signed with it, so it has to
-# exist locally — and it must never be committed, never be pasted into a chat
-# window, and never leave this machine except into the GitHub Actions secret.
-# Lose it and no device running a signed build can be updated again without
+# exist locally — and it must never be committed and never be pasted into a
+# chat window. It exists in exactly three places: here, the GitHub Actions
+# secret SIGNING_KEY, and a backup in the owner's personal 1Password. Lose all
+# three and no device running a signed build can be updated again without
 # being opened up and reflashed over USB.
 secure_boot_signing_key.pem
 *_signing_key.pem
