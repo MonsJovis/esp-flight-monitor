@@ -439,8 +439,20 @@ void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
     if (!s_alive) {
         return;
     }
+    /* A NEGATIVE COUNT IS NOT AN EMPTY ONE. It used to be clamped to zero two
+     * lines down, which turned "the radio could not look" into "there is
+     * nothing out there" — a wrong answer delivered as a fact, to a man who
+     * can see his own router from where he is sitting.
+     *
+     * Nothing about the list changes on a failure, because nothing was
+     * learned: whatever he could already read stays readable, and only the
+     * sentence under it says the scan did not work. */
     if (n < 0) {
-        n = 0;
+        set_waiting(false);
+        lv_label_set_text(s_lbl_empty, STR_WIFI_SCAN_FAILED);
+        lv_obj_set_style_text_color(s_lbl_empty, THEME_AMBER, 0);
+        lv_obj_set_hidden(s_lbl_empty, s_n_shown != 0);
+        return;
     }
     if (n > SCREEN_WIFI_MAX_ROWS) {
         n = SCREEN_WIFI_MAX_ROWS; /* pool cap — see its #define */
@@ -473,7 +485,11 @@ void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
     set_waiting(false);
 
     /* AGENTS.md §1: never a blank panel. An empty scan result is not a
-     * hypothetical here — see DESIGN.md §5.3's own empty-state precedent. */
+     * hypothetical here — see DESIGN.md §5.3's own empty-state precedent.
+     * Text and colour are set rather than assumed: a previous scan may have
+     * failed and left the amber sentence in this label. */
+    lv_label_set_text(s_lbl_empty, STR_WIFI_LIST_EMPTY);
+    lv_obj_set_style_text_color(s_lbl_empty, THEME_TEXT_LABEL, 0);
     lv_obj_set_hidden(s_lbl_empty, n != 0);
 }
 
@@ -609,6 +625,17 @@ void screen_wifi_create(lv_obj_t *parent)
     int32_t y = PAD + lv_obj_get_height(s_lbl_title) + GAP_SM;
 
     s_lbl_status = make_label(s_main, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    /* Clamped to the content column and ellipsised, which it never used to
+     * be: every sentence here has a %s in it and an SSID is up to 32
+     * characters, so "Verbindung fehlgeschlagen: Apartamentos_Jose_Cruz" ran
+     * straight off the right edge of the panel. It was hidden for as long as
+     * it was because nothing ever PUT the long sentences up — the failure and
+     * success lines had no caller until main.c grew a join watcher. Dots, not
+     * wrap: the band below is positioned from this label's measured height at
+     * build time, so it has to stay one line whatever is written into it
+     * later. Same treatment as screen_geo.c's status line. */
+    lv_obj_set_width(s_lbl_status, CONTENT_W);
+    lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_MODE_DOTS);
     apply_status_text(STR_WIFI_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
     lv_obj_set_pos(s_lbl_status, PAD, y);
     lv_obj_update_layout(s_lbl_status);
@@ -658,9 +685,18 @@ void screen_wifi_create(lv_obj_t *parent)
      * visible row always lands at the top of the list — "first row fully
      * visible without scrolling" (task brief) needs no extra handling. */
     /* Ghost rows first: flex order is creation order, and a ghost below the
-     * real list would promise a network that is not coming. They are the
-     * shape of a row here rather than of two lines of text, because a WLAN
-     * row IS one line — a card with a name in it. */
+     * real list would promise a network that is not coming.
+     *
+     * THE SHAPE IS AN UNSAVED ROW'S, which is what almost every answer is
+     * made of — update_row() gives a saved network a filled, fully bordered
+     * card and an unsaved one a transparent row with a hairline under it, and
+     * a scan he is waiting on is a scan for something new. The first version
+     * drew a rounded box outlined on all four sides, which is neither: the
+     * ghosts read as empty cards and then the answer arrived as hairline
+     * rows, so the list visibly changed construction at the one moment he was
+     * looking at it. Exactly what create_skeleton() in screen_geo.c takes
+     * care to avoid, missed here because that screen's rows are all one
+     * shape and this screen's are two. */
     for (int i = 0; i < WIFI_SKEL_ROWS; i++) {
         static const int32_t ssid_pct[WIFI_SKEL_ROWS] = { 58, 42, 66, 36 };
 
@@ -668,8 +704,8 @@ void screen_wifi_create(lv_obj_t *parent)
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, CONTENT_W, ROW_H);
         lv_obj_set_style_pad_all(row, 0, 0);
-        lv_obj_set_style_radius(row, THEME_BASE_UNIT, 0);
         lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_border_color(row, THEME_DIVIDER, 0);
         lv_obj_set_scrollable(row, false);
         lv_obj_set_hidden(row, true);
@@ -801,6 +837,21 @@ void screen_wifi_set_rescan_cb(wifi_rescan_cb cb)
 void screen_wifi_set_exit_cb(wifi_exit_cb cb)
 {
     s_exit_cb = cb;
+}
+
+bool screen_wifi_debug_tap_saved(void)
+{
+    if (!s_alive) {
+        return false;
+    }
+    for (int i = 0; i < SCREEN_WIFI_MAX_ROWS; i++) {
+        if (s_rows[i].ssid[0] == '\0' || !s_rows[i].saved) {
+            continue;
+        }
+        lv_obj_send_event(s_rows[i].row, LV_EVENT_CLICKED, NULL);
+        return true;
+    }
+    return false;
 }
 
 int screen_wifi_debug_password_step(void)

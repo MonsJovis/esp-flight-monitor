@@ -4,7 +4,7 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-20.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); sixty-eight decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); sixty-nine decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
 > **32,380 checks across eleven suites, 0 failed**.
 >
@@ -182,8 +182,8 @@ nobody has written down puts the screen behind it back to being one nobody check
 The firmware takes single command bytes on the same serial link (`on_cmd()` in
 `main/main.c`, plus `s` handled in `main/debug/dbg_screen.c`):
 
-- `s` screenshot — `1`–`5` show a captured fixture (`5` is §5.2 with the route lookup
-  still outstanding) — `0` back to live
+- `s` (or `S`) screenshot — `1`–`5` show a captured fixture (`5` is §5.2 with the route
+  lookup still outstanding) — `0` back to live
 - `g` next page — `i` toggle the detail layer — `e` settings — `k` WLAN — `d` scroll to end
 - `q` open Ort suchen — `Q` run a real search on it — `z` search and take the first hit
   — `Z` step through its three states (waiting / nothing found / no answer), one per press
@@ -192,6 +192,8 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
   which is the one race in this feature that cannot be won from the host: the endpoint
   answers or refuses faster than a second keystroke arrives, so `C` holds the display lock
   across both steps and constructs the scenario instead of gambling on it.
+- `j` tap the first SAVED network — a real reconnect, and the one path on that screen
+  whose wait had no end until main.c grew a watcher for it.
 - `K` open WLAN and go straight to the password step, which is the one screen a finger is
   otherwise needed for. It says in the log whether it got there by tapping an unsaved
   network (the real path) or had to force it open because everything in range is already
@@ -199,6 +201,7 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
+- `x` what the touch layer has actually registered (presses, long presses, the last hold)
 - `b` benchmark — `t` tearing test — `f` font card — `m` hero metrics
 
 Driving a screen from the host and reading its framebuffer back is what turns "does it look

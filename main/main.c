@@ -26,6 +26,7 @@
  *   q  open Ortssuche                      Q  open it and run one search
  *   z  the same, then TAP the first hit    Z  the empty and no-answer states
  *   K  open WLAN and walk it to the password step (its keyboard)
+ *   j  tap the first SAVED network — a real reconnect, with an outcome
  *   a  press the keyboard's layer key (abc -> ABC -> 1# -> abc)
  *   c  tap "Neu suchen"                  C  start a lookup and abandon it
  *   1  replay §5.1 from the real capture   2  §5.2 Ohne Route
@@ -777,6 +778,11 @@ static void wifi_scan_task(void *arg)
     int n = wifi_scan(found, 8);
     int n_saved = (wifi_creds_list(saved, WIFI_MAX_NETWORKS) == ESP_OK)
                       ? WIFI_MAX_NETWORKS : 0;
+    /* The count, every time, and the sign matters: -1 is "the radio could not
+     * look" and 0 is "nothing is out there". They reach the panel as two
+     * different sentences now, and a log that prints which one happened is
+     * the only way to tell from here which sentence was right. */
+    ESP_LOGW(TAG, "wlan scan: %d network(s)%s", n, n < 0 ? " — scan failed" : "");
 
     display_lock(0);
     bool shown = nav_overlay_open();
@@ -825,9 +831,133 @@ static void start_wifi_scan(void)
     start_wifi_scan_ex(false);
 }
 
+/* How long the panel is willing to say "Verbinde mit ..." before calling it a
+ * failure. A pick costs a scan (~3 s), an association and a DHCP lease; wifi.c
+ * gives up on its own attempt well inside this and then starts its backoff,
+ * which is no longer something he is standing there watching. */
+#define JOIN_WATCH_MS 20000
+
+/* Watches a join to its end and tells the screen what happened.
+ *
+ * WITHOUT THIS THE JOIN HAD NO END. screen_wifi.h documents
+ * screen_wifi_set_status() as the way to report an outcome, and the only two
+ * callers of it were both in the scan path — so after tapping a network the
+ * status line sat on "Verbinde mit X..." for as long as the screen stayed
+ * open, whatever actually happened. M11 then swept a progress bar under that
+ * sentence, which is the same claim made far more confidently, and is what
+ * made a four-milestone-old wart look like a new fault. D66 says the bar is
+ * for a wait with an end; this is that end.
+ *
+ * It reports the network the device is ACTUALLY on, read back from the
+ * driver, not the one he tapped. wifi.c picks whichever remembered network is
+ * in range rather than obeying a specific SSID (wifi.h), so those two can
+ * differ — and "Verbunden mit X" when it is on Y is exactly the kind of
+ * confident wrong answer this panel must not give.
+ */
+/* True while a join watch is running. Guarded by display_lock(), which both
+ * sides already take and which is recursive, so the tap that sets it may be
+ * holding it from inside an LVGL event callback. */
+static bool s_join_watch;
+
+static void wifi_join_task(void *arg)
+{
+    char want[WIFI_SSID_LEN];
+    snprintf(want, sizeof want, "%s", (const char *)arg);
+    free(arg);
+
+    wifi_reconnect_now();
+
+    /* Polled, because wifi.h exposes no event hook — the same shape as the
+     * scan task above, and on its own stack for the same reason. */
+    bool ok = false;
+    for (int waited = 0; waited < JOIN_WATCH_MS; waited += 250) {
+        vTaskDelay(pdMS_TO_TICKS(250));
+        if (wifi_is_connected()) { ok = true; break; }
+    }
+
+    char landed[WIFI_SSID_LEN] = "";
+    wifi_ap_record_t ap;
+    if (ok && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        snprintf(landed, sizeof landed, "%s", (const char *)ap.ssid);
+    }
+
+    display_lock(0);
+    s_join_watch = false;
+    if (nav_overlay_open()) {
+        screen_wifi_set_status(ok ? landed : want, ok, false);
+    }
+    display_unlock();
+
+    if (ok) {
+        ESP_LOGW(TAG, "join: associated with \"%s\"%s", landed,
+                 strcmp(landed, want) == 0 ? "" : " (not the one tapped)");
+    } else {
+        ESP_LOGW(TAG, "join: no association after %d ms; wifi.c keeps retrying",
+                 JOIN_WATCH_MS);
+    }
+    vTaskDelete(NULL);
+}
+
+static void start_join_watch(const char *ssid)
+{
+    /* ONE WATCHER, however many times he taps. A join that is slow is exactly
+     * the join he will tap again, and again — and each tap used to be another
+     * 4 KB task on a device with about 24 KB of internal heap in steady state
+     * (AGENTS.md §4). The one already running reports whatever happens, and
+     * wifi_reconnect_now() is a flag, so asking twice costs nothing. */
+    display_lock(0);
+    bool already = s_join_watch;
+    if (!already) {
+        s_join_watch = true;
+    }
+    display_unlock();
+    if (already) {
+        wifi_reconnect_now();
+        return;
+    }
+
+    char *copy = malloc(WIFI_SSID_LEN);
+    if (copy == NULL) {
+        display_lock(0);
+        s_join_watch = false;
+        display_unlock();
+        return;                       /* the screen keeps its optimistic line */
+    }
+    snprintf(copy, WIFI_SSID_LEN, "%s", ssid);
+    if (xTaskCreate(wifi_join_task, "wifijoin", 4096, copy, 4, NULL) != pdPASS) {
+        free(copy);
+        display_lock(0);
+        s_join_watch = false;
+        display_unlock();
+        /* Nothing will watch it, so nothing would ever end the wait — say so
+         * now rather than sweep a bar for a join nobody is following. */
+        display_lock(0);
+        if (nav_overlay_open()) {
+            screen_wifi_set_status(ssid, wifi_is_connected(), false);
+        }
+        display_unlock();
+    }
+}
+
 static void on_wifi_join(const char *ssid, const char *password)
 {
     if (ssid == NULL || ssid[0] == '\0') return;
+
+    /* Already on the one he tapped. Dropping a working association only to
+     * make the same one again is an outage bought for nothing, so say what is
+     * true and stop — which also ends the wait the screen just started. */
+    wifi_ap_record_t cur;
+    if (password == NULL && wifi_is_connected() &&
+        esp_wifi_sta_get_ap_info(&cur) == ESP_OK &&
+        strcmp((const char *)cur.ssid, ssid) == 0) {
+        ESP_LOGW(TAG, "already associated with \"%s\"; nothing to do", ssid);
+        display_lock(0);
+        if (nav_overlay_open()) {
+            screen_wifi_set_status(ssid, true, false);
+        }
+        display_unlock();
+        return;
+    }
 
     if (password != NULL) {
         /* A new network. Slot choice is the same rule as the serial path: reuse
@@ -854,7 +984,9 @@ static void on_wifi_join(const char *ssid, const char *password)
          * for one again. Just reconnect with what NVS already holds. */
         ESP_LOGW(TAG, "reconnecting to saved network \"%s\"", ssid);
     }
-    wifi_reconnect_now();
+    /* start_join_watch() calls wifi_reconnect_now() itself, so that the
+     * watcher is in place before the attempt can finish. */
+    start_join_watch(ssid);
 }
 
 static void close_overlay(void)
@@ -1523,6 +1655,9 @@ static void on_cmd(char c)
     else if (c == 'e') open_settings();
     else if (c == 'k') open_wifi();
     else if (c == 'K') wifi_demo_password();
+    else if (c == 'j') { display_lock(0); bool ok = screen_wifi_debug_tap_saved(); display_unlock();
+                         ESP_LOGW(TAG, "wlan: saved row %s", ok ? "tapped — watch for the outcome"
+                                                               : "not available"); }
     else if (c == 'q') open_geo();
     else if (c == 'Q') geo_demo_search();
     else if (c == 'z') { s_geo_autopick = true; geo_demo_search(); }
@@ -1623,7 +1758,7 @@ void app_main(void)
      * line and the header block above claiming a console this firmware no
      * longer has. AGENTS.md §11 rule 1 is about exactly that. */
     ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
-                  "u=update y=akku Y=akkusim x=touch i=detail o=ort g=seite e=einst k/K=wlan "
+                  "u=update y=akku Y=akkusim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
                   "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a

@@ -1823,3 +1823,68 @@ That is the right trade for a device in somebody's living room and the wrong one
 build host, so each of them has to arrive with a way to see the quiet case: a log line that
 says which branch was taken, a command that constructs the state, or a gate. A guard
 without one of those does not remove a bug, it removes the evidence.
+
+---
+
+## D69 — The WLAN screen was telling three different untruths
+
+**2026-09-21.** The owner looked at M11's screenshots and said the WLAN states did not seem
+right. Four things were wrong, and only one of them was new.
+
+**Tapping a network never reported an outcome.** `screen_wifi.h` documents
+`screen_wifi_set_status()` as the way to tell the screen what happened, and every caller of
+it was in the scan path — not one in the join path. So after a tap the status line sat on
+"Verbinde mit X..." for as long as the screen stayed open, whatever actually happened. That
+was survivable as a stale sentence for four milestones. Then M11 swept a progress bar under
+it, which is the same claim made far more confidently and never ends, and what had been a
+wart started looking like a fault. D66 says the bar is for a wait with an end; this is that
+end, and the bar is what finally made its absence visible.
+
+**And the tap did nothing at all when the device was online.** `wifi_reconnect_now()` sets
+`g_force_retry`, and the only place that read it was the backoff wait — which lives inside
+`if (!g_connected)`. Connected, the flag was set and never looked at again. So the whole
+gesture was inert in exactly the situation it exists for (AGENTS.md §6): he lands, the
+flat's router is remembered but weak, the device is clinging to whatever it found first,
+and he taps the right one. An explicit pick now outranks "already associated" — the loop
+drops the association and re-scans, which costs a 2 s backoff if it fails.
+
+The watcher reports **the network the device actually ended up on**, read back from the
+driver, not the one he tapped. wifi.c picks whichever remembered network is in range rather
+than obeying a specific SSID, so those two genuinely differ, and "Verbunden mit X" while
+sitting on Y is the kind of confident wrong answer this panel must never give.
+
+**A failed scan was reported as an empty one.** `wifi_scan()` returns -1 when the radio
+could not look, and the screen clamped that to zero, producing "Keine Netzwerke gefunden" —
+telling a man sitting next to his own router that no networks exist. The Ortssuche one
+screen away has separated those two answers since M10 (STR_GEO_NONE vs STR_GEO_FAILED) for
+precisely this reason: one is a fact about the world, the other a fact about the device, and
+only one of them is worth tapping Suchen over. A `-1` turned up in the wild within minutes
+of the new log line going in. On a failure the list is now left exactly as it was, because
+nothing was learned.
+
+**And the skeleton promised the wrong shape.** `update_row()` draws a saved network as a
+filled, fully bordered card and an unsaved one as a transparent row with a hairline under
+it. The ghosts drew rounded boxes outlined on all four sides — neither — so the list
+visibly changed construction at the moment the answer arrived. `screen_geo.c` takes care
+over exactly this; it was missed here because that screen's rows are all one shape and this
+screen's are two.
+
+**A fifth thing fell out of fixing the first.** The status line had no width and no long
+mode, so "Verbindung fehlgeschlagen: Apartamentos_Jose_Cruz" ran straight off the right edge
+of the panel. It had been that way since M6 and could not have been seen before, because
+nothing ever put a long sentence into it — the failure and success lines had no caller.
+Fixing the join is what made the layout bug reachable.
+
+**What this says about the milestone.** Every one of these except the ghost shape predates
+M11 and every one of them was invisible until M11 made it visible: a bar that never stops
+exposes a wait with no end, an outcome that gets reported exposes a label that cannot hold
+it, a log that prints the sign exposes a -1 that was being rounded to "nothing here". D66
+claims the bar is honest about whether the device is working. That honesty is load-bearing
+in both directions — it also refuses to hide the places where the device was not working at
+all.
+
+**And what it says about the check.** Four of the five were reachable only by standing in
+front of the panel and tapping, which is why a person found them and the reviews did not.
+The two that were then testable from the host got a key (`j`) so they stay testable. The
+four that need an access point willing to associate are recorded as unverified rather than
+claimed, because at this location none would.

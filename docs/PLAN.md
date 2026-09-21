@@ -563,6 +563,33 @@ consecutive reviews had found those two blobs stale; the gate immediately turned
 more nobody had reported — `u`, `i`, `p`, `t` and `v` had never been in the ready line, and
 `u` had never been in the header. 34 keys, both places, proved to bite.
 
+**Then the owner said the WLAN states looked wrong, and four things were** (D69). Only one
+of them was new. Tapping a network had never reported an outcome — `screen_wifi_set_status()`
+is the screen's documented way to say what happened and its only two callers were both in
+the scan path — so the line sat on "Verbinde mit X..." for as long as the screen stayed
+open. M11 then swept a bar under that sentence, which is the same claim made far more
+confidently, and turned a four-milestone-old wart into something that looked broken.
+Worse: `wifi_reconnect_now()` only set a flag that `wifi_task` read inside
+`if (!g_connected)`, so **tapping a network while online did nothing whatsoever** — the
+exact thing §6's travel case is about. A failed scan was reported as "Keine Netzwerke
+gefunden", telling him no networks exist while he sits next to his router. And the ghost
+rows drew outlined cards where an unsaved network is a hairline row, so the list changed
+construction at the one moment he was looking at it.
+
+Fixed: an explicit pick now outranks "already associated"; a join watcher reports the
+outcome, and reports the network actually landed on rather than the one tapped, because
+wifi.c picks by range and not by SSID; a failed scan says so in amber and leaves the list
+it could not refresh alone; the ghosts take the unsaved-row shape; and the status line is
+clamped to the content column, which it never was — the first long sentence ever put into
+it ran straight off the panel.
+
+Verified on the unit: a real tap → "Verbinde mit ..." with the bar → twenty seconds later
+"Verbindung fehlgeschlagen: ..." in amber with the bar gone; a genuine `-1` scan caught in
+the wild by the new log and drawn as "Die Suche hat nicht geklappt"; the empty case still
+"Keine Netzwerke gefunden" in grey; the ghosts as hairline rows. **Not verified — no access
+point here would associate:** the success branch, the already-on-it short-circuit, the
+forced re-pick while connected, and the one-watcher guard.
+
 **And a third harness bug of the shape M10 records twice** — the check ran, reported
 nothing, and had not looked. `tools/grab_screen.py` reads frame buffer 0 of two, so a
 screenshot of a screen that had just changed and then gone still showed the state BEFORE

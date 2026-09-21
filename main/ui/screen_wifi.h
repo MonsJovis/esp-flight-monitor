@@ -173,6 +173,26 @@ void screen_wifi_set_exit_cb(wifi_exit_cb cb);
  *
  * Caller holds display_lock().
  */
+/* Taps the first SAVED network, exactly as a fingertip would — which starts a
+ * real reconnect.
+ *
+ * Separate from the call above, and named for what it does, because it HAS A
+ * SIDE EFFECT ON THE LINK: tapping a saved row does not open anything, it
+ * asks the device to re-associate. That is why the password-step helper
+ * refuses to touch saved rows, and why this one says so in its name.
+ *
+ * It exists because the join is the other half of this screen that a build
+ * host cannot reach, and the half where the wait had no end: until
+ * main.c grew a watcher, nothing ever reported an outcome, so the status line
+ * sat on "Verbinde mit ..." forever and M11's progress bar swept under it
+ * forever. Checking that claim needed a tap.
+ *
+ * Returns false if the screen is not up or nothing saved is in range.
+ *
+ * Caller holds display_lock().
+ */
+bool screen_wifi_debug_tap_saved(void);
+
 #define SCREEN_WIFI_PW_NONE   0
 #define SCREEN_WIFI_PW_TAPPED 1
 #define SCREEN_WIFI_PW_FORCED 2

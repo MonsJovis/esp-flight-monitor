@@ -296,6 +296,15 @@
 #define STR_WIFI_SAVED             "gespeichert"
 
 #define STR_WIFI_LIST_EMPTY        "Keine Netzwerke gefunden"
+
+/* A scan that did not WORK is a different answer from a scan that found
+ * nothing, and this screen used to give both of them the sentence above —
+ * telling him no networks exist while he is standing next to his router.
+ * The Ortssuche one screen away has drawn that distinction since M10
+ * (STR_GEO_NONE vs STR_GEO_FAILED) for exactly the same reason: one of them
+ * is a fact about the world and the other is a fact about the device, and
+ * only one of them is worth tapping Suchen again over. */
+#define STR_WIFI_SCAN_FAILED       "Die Suche hat nicht geklappt"
 #define STR_WIFI_BTN_RESCAN        "Suchen"
 
 #define FMT_WIFI_PW_NETWORK        "Verbindung mit %s"  /* so he can see what he is joining */

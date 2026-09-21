@@ -203,7 +203,29 @@ static void wifi_task(void *arg)
     int attempt = 0;
 
     for (;;) {
-        if (!g_connected) {
+        /* AN EXPLICIT PICK OUTRANKS "ALREADY ASSOCIATED".
+         *
+         * g_force_retry used to be read in one place only — the backoff wait
+         * below — which is inside `if (!g_connected)`. So asking for a
+         * reconnect while the device was online did NOTHING AT ALL: the flag
+         * was set, this loop never looked at it, and it sat there until the
+         * next drop. Tapping a network on the WLAN screen was therefore a tap
+         * that changed nothing while the screen said "Verbinde mit ...", and
+         * since M11 swept a progress bar underneath it as well.
+         *
+         * That matters most in the one situation this device exists to
+         * survive (AGENTS.md §6): he lands, the flat's router is remembered
+         * but weak, the device clings to whatever it found first, and he taps
+         * the right one. attempt_connect() disconnects and re-picks from what
+         * is actually in range, which is what he asked for. */
+        bool forced = g_force_retry;
+        if (forced) {
+            g_force_retry = false;
+            if (g_connected) {
+                ESP_LOGW(TAG, "asked to re-pick while associated; dropping and re-scanning");
+            }
+        }
+        if (!g_connected || forced) {
             if (attempt_connect()) {
                 attempt = 0;
             } else {
