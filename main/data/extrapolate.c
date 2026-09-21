@@ -3,6 +3,17 @@
 #include <math.h>
 #include <string.h>
 
+/* M_PI is not ISO C — it is a POSIX/X-Open extension, and glibc hides it when
+ * __STRICT_ANSI__ is set, which -std=c11 does. Apple's libc exposes it either
+ * way, so this file compiled on the machine it was written on and nowhere
+ * else; the host suite only ever ran on macOS, so nothing said so until CI
+ * built it on Ubuntu. Defining it here keeps the translation unit
+ * self-contained instead of making every build depend on which libc it
+ * happens to meet. */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 bool aircraft_extrapolate(const aircraft_t *ac, float age_s, aircraft_t *out)
 {
     if (ac == NULL || out == NULL) {

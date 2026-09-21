@@ -2176,6 +2176,17 @@ action there is a convenience action with the signing key in its environment.
 unpinned CI resolve could build an `esp_lcd_st7701` that was never the one measured on
 this unit and then push it 9,000 km. The lock costs 6 KB.
 
+**CI found a real bug on its first run, and it was not in any of this.**
+`main/data/extrapolate.c` used `M_PI`, which is not ISO C — it is a POSIX/X-Open
+extension, and glibc hides it when `__STRICT_ANSI__` is set, which `-std=c11` does.
+Apple's libc exposes it either way. So the file compiled on the one machine it was ever
+compiled on, and the 32,668-check suite had been green for days on a translation unit
+that did not build on Linux. This is §11 rule 2 with the gate pointed at itself: the
+suite was not failing to check, it was only ever checking on one platform, and a suite
+that has only run in one place has told you less than it appears to. It is now defined
+with a `#ifndef` guard in the file rather than fixed with a compiler flag, so the
+translation unit is self-contained instead of depending on which libc it meets.
+
 **What this does not cover.** The image download and the slot switch are still the two
 things in this project that have never run (M8), and publishing is what finally makes
 testing them possible. Until that test is done on the desk, the honest status of OTA is
