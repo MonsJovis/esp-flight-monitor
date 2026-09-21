@@ -2239,3 +2239,44 @@ run, but whoever was present was reading the serial log, not looking at the pane
 whether a full image write tears this display is exactly as open as it was before. The
 next install is the chance to answer it — watch the glass, or grab framebuffers through
 it.
+
+## D73 — A check that failed does not get to spend the whole day
+
+**2026-09-21.** `ota_check()` stamps `s_last_check_ms` on the line after `https_get()`
+returns, before it looks at what came back. So a fetch that failed — DNS, a handshake
+that lost a race with the WiFi coming up, a GitHub 5xx, the 512-byte header buffer of
+D72 — cost the full `OTA_CHECK_INTERVAL_MS`. Twenty-four hours, bought by a request that
+never happened.
+
+That is the wrong shape for this feature specifically. The whole reason this device has
+OTA is that it spends half the year 9,000 km from anyone who could fix it, and the gap
+between "the fix is published" and "he has the fix" was allowed to be two days because of
+one bad second. Nothing about a transient failure justifies that, and the 24-hour cadence
+was never an argument for it — it is a deliberate *politeness* interval, and spending it
+on nothing is not polite to anyone.
+
+**`OTA_RETRY_INTERVAL_MS` is one hour**, and the reasoning for the number is short: what
+is being retried is a request to somebody else's free service, so 24 GETs a day in the
+worst case is the ceiling, and that is nothing. Minutes would be hammering; a day is what
+is being fixed.
+
+**Flat, not backed off.** `ota_should_check()` already refuses to try while offline or
+before the clock is set, so this is specifically the online-but-unreachable case, which is
+almost always transient. A backoff curve is more machinery than the problem deserves, and
+more machinery is more that can be wrong in a way nobody can see from here.
+
+**The distinction that carries it: "nothing newer" is a SUCCESS.** The manifest arrived
+and was read. So are all four of the judgements below it — not newer, not https, too big,
+known-bad — because each one is an answer about bytes the device is holding. Retrying any
+of them in an hour would ask the same question of the same bytes for the rest of the
+device's life. `s_last_check_failed` is therefore set to true immediately after the fetch
+and cleared the moment a manifest parses, which puts the two states on the same code path
+rather than leaving one of them to be remembered at four separate returns.
+
+**It went in the policy layer, not in `ota.c`.** The decision is a judgement about when,
+which is what `ota_policy.c` is for and why it touches no `esp_*` header. `test_ota.c` now
+pins it with **16,975 checks**, including a minute-by-minute sweep across the first
+twenty-four hours asserting both intervals against both outcomes — a sweep rather than
+three points, because the two must not swap or blur anywhere in between. Reverting the
+one-line policy change was watched failing those tests before they were trusted (§11
+rule 2). The suite is **35,562** overall.

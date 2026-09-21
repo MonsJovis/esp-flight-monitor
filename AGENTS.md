@@ -4,9 +4,9 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-21.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); seventy-two decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); seventy-three decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
-> **32,668 checks across twelve suites, 0 failed**.
+> **35,562 checks across twelve suites, 0 failed**.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -168,7 +168,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 32,668 checks, plus the font, string and console-key gates
+make -C test/host        # 35,562 checks, plus the font, string and console-key gates
 ```
 
 **Before your first `idf.py build`, generate a signing key.** Every build is signed now

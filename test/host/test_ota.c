@@ -256,6 +256,74 @@ static void test_should_check(void)
     c.now_ms = 1000;
     CHECK(ota_should_check(&c));
 
+    GROUP("ota_should_check: a check that FAILED retries in an hour, not a day");
+    /* The timestamp is stamped whether or not the manifest arrived, so before
+     * OTA_RETRY_INTERVAL_MS existed one DNS hiccup cost a full day on a device
+     * whose whole reason for having updates is to receive a fix from 9,000 km
+     * away. */
+    c = ready_ctx();
+    c.last_check_ms = 1000;
+    c.last_check_failed = true;
+    c.now_ms = 1000 + OTA_RETRY_INTERVAL_MS - 1;
+    CHECK(!ota_should_check(&c));
+    c.now_ms = 1000 + OTA_RETRY_INTERVAL_MS;
+    CHECK(ota_should_check(&c));
+
+    GROUP("ota_should_check: the retry is SHORTER than the interval, and both are sane");
+    CHECK(OTA_RETRY_INTERVAL_MS < OTA_CHECK_INTERVAL_MS);
+    CHECK(OTA_RETRY_INTERVAL_MS > 0);
+
+    GROUP("ota_should_check: a SUCCESSFUL check still waits the full day");
+    /* The distinction the whole thing rests on. "Nothing newer was offered" is
+     * a check that worked: the manifest arrived and was read. Retrying it in an
+     * hour would ask the same question of the same bytes for the rest of the
+     * device's life. */
+    c = ready_ctx();
+    c.last_check_ms = 1000;
+    c.last_check_failed = false;
+    c.now_ms = 1000 + OTA_RETRY_INTERVAL_MS;
+    CHECK(!ota_should_check(&c));
+    c.now_ms = 1000 + OTA_CHECK_INTERVAL_MS - 1;
+    CHECK(!ota_should_check(&c));
+    c.now_ms = 1000 + OTA_CHECK_INTERVAL_MS;
+    CHECK(ota_should_check(&c));
+
+    GROUP("ota_should_check: a failed check does not override the preconditions");
+    /* Retrying sooner must not mean retrying while offline, or before the
+     * clock is set — the fetch would fail again for the same reason and the
+     * hour would be spent on nothing. */
+    c = ready_ctx(); c.last_check_failed = true; c.online      = false;
+    CHECK(!ota_should_check(&c));
+    c = ready_ctx(); c.last_check_failed = true; c.clock_valid = false;
+    CHECK(!ota_should_check(&c));
+    c = ready_ctx(); c.last_check_failed = true; c.have_url    = false;
+    CHECK(!ota_should_check(&c));
+
+    GROUP("ota_should_check: every minute of the first day, failed vs succeeded");
+    /* A sweep rather than three points: the two intervals must not swap or
+     * blur anywhere in between. */
+    for (int64_t min = 0; min <= 24 * 60; min++) {
+        int64_t t = min * 60 * 1000LL;
+        c = ready_ctx();
+        c.last_check_ms = 1;
+        c.now_ms = 1 + t;
+
+        c.last_check_failed = true;
+        CHECK(ota_should_check(&c) == (t >= OTA_RETRY_INTERVAL_MS));
+
+        c.last_check_failed = false;
+        CHECK(ota_should_check(&c) == (t >= OTA_CHECK_INTERVAL_MS));
+    }
+
+    GROUP("ota_should_check: a backwards clock re-checks whatever the outcome was");
+    c = ready_ctx();
+    c.last_check_ms = 5 * OTA_CHECK_INTERVAL_MS;
+    c.now_ms = 1000;
+    c.last_check_failed = true;
+    CHECK(ota_should_check(&c));
+    c.last_check_failed = false;
+    CHECK(ota_should_check(&c));
+
     GROUP("ota_should_check: no URL configured is the shipped default");
     /* The device leaves the factory with nowhere to update from, and must
      * therefore never try. */

@@ -162,7 +162,10 @@ bool ota_should_check(const ota_ctx_t *ctx)
     if (since < 0) {
         return true;
     }
-    return since >= OTA_CHECK_INTERVAL_MS;
+    /* A check that failed bought nothing, so it does not get to spend the
+     * whole interval. See OTA_RETRY_INTERVAL_MS. */
+    return since >= (ctx->last_check_failed ? OTA_RETRY_INTERVAL_MS
+                                            : OTA_CHECK_INTERVAL_MS);
 }
 
 bool ota_should_install(const ota_ctx_t *ctx)

@@ -69,6 +69,10 @@ static const char *TAG = "ota";
 static ota_manifest_t s_pending;
 static bool           s_have_pending;
 static int64_t        s_last_check_ms;
+/* Whether the fetch at s_last_check_ms reached a manifest. "Nothing newer"
+ * counts as reaching one; DNS, TLS, an HTTP error or an unparseable body do
+ * not. ota_should_check() waits an hour after a failure instead of a day. */
+static bool           s_last_check_failed;
 
 /* The settings the policy needs. main.c owns the live copy; this is a
  * snapshot taken whenever it changes, because the OTA task must not reach
@@ -292,6 +296,7 @@ bool ota_check(char *newer_version, size_t vsz)
     }
     int n = https_get(url, body, MANIFEST_MAX);
     s_last_check_ms = esp_timer_get_time() / 1000;
+    s_last_check_failed = true;        /* cleared once a manifest is in hand */
     if (n <= 0) {
         free(body);
         return false;
@@ -303,6 +308,12 @@ bool ota_check(char *newer_version, size_t vsz)
     if (!parsed) {
         return false;
     }
+    /* From here the manifest arrived and parsed. Everything below is a
+     * judgement about what it OFFERS — not newer, not https, too big, known
+     * bad — and every one of those is a check that worked. Retrying them in an
+     * hour would ask the same question of the same bytes and get the same
+     * answer, so they take the full interval. */
+    s_last_check_failed = false;
 
     const char *running = ota_running_version();
     int cmp = ota_version_cmp(m.version, running);
@@ -444,6 +455,7 @@ static ota_ctx_t build_ctx(void)
         .dim_to_hour   = s_settings.dim_to_hour,
         .now_ms        = esp_timer_get_time() / 1000,
         .last_check_ms = s_last_check_ms,
+        .last_check_failed = s_last_check_failed,
     };
     return c;
 }

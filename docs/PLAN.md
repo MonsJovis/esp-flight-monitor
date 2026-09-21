@@ -11,7 +11,7 @@
 > München → Seoul · Lufthansa · 10.211 m · 8,9 km nordwestlich
 > ```
 >
-> **32,668 host checks across twelve suites, 0 failed**, plus three gates that run with
+> **35,562 host checks across twelve suites, 0 failed**, plus three gates that run with
 > them: a font-coverage check (LVGL draws a missing glyph as *nothing*), a string audit
 > (every German word must come from `main/strings_de.h`) and a console-key check (every
 > key the firmware answers to has to be written down in all three places that describe
@@ -364,7 +364,7 @@ caused by the sweep:
 
 **Done.** What is verified and what is not, precisely: the manifest path is proven on the
 device end to end (DNS, TLS, root-bundle validation, 2,262 bytes byte-exact, parse, field
-rejection). The policy layer is host-tested to 14,081 checks.
+rejection). The policy layer is host-tested to 16,975 checks.
 
 **The image download and slot switch have now run — 2026-09-21, on the unit.** Every
 check this section was waiting on is done:

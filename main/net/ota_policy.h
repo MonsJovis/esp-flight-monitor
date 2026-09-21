@@ -60,14 +60,40 @@ typedef struct {
     int     dim_to_hour;    /* exclusive */
     int64_t now_ms;
     int64_t last_check_ms;  /* 0 = never checked */
+    bool    last_check_failed; /* the fetch at last_check_ms did not produce a
+                                * manifest: DNS, TLS, an HTTP error, a body
+                                * that would not parse. Distinct from "nothing
+                                * newer was offered", which is a SUCCESS. */
 } ota_ctx_t;
 
 /* 24 hours. He is not waiting for a feature; this only has to be faster than
  * a flight to Bangkok. */
 #define OTA_CHECK_INTERVAL_MS (24 * 60 * 60 * 1000LL)
 
+/* One hour, after a check that FAILED rather than one that found nothing.
+ *
+ * The interval above is a deliberate cadence; spending it on a fetch that
+ * never happened is not. The timestamp is stamped whether or not the manifest
+ * arrived, so before this existed a single unlucky moment — a DNS hiccup, a
+ * GitHub 5xx, a handshake that lost a race with the WiFi coming up — cost a
+ * full day. On a device whose entire reason for having this feature is to
+ * receive a fix from 9,000 km away, "I published it" and "he has it" could
+ * be two days apart because of one bad second.
+ *
+ * An hour rather than minutes because the thing being retried is a request to
+ * somebody else's free service, and 24 GETs a day in the worst case is
+ * nothing. Flat, not backed off: a failure here is almost always transient
+ * (ota_should_check() already refuses to try while offline, so this is the
+ * online-but-unreachable case), and a backoff curve would be more machinery
+ * than the problem deserves. */
+#define OTA_RETRY_INTERVAL_MS (60 * 60 * 1000LL)
+
 /* True when it is time to fetch the manifest. Needs a URL, a network and a
  * clock.
+ *
+ * The wait is OTA_CHECK_INTERVAL_MS after a check that reached the manifest,
+ * and OTA_RETRY_INTERVAL_MS after one that did not — see `last_check_failed`.
+ * "Nothing newer was offered" is a check that reached the manifest.
  *
  * The caller's `last_check_ms` is not persisted anywhere, so this is an
  * interval per UPTIME, not per day: a device that reboots checks again
