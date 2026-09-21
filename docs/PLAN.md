@@ -590,6 +590,17 @@ the wild by the new log and drawn as "Die Suche hat nicht geklappt"; the empty c
 point here would associate:** the success branch, the already-on-it short-circuit, the
 forced re-pick while connected, and the one-watcher guard.
 
+**Then he asked why his phone has reception and this does not** — and neither tool on the
+device could answer it. `wifi_scan()` discarded the RSSI, and `probe_link()` fetched a 1 KB
+query and reported fifteen cheerful "ok"s at 120-680 ms about a device that had not shown an
+aircraft all day. Both fixed: the scan logs signal and channel, and the probe now issues the
+identical request the poller does (same URL, same 16 KB buffer, same timeout — `POLL_BUF_SZ`
+and `POLL_HTTP_TIMEOUT_MS` moved into flight_source.h so it uses the numbers rather than a
+copy). Measured then: **-76 to -81 dBm**, the SSID on two channels (a repeater), and the real
+poll request taking **10-27 s with a third never completing, against a 10 s timeout**.
+Responses of 1-3 KB, so it is retransmission, not bandwidth. The backoff and its
+reconnect-reset were already correct and were never the problem. D69.
+
 **And a third harness bug of the shape M10 records twice** — the check ran, reported
 nothing, and had not looked. `tools/grab_screen.py` reads frame buffer 0 of two, so a
 screenshot of a screen that had just changed and then gone still showed the state BEFORE

@@ -171,6 +171,7 @@ static bool attempt_connect(void)
     strncpy((char *)wifi_config.sta.ssid, g_creds[best_slot].ssid, sizeof wifi_config.sta.ssid - 1);
     strncpy((char *)wifi_config.sta.password, g_creds[best_slot].pass, sizeof wifi_config.sta.password - 1);
     wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN; /* accept anything from open up to WPA2/3 */
+    int8_t chosen_rssi = best_rssi;
     char connecting_ssid[WIFI_SSID_LEN];
     strncpy(connecting_ssid, g_creds[best_slot].ssid, sizeof connecting_ssid - 1);
     connecting_ssid[sizeof connecting_ssid - 1] = '\0';
@@ -191,7 +192,7 @@ static bool attempt_connect(void)
                                             pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
     if (bits & WIFI_CONNECTED_BIT) {
         /* SSID only -- never the password (AGENTS.md §10). */
-        ESP_LOGI(TAG, "connected: ssid=%s", connecting_ssid);
+        ESP_LOGI(TAG, "connected: ssid=%s (%d dBm at pick)", connecting_ssid, chosen_rssi);
         return true;
     }
     return false;
@@ -441,6 +442,15 @@ int wifi_scan(char out[][WIFI_SSID_LEN], int max)
         }
         strncpy(out[count], ssid, WIFI_SSID_LEN - 1);
         out[count][WIFI_SSID_LEN - 1] = '\0';
+        /* THE SIGNAL STRENGTH, because "my phone has two bars, why can't
+         * this?" is a real question with a measurable answer, and without
+         * this line there is no way to ask it. A phone's bars are a generous
+         * scale over a far better antenna; this is what the ESP32's radio
+         * actually hears, in dBm. Roughly: -60 is comfortable, -70 works,
+         * -80 is where association starts failing even though the scan still
+         * sees the beacon. */
+        ESP_LOGI(TAG, "in range: %-24s %4d dBm  ch %2d", ssid,
+                 recs[i].rssi, recs[i].primary);
         count++;
     }
     free(recs);

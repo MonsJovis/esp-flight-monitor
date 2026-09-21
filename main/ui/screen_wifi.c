@@ -625,29 +625,35 @@ void screen_wifi_create(lv_obj_t *parent)
     int32_t y = PAD + lv_obj_get_height(s_lbl_title) + GAP_SM;
 
     s_lbl_status = make_label(s_main, &plex_sans_cond_25, THEME_TEXT_LABEL);
-    /* Clamped to the content column and ellipsised, which it never used to
-     * be: every sentence here has a %s in it and an SSID is up to 32
-     * characters, so "Verbindung fehlgeschlagen: Apartamentos_Jose_Cruz" ran
-     * straight off the right edge of the panel. It was hidden for as long as
-     * it was because nothing ever PUT the long sentences up — the failure and
-     * success lines had no caller until main.c grew a join watcher. Dots, not
-     * wrap: the band below is positioned from this label's measured height at
-     * build time, so it has to stay one line whatever is written into it
-     * later. Same treatment as screen_geo.c's status line. */
-    lv_obj_set_width(s_lbl_status, CONTENT_W);
+    /* A FIXED ONE-LINE BOX, not just a fixed width.
+     *
+     * Every sentence here has a %s in it and an SSID runs to 32 characters,
+     * so "Verbindung fehlgeschlagen: Apartamentos_Jose_Cruz" is far wider
+     * than the 440 px column. Setting the WIDTH and asking for dots was not
+     * enough and looked like it was: LVGL's DOT mode keeps the text inside
+     * the object's SIZE, and the height was still LV_SIZE_CONTENT, so the
+     * label simply grew a second line instead of ellipsising. The band below
+     * is laid out once, from this label's height at build time, so the second
+     * line appeared UNDERNEATH the network list — the failure message and the
+     * card drawn on top of each other. Photographed on the panel; the code
+     * reads as if it had been fixed.
+     *
+     * Pinning the height to one line is what makes DOT mode do its job, and
+     * it also means nothing below this can ever move again, whatever is
+     * written here later. */
+    lv_obj_set_size(s_lbl_status, CONTENT_W, lv_font_get_line_height(&plex_sans_cond_25));
     lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_MODE_DOTS);
     apply_status_text(STR_WIFI_IDLE, THEME_TEXT_LABEL); /* AGENTS.md §1: never blank, even before the first scan */
     lv_obj_set_pos(s_lbl_status, PAD, y);
-    lv_obj_update_layout(s_lbl_status);
 
     /* Inside the existing status-to-list gap, not below it, so the list keeps
      * every pixel it had — same placement and same reasoning as the Ortssuche
      * screen next door (screen_geo.c). */
+    int32_t status_h = lv_font_get_line_height(&plex_sans_cond_25);
     s_busy = widget_busy_create(s_main, CONTENT_W);
-    lv_obj_set_pos(s_busy, PAD,
-                   y + lv_obj_get_height(s_lbl_status) + (GAP_MD - WIDGET_BUSY_H) / 2);
+    lv_obj_set_pos(s_busy, PAD, y + status_h + (GAP_MD - WIDGET_BUSY_H) / 2);
 
-    y += lv_obj_get_height(s_lbl_status) + GAP_MD;
+    y += status_h + GAP_MD;
 
     int32_t list_top = y;
 

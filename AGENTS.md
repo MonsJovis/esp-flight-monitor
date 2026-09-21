@@ -427,6 +427,16 @@ not read a manual. Design for that:
   (`lv_buttonmatrix.c`, `draw_main`), and every control key carries
   `LV_BUTTONMATRIX_CTRL_CHECKED` — so `LV_PART_ITEMS` gets Plex and
   `LV_PART_ITEMS | LV_STATE_CHECKED` gets Montserrat.
+- **`LV_LABEL_LONG_MODE_DOTS` needs a fixed HEIGHT, not just a fixed width.** Its
+  implementation only ellipsises when the rendered text is taller than the object
+  (`lv_label.c`: `size.y > lv_area_get_height(&txt_coords)`), so a label given a width but
+  left at `LV_SIZE_CONTENT` height does not truncate — it grows another line, and draws it
+  over whatever was laid out underneath. That is how the WLAN screen ended up with
+  "Verbindung fehlgeschlagen:" on one line, the SSID on a second, and the network list
+  painted on top of the second. **The code reads as though the problem had been fixed**,
+  which is the whole trap: setting the width and asking for dots looks like the complete
+  gesture. Pin both dimensions, and lay the band below out from the font's line height
+  rather than from the label's measured one.
 - **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
   a 2 px band of `#525152` all round — a grey line under every list divider and a grey
   column down both edges of a list. Nothing in the source asks for it, so nothing in the

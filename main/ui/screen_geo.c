@@ -590,7 +590,12 @@ void screen_geo_create(lv_obj_t *parent)
     int32_t ry = make_title(s_res);
 
     s_lbl_status = make_label(s_res, &plex_sans_cond_25, THEME_TEXT_LABEL);
-    lv_obj_set_width(s_lbl_status, CONTENT_W);
+    /* Height as well as width — see screen_wifi.c for what a content-sized
+     * height does to a DOT-mode label: it grows a second line instead of
+     * ellipsising, and draws it over whatever is below. Nothing here is long
+     * enough to trigger it today, which is exactly why it is worth pinning
+     * before someone lengthens a sentence. */
+    lv_obj_set_size(s_lbl_status, CONTENT_W, name_lh);
     lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_MODE_DOTS);
     /* Never blank, even before the first search (AGENTS.md §1). */
     apply_status(STR_GEO_IDLE, THEME_TEXT_LABEL);

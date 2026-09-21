@@ -30,12 +30,13 @@ static const char *TAG = "flight_source";
  * seconds or lose a SYN outright — and a timeout costs a whole 12 s poll cycle
  * plus a backoff step, whereas waiting a few more seconds costs nothing. Kept
  * below SRC_POLL_INTERVAL_MS so a slow poll can never overlap the next one. */
-#define POLL_HTTP_TIMEOUT_MS  10000
+/* POLL_HTTP_TIMEOUT_MS and POLL_BUF_SZ now live in flight_source.h, so the
+ * 'p' probe can make exactly this request. */
 #define ROUTE_HTTP_TIMEOUT_MS  8000
 
 /* AGENTS.md §6: a 30 nm poll is ~4-8 KB; 16 KB leaves headroom for the
  * 100 nm case without letting a malicious/broken response grow unbounded. */
-#define POLL_BUF_SZ            (16 * 1024)
+
 
 /* Generous relative to MAX_AIRCRAFT (24): aircraft turn over through the day,
  * and a RESOLVED/NONE entry is worth keeping for the rest of a flight even

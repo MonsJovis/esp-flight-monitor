@@ -44,6 +44,13 @@ typedef enum {
  * the panel said "route pending" forever. MAX_AIRCRAFT is 24, so allow for
  * roughly double that capture. Both live in PSRAM, so the headroom is cheap.
  * test_source.c asserts the fixture fits with margin. */
+/* The poll's own size and timeout. Public so that the link probe in main.c
+ * can issue the IDENTICAL request — a diagnostic built from its own copy of
+ * these numbers is a diagnostic that drifts away from the thing it is meant
+ * to be measuring. */
+#define POLL_BUF_SZ            (16 * 1024)
+#define POLL_HTTP_TIMEOUT_MS   10000
+
 #define ROUTE_REQ_BUF_SZ       8192
 #define ROUTE_RESP_BUF_SZ     24576
 

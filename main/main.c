@@ -57,6 +57,7 @@
 #include "nvs_flash.h"
 #include "net/wifi.h"
 #include "net/flight_source.h"
+#include "net/source_logic.h"
 #include "net/timesync.h"
 #include "net/ota.h"
 #include "net/adsb_parse.h"
@@ -691,18 +692,45 @@ static void ui_task(void *arg)
  * identical in a log of one failure. */
 static void probe_link(void)
 {
-    static char buf[1024];
+    /* THE REQUEST THE DEVICE ACTUALLY MAKES, not a miniature of it.
+     *
+     * This used to fetch a 5 nm query into a 1 KB buffer, so it reported a
+     * healthy link whenever the first kilobyte arrived — and the first
+     * kilobyte is never the problem. On a weak link (measured here at
+     * -80 dBm) a 1 KB fetch completes in 120 ms while the real 16 KB poll
+     * times out every single time, so the probe said "ok" fifteen times in a
+     * row about a device that had not shown an aircraft all day. A diagnostic
+     * that exercises the case which is not failing is worse than none: it
+     * sends you looking somewhere else.
+     *
+     * Same URL (the configured location and radius), same buffer size, same
+     * timeout as flight_source.c's poll. "ok" now means "the thing the device
+     * does would have worked". */
     const int tries = 15;
     int ok = 0;
     int64_t best = INT64_MAX, worst = 0, total = 0;
 
-    ESP_LOGW(TAG, "probing the link, %d attempts...", tries);
+    char *buf = heap_caps_malloc(POLL_BUF_SZ, MALLOC_CAP_SPIRAM);
+    if (buf == NULL) {
+        ESP_LOGE(TAG, "probe: no memory for a %d byte buffer", POLL_BUF_SZ);
+        return;
+    }
+    char url[256];
+    double lat = 0, lon = 0;
+    settings_coords(&g_settings, &lat, &lon);
+    if (source_build_url(source_next_enabled(SRC_ADSB_LOL_POINT), lat, lon,
+                         g_settings.radius_nm, url, sizeof url) < 0) {
+        ESP_LOGE(TAG, "probe: could not build the poll URL");
+        free(buf);
+        return;
+    }
+
+    ESP_LOGW(TAG, "probing the link, %d attempts: %s", tries, url);
     for (int i = 0; i < tries; i++) {
         int status = 0;
         bool trunc = false;
         int64_t t0 = esp_timer_get_time();
-        int n = http_get("http://api.adsb.lol/v2/point/47.6691/15.9303/5",
-                         buf, sizeof buf, 10000, &status, &trunc);
+        int n = http_get(url, buf, POLL_BUF_SZ, POLL_HTTP_TIMEOUT_MS, &status, &trunc);
         int64_t dt = (esp_timer_get_time() - t0) / 1000;
         if (n >= 0 && status == 200) {
             ok++;
@@ -710,9 +738,9 @@ static void probe_link(void)
             if (dt < best)  best = dt;
             if (dt > worst) worst = dt;
         }
-        ESP_LOGW(TAG, "  %2d/%d  %-4s  %5lld ms  http=%d",
+        ESP_LOGW(TAG, "  %2d/%d  %-4s  %5lld ms  http=%d  %6d B%s",
                  i + 1, tries, (n >= 0 && status == 200) ? "ok" : "FAIL",
-                 (long long)dt, status);
+                 (long long)dt, status, n, trunc ? " TRUNCATED" : "");
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 

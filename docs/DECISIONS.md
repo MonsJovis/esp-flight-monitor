@@ -1869,11 +1869,53 @@ visibly changed construction at the moment the answer arrived. `screen_geo.c` ta
 over exactly this; it was missed here because that screen's rows are all one shape and this
 screen's are two.
 
-**A fifth thing fell out of fixing the first.** The status line had no width and no long
-mode, so "Verbindung fehlgeschlagen: Apartamentos_Jose_Cruz" ran straight off the right edge
-of the panel. It had been that way since M6 and could not have been seen before, because
-nothing ever put a long sentence into it — the failure and success lines had no caller.
-Fixing the join is what made the layout bug reachable.
+**A fifth thing fell out of fixing the first, and the first fix for it was wrong.** The
+status line had no width and no long mode, so "Verbindung fehlgeschlagen:
+Apartamentos_Jose_Cruz" ran straight off the right edge of the panel. It had been that way
+since M6 and could not have been seen before, because nothing ever put a long sentence into
+it — the failure and success lines had no caller.
+
+Setting the width and asking for `LV_LABEL_LONG_MODE_DOTS` looked like the complete
+gesture. It was not, and the result was worse than the overflow: LVGL only ellipsises when
+the text is taller than the OBJECT (`lv_label.c`: `size.y > lv_area_get_height(&txt_coords)`),
+and the height was still `LV_SIZE_CONTENT` — so the label grew a second line instead, and
+the network list, laid out once from the label's height at build time, was drawn straight
+over it. The owner photographed it: "Verbindung fehlgeschlagen:" on one line, the SSID on a
+second, and a green card sitting on top of the second. Pinning the height to one line is
+what makes DOT mode do its job, and laying the band below out from the font's line height
+rather than the label's measured one means nothing there can move again.
+
+Worth noticing how it failed: the fix was written, built, gated, flashed, and the screen was
+photographed — and the photograph was of a state that did not contain a long enough string
+to show the bug. Verification that does not put the failing input in front of the code is
+not verification, however many pictures it produces.
+
+**A sixth thing, found while answering "why does my phone work and this not".** The answer
+turned out to be measurable and the tools were not measuring it.
+
+`wifi_scan()` threw the RSSI away, so the one number that answers the question was not
+obtainable from the device at all. It now logs each SSID with its signal and channel. Here:
+**-76 to -81 dBm**, and the same SSID appearing on channel 1 AND channel 11 — a repeater
+pair. A phone showing "two of three bars" is not disagreeing; Android maps roughly
+-55…-85 dBm onto that scale, so two bars IS about -78. The phone simply has two or three
+antennas with diversity and beamforming to talk to, against this module's single chip
+antenna, which is a real 5-10 dB and at -78 dBm is the difference between fine and marginal.
+
+**And the link probe was measuring the case that does not fail.** `probe_link()` fetched a
+5 nm query into a 1 KB buffer and reported fifteen cheerful "ok"s at 120-680 ms about a
+device that had not shown an aircraft all day. It now issues the IDENTICAL request the
+poller does — same URL built from the same settings, same 16 KB buffer, same timeout, with
+the byte count printed — and the picture inverts: **10 to 27 seconds per request, and a
+third of them never completing at all, against a 10 s socket timeout.** The responses are
+only 1-3 KB, so this is not bandwidth; it is retransmission on a link that is associated and
+barely working. `POLL_BUF_SZ` and `POLL_HTTP_TIMEOUT_MS` moved into flight_source.h so the
+probe uses the numbers themselves rather than a copy of them.
+
+That is the whole answer to the owner's question, and neither half of it could be measured
+before: the radio hears the AP about as well as his phone does and has a far worse antenna
+to hear it with, and the request the device depends on takes twice its own deadline. The
+backoff and the reconnect-reset were both already correct and were never the problem —
+which is exactly what a diagnostic that exercises the wrong case costs you.
 
 **What this says about the milestone.** Every one of these except the ghost shape predates
 M11 and every one of them was invisible until M11 made it visible: a bar that never stops
