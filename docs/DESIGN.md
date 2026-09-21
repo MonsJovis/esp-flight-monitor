@@ -231,6 +231,26 @@ data**. Consistent across all seven screens so the eye learns one map.
 > If the hardware ever changes to a round panel, keep content inside the inscribed circle
 > (~340 px diameter) and the design ports with no rework.
 
+### Chrome — the two corners, and nothing else
+
+Corners are the lowest-attention zone, so the two things that belong to the **device**
+rather than to any screen live there and nowhere else: the **battery badge** bottom right,
+and the **WLAN signal meter** top right. Both are drawn on the root, above every deck page,
+so neither can be two slightly different things on two screens; both are covered by any
+overlay, which is correct — Einstellungen has a battery row of its own and the WLAN screen
+says all of this in words.
+
+| | |
+|---|---|
+| **The meter** | Four bars, 3 px wide, 2 px apart, 14 px tall, ascending left to right. Lit bars in `text-label`, unlit in `border-idle` — chrome greys, not semantic colours: *which* bars are lit is the carrier, and a count is not a colour. |
+| **The ladder** | Measured on this radio, not copied from a table: 4 bars ≥ -60 dBm, 3 ≥ -70, 2 ≥ -79, 1 below that. At -74 to -76 dBm the real aircraft poll takes ~900 ms; at -80 it takes 10-60 s and usually never finishes. So **one bar means measured-unusable on this hardware**, which is the one thing the meter is there to say. |
+| **No link** | Zero lit bars **and an amber stroke through them**. Zero is reserved for "no link" and never means "very weak" — a network a scan can see is a network with signal. The empty ladder alone was not enough: four dark bars at 18 px in a near-black corner look exactly like the icon not being there, and "the icon is missing" must not read the same as "the device has no network". The stroke is a shape, so it carries alone; amber only agrees with it. |
+| **Where else** | The same four bars, larger (4 px wide, 20 px tall), at the right-hand end of every row on §5.7 — same x on every row, so the ladders line down the edge of the list. A column can be compared at a glance, which is what choosing a network is. |
+
+The exact dBm figure is **not** on the panel. It is chrome-tier information for whoever is
+placing the device, the bars are what the reader needs, and the serial console already
+prints the number, the channel and the AP for everything in range.
+
 ### Motion — there is exactly one moving thing
 
 Nothing on this device animates except one 4 px cyan line, and it means **the device is

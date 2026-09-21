@@ -87,6 +87,7 @@
 #include "route_parse.h"
 #include "strings_de.h"
 #include "identity.h"
+#include "widget_signal.h"
 
 /* ============================================================================
  * FIXED GERMAN STRINGS — audited block, one hard-coded copy in this file:
@@ -142,6 +143,9 @@
 #define RADAR_CAPTION_Y   416
 
 /* Level with the range read-out in the opposite corner. */
+/* The clock's top edge, and the top chrome band for the whole device: nav.c's
+ * signal meter is placed to land its feet on this text's baseline (SIG_TOP
+ * there). Moving this moves that. */
 #define RADAR_CLOCK_Y     24
 #define GAP_ID            12   /* clearance the identity keeps from its neighbours */
 #define RADAR_CAPTION_GAP 12
@@ -962,8 +966,14 @@ void screen_radar_set_clock(const char *hhmm)
     }
     lv_label_set_text(s_lbl_clock, hhmm);
     lv_obj_update_layout(s_lbl_clock);
+    /* Right-aligned to the panel edge MINUS the chrome slot: nav.c draws the
+     * device's signal meter in that corner, on the root, above this page
+     * (widget_signal.h). Without the subtraction the clock is drawn straight
+     * underneath it — both are chrome, both are right-aligned, and the one on
+     * top wins. */
     lv_obj_set_pos(s_lbl_clock,
-                   THEME_SCREEN_WIDTH - THEME_SIDE_PADDING - lv_obj_get_width(s_lbl_clock),
+                   THEME_SCREEN_WIDTH - THEME_SIDE_PADDING - WIDGET_SIGNAL_CHROME_SLOT -
+                       lv_obj_get_width(s_lbl_clock),
                    RADAR_CLOCK_Y);
     lv_obj_set_hidden(s_lbl_clock, false);
 }

@@ -65,6 +65,35 @@ bool nav_overlay_open(void);
  */
 void nav_set_badge(const char *text, bool caution);
 
+/* The WLAN signal meter in the TOP-right corner — the badge above is its
+ * counterpart in the bottom-right, and the two are the whole of this device's
+ * chrome.
+ *
+ * It is here, on the root, for exactly the reason nav_set_badge() is: the
+ * link belongs to the DEVICE, not to the Radar or the Liste, and a meter each
+ * page drew for itself would be two meters that could disagree. Overlays are
+ * created after it, so Einstellungen, WLAN and the detail layer cover it —
+ * which is right, because the WLAN screen says all of this in words and the
+ * other two are not about the network.
+ *
+ * `rssi_dbm` is what the radio reports for the association right now, in dBm,
+ * and is ignored when `linked` is false. main/data/wifi_bars.h decides how
+ * many bars that is worth, and says why the boundaries are where they are —
+ * they are measured off this radio, not copied from a table.
+ *
+ * WHY THE CORNER AND NOT A SENTENCE. DESIGN.md §4 gives the corners to chrome
+ * precisely because they are the lowest-attention zone: this is something to
+ * be able to check, never something to be told. The screen already says "Kein
+ * Netz" in words when there is no network at all (§5.3) — what it could not
+ * say until now is the difference between a link that is fine and a link that
+ * is about to stop working, which on this hardware is five decibels wide and
+ * is the difference between the radar filling and the radar sitting empty.
+ *
+ * Cheap enough to call on every UI tick: nothing is touched unless the bar
+ * count actually changed.
+ */
+void nav_set_signal(int rssi_dbm, bool linked);
+
 /* Long-press opens Einstellungen (DESIGN.md §6).
  *
  * ANYWHERE on the deck page, not just the chrome strip: the handler is bound

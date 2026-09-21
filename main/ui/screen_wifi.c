@@ -28,6 +28,7 @@
 #include "strings_de.h"
 #include "widget_input.h"
 #include "widget_busy.h"
+#include "widget_signal.h"
 
 /* ============================================================================
  * FIXED UI CHROME STRINGS — every German (or otherwise user-facing) literal
@@ -108,6 +109,11 @@ typedef struct {
     lv_obj_t *lbl_ssid;
     lv_obj_t *lbl_tick;   /* LV_SYMBOL_OK, LVGL default font (see create_row()) */
     lv_obj_t *lbl_saved;  /* STR_WIFI_SAVED */
+    lv_obj_t *sig;        /* the four-bar meter at the right-hand end */
+    /* The meter's own state, owned by the row rather than by the widget —
+     * widget_signal.h's arrangement, which is what keeps twenty-four meters
+     * from being twenty-four allocations on the display task. */
+    widget_signal_t sig_state;
     char      ssid[SCREEN_WIFI_SSID_LEN];
     bool      saved;
 } wifi_row_t;
@@ -118,6 +124,12 @@ static wifi_row_t s_rows[SCREEN_WIFI_MAX_ROWS];
  * every row's badge is the same size. Used to size the SSID label so long
  * names don't run under the badge on a saved row. */
 static int32_t s_badge_w;
+
+/* What the meter takes out of a row, including the air to its left. A
+ * constant rather than a measurement because, unlike the badge, its width is
+ * arithmetic we already know (WIDGET_SIGNAL_W) and nothing about it depends
+ * on a font. */
+#define SIG_SLOT (WIDGET_SIGNAL_W(WIDGET_SIGNAL_ROW_BAR_W, WIDGET_SIGNAL_ROW_GAP) + GAP_MD)
 
 /* --- s_pw: which network, password field, toggle, Verbinden/Abbrechen, keyboard --- */
 static lv_obj_t *s_pw;
@@ -357,12 +369,37 @@ static void create_row(lv_obj_t *parent, int idx)
     row->row = lv_button_create(parent);
     lv_obj_set_size(row->row, CONTENT_W, ROW_H);
     widget_kill_button_chrome(row->row);
+    /* NO PADDING, so that ROW_INSET is the only inset there is.
+     *
+     * LVGL's default theme pads lv_button, and lv_obj_align() measures from
+     * the CONTENT area — so every -ROW_INSET below was really -(ROW_INSET +
+     * the theme's pad), on both sides at once, while the SSID label's width
+     * was computed from CONTENT_W as though there were none. The label came
+     * out about twenty pixels too wide and its ellipsis was drawn over the
+     * green tick. Photographed; the arithmetic reads correct in isolation and
+     * was measuring a box that was not the one on the glass. */
+    lv_obj_set_style_pad_all(row->row, 0, 0);
     lv_obj_set_style_radius(row->row, THEME_BASE_UNIT, 0);
     lv_obj_set_hidden(row->row, true); /* pool starts empty; screen_wifi_set_networks() reveals what's in range */
     lv_obj_add_event_cb(row->row, row_event_cb, LV_EVENT_CLICKED, row);
 
     row->lbl_ssid = make_label(row->row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     lv_label_set_long_mode(row->lbl_ssid, LV_LABEL_LONG_MODE_DOTS);
+    /* ONE LINE HIGH, FIXED, and that is what makes DOT mode work at all.
+     *
+     * LVGL only ellipsises when the laid-out text is TALLER than the object
+     * (lv_label.c), and update_row() sets a width but the height was left at
+     * LV_SIZE_CONTENT — so a name too wide for its column simply grew a
+     * second line and DOT mode never fired. "Apartamentos_Jose_Cruz", the
+     * network this device is actually on, broke across two lines inside a
+     * 64 px row, photographed on the panel. It had been doing that since M6:
+     * at 240 px the name was already 90 px too wide, and adding the meter
+     * only made it more obvious.
+     *
+     * The status line one band up has the identical pin for the identical
+     * reason (D69, AGENTS.md §7). Same trap, second place, found the same
+     * way — by looking at the glass rather than at the code. */
+    lv_obj_set_height(row->lbl_ssid, lv_font_get_line_height(&plex_sans_cond_25));
     lv_obj_align(row->lbl_ssid, LV_ALIGN_LEFT_MID, ROW_INSET, 0);
 
     /* The tick deliberately does NOT get a Plex font. DESIGN.md §3's
@@ -380,14 +417,28 @@ static void create_row(lv_obj_t *parent, int idx)
     row->lbl_saved = make_label(row->row, &plex_sans_cond_25, THEME_GREEN);
     lv_label_set_text(row->lbl_saved, STR_WIFI_SAVED);
 
+    /* The meter, hard against the right-hand inset and vertically centred —
+     * the SAME x on every row, saved or not, so the four ladders line down
+     * the edge of the list as one column. That is the whole reason it is at
+     * the outside end rather than tucked in beside the name: a column can be
+     * compared at a glance, and comparing is what he is doing when he reads
+     * this list. The "gespeichert" badge moves aside for it instead, since
+     * that one is absent on most rows anyway. */
+    row->sig = widget_signal_create(row->row, &row->sig_state,
+                                    WIDGET_SIGNAL_ROW_BAR_W,
+                                    WIDGET_SIGNAL_ROW_GAP,
+                                    WIDGET_SIGNAL_ROW_H);
+    lv_obj_align(row->sig, LV_ALIGN_RIGHT_MID, -ROW_INSET, 0);
+
     /* Position the badge once: its text is constant, so its size is
      * constant, so this does not need to re-run on every list rebuild. */
     lv_obj_update_layout(row->lbl_saved);
-    lv_obj_align(row->lbl_saved, LV_ALIGN_RIGHT_MID, -ROW_INSET, 0);
+    lv_obj_align(row->lbl_saved, LV_ALIGN_RIGHT_MID, -ROW_INSET - SIG_SLOT, 0);
     lv_obj_update_layout(row->lbl_tick);
     int32_t saved_w = lv_obj_get_width(row->lbl_saved);
     int32_t tick_w  = lv_obj_get_width(row->lbl_tick);
-    lv_obj_align(row->lbl_tick, LV_ALIGN_RIGHT_MID, -ROW_INSET - saved_w - GAP_SM, 0);
+    lv_obj_align(row->lbl_tick, LV_ALIGN_RIGHT_MID,
+                 -ROW_INSET - SIG_SLOT - saved_w - GAP_SM, 0);
     if (idx == 0) {
         s_badge_w = tick_w + GAP_SM + saved_w;
     }
@@ -401,16 +452,27 @@ static void create_row(lv_obj_t *parent, int idx)
  * (DESIGN.md §5.7); unsaved rows stay a plain divided list row instead of
  * looking like their own button, matching how §5.4's list uses dividers
  * between rows rather than a card per row. */
-static void update_row(int idx, const char *ssid, bool saved)
+static void update_row(int idx, const char *ssid, bool saved, int rssi_dbm)
 {
     wifi_row_t *row = &s_rows[idx];
     safe_copy_ssid(row->ssid, ssid);
     row->saved = saved;
 
-    int32_t ssid_w = saved ? (CONTENT_W - 2 * ROW_INSET - s_badge_w - GAP_MD)
-                           : (CONTENT_W - 2 * ROW_INSET);
+    int32_t ssid_w = CONTENT_W - 2 * ROW_INSET - SIG_SLOT;
+    if (saved) {
+        ssid_w -= s_badge_w + GAP_MD;
+    }
     lv_obj_set_width(row->lbl_ssid, ssid_w);
     lv_label_set_text(row->lbl_ssid, row->ssid);
+
+    /* `linked` is true for every row here, and that is not a shrug: a network
+     * a scan reported IS one the radio heard, so an empty meter beside its
+     * name would be a claim the device never made. The crossed-out state is
+     * for the chrome meter on the deck, where "no link at all" is a real
+     * thing to say. A missing rssi array arrives as WIFI_RSSI_NONE and comes
+     * out as an empty ladder with no stroke — nothing measured, nothing
+     * claimed. */
+    widget_signal_set(row->sig, rssi_dbm, true);
 
     lv_obj_set_hidden(row->lbl_tick, !saved);
     lv_obj_set_hidden(row->lbl_saved, !saved);
@@ -431,7 +493,8 @@ static void update_row(int idx, const char *ssid, bool saved)
     lv_obj_set_hidden(row->row, false);
 }
 
-void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
+void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN],
+                              const int8_t rssi[], int n,
                               const char saved[][SCREEN_WIFI_SSID_LEN], int n_saved)
 {
     /* The screen may have been closed since whoever is calling last looked —
@@ -469,7 +532,7 @@ void screen_wifi_set_networks(const char ssids[][SCREEN_WIFI_SSID_LEN], int n,
                 break;
             }
         }
-        update_row(i, ssids[i], is_saved);
+        update_row(i, ssids[i], is_saved, rssi ? rssi[i] : WIFI_RSSI_NONE);
     }
     for (int i = n; i < SCREEN_WIFI_MAX_ROWS; i++) {
         lv_obj_set_hidden(s_rows[i].row, true);
@@ -718,7 +781,16 @@ void screen_wifi_create(lv_obj_t *parent)
 
         int32_t gh = 16;
         widget_busy_ghost(row, ROW_INSET, (ROW_H - gh) / 2,
-                          (CONTENT_W - 2 * ROW_INSET) * ssid_pct[i] / 100, gh, false);
+                          (CONTENT_W - 2 * ROW_INSET - SIG_SLOT) * ssid_pct[i] / 100,
+                          gh, false);
+        /* And a ghost where the meter will be, dimmer than the name's: the
+         * ghosts exist to say where the answer will land, and a column that
+         * appears out of nowhere once the scan returns is the same "the list
+         * changed construction while he was looking at it" the row shape was
+         * fixed for. */
+        int32_t sig_w = WIDGET_SIGNAL_W(WIDGET_SIGNAL_ROW_BAR_W, WIDGET_SIGNAL_ROW_GAP);
+        widget_busy_ghost(row, CONTENT_W - ROW_INSET - sig_w,
+                          (ROW_H - gh) / 2, sig_w, gh, true);
         s_skel[i] = row;
     }
 

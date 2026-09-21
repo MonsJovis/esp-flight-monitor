@@ -17,6 +17,8 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
+#include "wifi_bars.h"   /* WIFI_RSSI_NONE — the "nothing measured" sentinel */
+
 static const char *TAG = "wifi";
 
 /* Reconnect backoff: doubling from a short base, capped well under a
@@ -389,7 +391,37 @@ void wifi_reconnect_now(void)
     g_force_retry = true;
 }
 
-int wifi_scan(char out[][WIFI_SSID_LEN], int max)
+int wifi_rssi(void)
+{
+    wifi_ap_record_t ap;
+    if (!g_connected || esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return WIFI_RSSI_NONE;
+    }
+    return ap.rssi;
+}
+
+/* Strongest first, by insertion sort over the driver's own result array.
+ *
+ * Insertion rather than qsort() because `num` is a handful of access points
+ * and this saves pulling stdlib's comparator machinery in for it; stable, so
+ * two beacons at the same dBm keep the order the radio reported them in.
+ * Sorting the WHOLE array before de-duplication is the point (wifi.h): the
+ * dedup keeps the first sighting of each SSID, so after this the survivor is
+ * the strongest one rather than an arbitrary one. */
+static void sort_by_rssi(wifi_ap_record_t *recs, int num)
+{
+    for (int i = 1; i < num; i++) {
+        wifi_ap_record_t key = recs[i];
+        int j = i - 1;
+        while (j >= 0 && recs[j].rssi < key.rssi) {
+            recs[j + 1] = recs[j];
+            j--;
+        }
+        recs[j + 1] = key;
+    }
+}
+
+int wifi_scan(char out[][WIFI_SSID_LEN], int8_t rssi_out[], int max)
 {
     if (out == NULL || max <= 0) {
         return -1;
@@ -424,6 +456,8 @@ int wifi_scan(char out[][WIFI_SSID_LEN], int max)
         return -1;
     }
 
+    sort_by_rssi(recs, (int)num);
+
     int count = 0;
     for (int i = 0; i < (int)num && count < max; i++) {
         const char *ssid = (const char *)recs[i].ssid;
@@ -442,6 +476,9 @@ int wifi_scan(char out[][WIFI_SSID_LEN], int max)
         }
         strncpy(out[count], ssid, WIFI_SSID_LEN - 1);
         out[count][WIFI_SSID_LEN - 1] = '\0';
+        if (rssi_out != NULL) {
+            rssi_out[count] = recs[i].rssi;
+        }
         /* THE SIGNAL STRENGTH, because "my phone has two bars, why can't
          * this?" is a real question with a measurable answer, and without
          * this line there is no way to ask it. A phone's bars are a generous

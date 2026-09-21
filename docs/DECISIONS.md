@@ -1951,3 +1951,69 @@ front of the panel and tapping, which is why a person found them and the reviews
 The two that were then testable from the host got a key (`j`) so they stay testable. The
 four that need an access point willing to associate are recorded as unverified rather than
 claimed, because at this location none would.
+
+---
+
+## D70 — The corner says what the radio hears, on a ladder measured off this radio
+
+**2026-09-21.** The owner asked for a small, unobtrusive WLAN signal icon at the top right
+of the screen "so one can keep an eye on it", and for the signal strength of each network
+on the WLAN settings screen. Both are the same question D69 ended on — *why does my phone
+have reception and this thing not* — asked as a standing instrument instead of a one-off
+measurement.
+
+**The ladder is not the textbook one.** Four bars, but the boundaries come from this
+device's own radio rather than from a table: at **-74 to -76 dBm** the real 16 KB aircraft
+poll completes in about 900 ms, and at **-80 to -81 dBm** the identical request takes 10 to
+60 seconds and usually does not finish (D69). So the 2 → 1 boundary sits at **-79**, which
+makes **one bar mean "measured unusable on this hardware"** rather than "weak but fine".
+That is the only fact the meter exists to deliver: when the screen stops filling, the
+corner says why, and the answer is to move the device — not to go and look at the router.
+
+The thresholds live in `main/data/wifi_bars.c`, which touches no `esp_*` header, so
+`test/host/test_wifi_bars.c` pins them: the rungs, the -76/-81 pair on different rungs
+(stated as a test, because that pair is the whole point), monotonicity across the plausible
+window, and that a nonsense reading is **not** clamped into a plausible one. A meter that
+rounds nonsense into an answer is how a wrong number survives.
+
+**Zero bars is reserved, and gets a stroke.** Zero means "there is no link", never "the
+signal is weak" — a network a scan reported is one the radio heard, so every row of the
+WLAN list is at least one bar. And an empty ladder alone was not enough: four dark bars at
+18 px in a near-black corner are indistinguishable from the icon not being there, and "the
+icon is missing" and "the device has no network" must not look the same. So no-link draws
+an amber stroke through it. The stroke is a *shape*, so it carries on its own; amber only
+agrees with it, and amber is already this device's "no network" (DO-257A §2.1.6).
+
+**One object, not five.** The meter is a single `lv_obj` with a draw callback — the idiom
+`screen_radar.c` uses for its aircraft marks — because the WLAN list is a pool of
+twenty-four rows and four child rectangles each would be ninety-six more objects on a board
+with ~24 KB of internal heap. The state lives in the caller (a static in `nav.c`, a field of
+the row struct in `screen_wifi.c`), so there is nothing to allocate on the display task and
+nothing to free when LVGL takes the tree apart.
+
+**`W` cycles a pretended signal**, the same argument `Y` makes for a pretended battery:
+four of the five states are a property of where the device is standing, and walking out of
+range to check that the amber stroke appears is not a test anyone runs twice. The four
+levels are the measured dBm figures, not round numbers, so what is on the glass under the
+simulation is what is on the glass at those readings.
+
+**The scan is now sorted strongest-first, which also decides which duplicate survives.**
+This flat's network is on channel 1 and channel 11 — a router and a repeater — and the
+de-duplication keeps the first sighting. Unsorted, "first" meant whichever the radio
+happened to report, so the list could show the far end of the flat while the near one was
+15 dB stronger.
+
+**And it turned up two layout bugs that had been on the glass since M6.** Fitting a meter
+into the WLAN row narrowed the SSID label, and the name of the network this device is
+actually on — `Apartamentos_Jose_Cruz` — broke across two lines inside a 64 px row instead
+of ellipsising. That is D69's own trap a second time: `LV_LABEL_LONG_MODE_DOTS` only fires
+when the text is taller than the object, and the label had a width but no height. Pinning
+it then exposed the second: the ellipsis was drawn straight through the green tick beside
+it, because `lv_button` arrives carrying the default theme's padding — about 13 px each
+side at this DPI — and both `lv_obj_set_pos()` and `lv_obj_align()` measure from the
+**content** area while every width in the file was computed from `CONTENT_W`. Every inset
+on that row was off by the padding, in both directions at once, and had been for five
+milestones. `screen_geo.c`'s rows are built from the same pattern and had the same defect;
+both now zero their padding so the insets in the code are the insets on the panel.
+
+Neither was found by reading. Both were photographed.

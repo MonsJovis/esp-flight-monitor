@@ -624,6 +624,70 @@ the exact question M10 records `geo_demo_search()` getting wrong, so it now asks
 
 ---
 
+## M12 — The corner says what the radio hears
+
+One request, two places: a small unobtrusive WLAN signal meter at the top right of the
+deck, and the signal strength of every network on the WLAN screen. Both answer the question
+M11 ended on — *why does the phone have reception and this does not* — as a standing
+instrument rather than a one-off measurement. D70.
+
+- [x] **`main/data/wifi_bars.c`** — the dBm → bars ladder, one rule for the whole device,
+      with no `esp_*` header in it so the host suite compiles it. The boundaries are
+      **measured off this radio**, not copied from a table: the 2 → 1 step is at -79 dBm,
+      so **one bar means "measured unusable on this hardware"** (900 ms for the real poll at
+      -76, 10-60 s and usually unfinished at -81). `test/host/test_wifi_bars.c`, 208 checks,
+      pins the rungs, the -76/-81 pair, monotonicity, and that nonsense is not clamped into
+      a plausible answer.
+- [x] **`main/ui/widget_signal.c`** — one `lv_obj` with a draw callback, not a container of
+      four rectangles: the WLAN pool is twenty-four rows and the child version would be
+      ninety-six more objects. State lives in the caller, so nothing is allocated on the
+      display task. Two sizes, one ladder.
+- [x] **Top right of the deck** (`nav_set_signal()`), on the root beside the battery badge
+      at the bottom right — the link belongs to the device, not to a page. The radar's clock
+      was right-aligned into that same corner and now keeps `WIDGET_SIGNAL_CHROME_SLOT`
+      clear; the meter's feet land on the clock's own baseline, so the two read as one row of
+      chrome. Non-clickable, or it would have eaten the long press to Einstellungen in that
+      corner.
+- [x] **A meter at the right-hand end of every WLAN row**, at the same x on every row so the
+      ladders line down the edge of the list — a column can be compared at a glance, and
+      comparing is what he is doing there. The ghost rows grew a ghost meter for the same
+      reason they took the unsaved-row shape in M11: the list must not change construction
+      at the moment he is looking at it.
+- [x] **`wifi_scan()` returns the dBm and sorts strongest-first**, which also decides which
+      duplicate survives — this flat's SSID is on channel 1 and channel 11, and the dedup
+      keeps the first sighting.
+- [x] **`W` cycles a pretended signal** through all five states, the argument `Y` makes for
+      the battery: four of them are a property of where the device is standing.
+
+**Verified on the unit, 2026-09-21**, by driving it from the console and reading the
+framebuffer back (D4, D41):
+
+| | |
+|---|---|
+| All five meter states | Photographed via `W`: 4/3/2/1 lit bars and the amber stroke. |
+| Against the radio | `n` reported **-68 dBm ch 11**; `wifi_bars(-68) = 3`, and both meters — the corner and the row — showed three. |
+| The radar's clock | "10:57" and the meter side by side on one baseline, no overlap. |
+| The WLAN row | SSID, ✓ gespeichert, meter, in one line with the insets the code asks for. |
+| The skeleton | Ghost name and ghost meter, with the cyan bar sweeping above them. |
+| Ortssuche | Re-photographed after the padding fix: 8 hits, rows correctly inset, the fourth row still a visible sliver. |
+
+**Two layout bugs that had been on the glass since M6, both found by fitting the meter in:**
+
+- The SSID label had a width and no height, so `LV_LABEL_LONG_MODE_DOTS` never fired and
+  `Apartamentos_Jose_Cruz` broke across two lines inside a 64 px row. Exactly D69's trap, a
+  second time, in the same file.
+- `lv_button` arrives carrying the default theme's padding (~13 px horizontally at this
+  DPI), and both `lv_obj_set_pos()` and `lv_obj_align()` measure from the content area — so
+  every inset on that row was off by it while every width was computed from `CONTENT_W`.
+  The visible result was an ellipsis drawn through the green tick. `screen_geo.c`'s rows had
+  the identical defect and are fixed with it.
+
+**Not verified:** the no-link state on a real outage. The device has an association here,
+and the simulation is what stands in for walking out of range — which is exactly what `W`
+exists for, and is recorded as a simulation rather than claimed as a live observation.
+
+---
+
 ## Accelerators
 
 - **The screens already exist.** Seven artboards built from real 2026-09-18 traffic:

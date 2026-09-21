@@ -201,6 +201,8 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
+- `W` pretend a WLAN signal, so the corner meter can be seen at all five of its levels
+  (four bars, three, two, one, no link at all) without walking the device out of range
 - `x` what the touch layer has actually registered (presses, long presses, the last hold)
 - `b` benchmark — `t` tearing test — `f` font card — `m` hero metrics
 
@@ -436,7 +438,20 @@ not read a manual. Design for that:
   painted on top of the second. **The code reads as though the problem had been fixed**,
   which is the whole trap: setting the width and asking for dots looks like the complete
   gesture. Pin both dimensions, and lay the band below out from the font's line height
-  rather than from the label's measured one.
+  rather than from the label's measured one. **It was in the file twice**: every SSID in
+  the WLAN list had the same missing height, and the network this device is actually on —
+  `Apartamentos_Jose_Cruz` — had been breaking across two lines inside a 64 px row since
+  M6. Both were found by looking at the glass, neither by reading the code.
+- **`lv_button` arrives padded, and both `lv_obj_set_pos()` and `lv_obj_align()` measure
+  from the CONTENT area.** LVGL's default theme gives a button `pad_hor = PAD_DEF` and
+  `pad_ver = PAD_SMALL` — about 13 px and 8 px at this panel's 130 DPI — so a label placed
+  at `(ROW_INSET, ROW_PAD_V)` inside one actually lands 13 px right and 8 px down of that,
+  while any width computed from the row's own `CONTENT_W` overflows the content box by
+  26 px. The visible result is subtle and looks like a different bug: an ellipsis drawn
+  through the badge beside it, or a two-line row sitting too low. `widget_kill_button_chrome()`
+  does NOT cover this — it clears the shadow and the outline, not the padding. Any
+  `lv_button` used as a layout container wants an explicit `lv_obj_set_style_pad_all(b, 0, 0)`
+  so that the insets in the code are the insets on the panel.
 - **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
   a 2 px band of `#525152` all round — a grey line under every list divider and a grey
   column down both edges of a list. Nothing in the source asks for it, so nothing in the

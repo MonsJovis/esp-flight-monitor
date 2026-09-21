@@ -27,6 +27,7 @@
  */
 #pragma once
 #include <stdbool.h>
+#include <stdint.h>
 #include "lvgl.h"
 
 #ifdef __cplusplus
@@ -62,6 +63,15 @@ void screen_wifi_create(lv_obj_t *parent);
  * "gespeichert" tag (§1 of the task brief; colour is never the only carrier
  * — see the tag's tick + word in the .c file).
  *
+ * `rssi` is the signal strength of each entry in dBm, in the same order, and
+ * may be NULL — every row then draws an empty meter, which is honest: it says
+ * nothing was measured rather than inventing a level. A four-bar meter goes
+ * at the right-hand end of every row, because "which of these can this device
+ * actually reach" is the question he is standing there asking and the names
+ * alone never answered it. The ladder is main/data/wifi_bars.h's, the same
+ * one the chrome corner of the deck reads, so a network that shows two bars
+ * here shows two bars there.
+ *
  * This function only sets text/visibility on a pre-built, fixed-size pool
  * of rows (screen_wifi.c's SCREEN_WIFI_MAX_ROWS) — it never creates or
  * destroys a widget, so it is cheap enough to call after every scan. `n`
@@ -73,7 +83,7 @@ void screen_wifi_create(lv_obj_t *parent);
  * and must stay off the display task; the integrator scans, then calls
  * this.
  */
-void screen_wifi_set_networks(const char ssids[][33], int n,
+void screen_wifi_set_networks(const char ssids[][33], const int8_t rssi[], int n,
                               const char saved[][33], int n_saved);
 
 /* Sets the status line. Never leaves it blank (AGENTS.md §1):

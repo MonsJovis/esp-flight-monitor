@@ -285,6 +285,18 @@ static void create_row(lv_obj_t *parent, int idx, int32_t row_h,
     row->row = lv_button_create(parent);
     lv_obj_set_size(row->row, CONTENT_W, row_h);
     widget_kill_button_chrome(row->row);
+    /* NO PADDING, so ROW_INSET and ROW_PAD_V below mean what they say.
+     *
+     * LVGL's default theme pads lv_button — about 13 px each side and 8 top
+     * and bottom at this DPI — and both lv_obj_set_pos() and lv_obj_align()
+     * measure from the CONTENT area, not the object. So every label here was
+     * placed 13 px right and 8 px down of where it asked to be, while its
+     * width was computed from CONTENT_W as though the row had no padding at
+     * all: the right-hand end ran past the row and LV_LABEL_LONG_MODE_DOTS,
+     * which measures against the object's own size, ellipsised late or not at
+     * all. Found on the WLAN list next door, where the same arithmetic drew a
+     * place name's "..." straight through the green tick beside it. */
+    lv_obj_set_style_pad_all(row->row, 0, 0);
     /* A DIVIDED LIST, not a stack of cards. Every card on this device is a
      * place he can BE (the location cards in Einstellungen); these are
      * candidates he is choosing between, which is DESIGN.md §5.4's list, and

@@ -11,6 +11,7 @@
  */
 #pragma once
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -47,11 +48,40 @@ esp_err_t wifi_creds_set(int slot, const char *ssid, const char *pass);
  * call. */
 esp_err_t wifi_creds_list(char out[][WIFI_SSID_LEN], int max);
 
+/* The received signal strength of the association right now, in dBm, or
+ * WIFI_RSSI_NONE (main/data/wifi_bars.h) when there is no association to
+ * measure.
+ *
+ * Always negative when it is real. Cheap — the driver keeps the figure from
+ * the beacons it is already receiving, so this is a read, not a measurement,
+ * and calling it on every UI tick costs nothing.
+ *
+ * It exists because "my phone has two bars, why does this thing not work?" is
+ * a real question with a measurable answer, and for most of this build there
+ * was no way to ask it from anywhere but a log line. main/data/wifi_bars.h
+ * turns the number into the four bars the panel draws, and records what was
+ * measured off this radio to put the boundaries where they are. */
+int wifi_rssi(void);
+
 /* Blocking scan; copies up to `max` visible, de-duplicated SSIDs (hidden
  * networks omitted) into out[][WIFI_SSID_LEN]. Returns the count found, or
  * -1 on error. For the M6 on-device provisioning screen (AGENTS.md §8) —
- * shows what's actually in range rather than asking for a typed SSID. */
-int wifi_scan(char out[][WIFI_SSID_LEN], int max);
+ * shows what's actually in range rather than asking for a typed SSID.
+ *
+ * `rssi_out`, when not NULL, receives the signal strength in dBm for each
+ * SSID written, in the same order. A separate array rather than a struct
+ * because the UI side deliberately does not link against this header
+ * (screen_wifi.h) and moves plain arrays around.
+ *
+ * SORTED STRONGEST FIRST, which also decides which duplicate survives. The
+ * same SSID routinely appears more than once — this device lives in an
+ * apartment whose network is on channel 1 and channel 11, i.e. a router and a
+ * repeater — and the de-duplication keeps the first one it sees. Unsorted,
+ * that was whichever the radio happened to report first, so the list could
+ * show the far end of the flat while the near one was the stronger by 15 dB.
+ * Sorting first makes "the first one" mean "the best one", and puts the list
+ * in the order he is choosing from anyway. */
+int wifi_scan(char out[][WIFI_SSID_LEN], int8_t rssi_out[], int max);
 
 /* Abandon the current backoff and try to associate right now. Called after new
  * credentials are stored: the reconnect loop may be 60 s into a wait, and

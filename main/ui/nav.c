@@ -5,6 +5,7 @@
 #include "esp_timer.h"
 #include "ui/theme.h"
 #include "ui/fonts/fonts.h"
+#include "ui/widget_signal.h"
 
 static const char *TAG = "nav";
 
@@ -16,6 +17,16 @@ static const char *TAG = "nav";
  * dots' own band so a 17 px face sits inside the same strip rather than
  * hanging off the bottom of it. */
 #define BADGE_BOTTOM  4
+
+/* Where the signal meter's FEET go — the top chrome band, 24 px down.
+ *
+ * The same 24 as RADAR_CLOCK_Y in screen_radar.c, and not by accident: the
+ * clock there is plex_mono_13, whose line height is 18 with a 4 px descender,
+ * so its baseline lands at 24 + 18 - 4 = 38. A 14 px meter whose top is at 24
+ * has its bottom on that same 38, and the two read as one row of chrome
+ * rather than as two things that ended up near each other. Move one and the
+ * other needs moving too; there is a matching note beside RADAR_CLOCK_Y. */
+#define SIG_TOP       24
 
 /* DESIGN.md §6: only from §5.3, and only after 30 s without a touch. */
 #define AUTO_RETURN_MS 30000
@@ -37,6 +48,11 @@ static lv_obj_t *s_tiles;
 static lv_obj_t *s_page[NAV_MAX_PAGES];
 static lv_obj_t *s_dot[NAV_MAX_PAGES];
 static lv_obj_t *s_badge;
+static lv_obj_t *s_signal;
+/* The meter's state, owned here and handed to the widget (widget_signal.h):
+ * a file-scope static, so there is nothing to allocate and nothing to free
+ * when lv_obj_clean() takes the deck apart under us. */
+static widget_signal_t s_signal_state;
 static int       s_n_pages;
 static int       s_page_idx;
 
@@ -283,6 +299,25 @@ void nav_create(const nav_page_t *pages, int n_pages)
     lv_obj_align(s_badge, LV_ALIGN_BOTTOM_RIGHT, -THEME_SIDE_PADDING, -BADGE_BOTTOM);
     lv_obj_set_hidden(s_badge, true);
 
+    /* The signal meter, top right (nav.h). Created after the pages, like the
+     * badge, so a page's own chrome cannot be drawn over it — the radar's
+     * clock is right-aligned into this same corner and keeps
+     * WIDGET_SIGNAL_CHROME_SLOT clear for it.
+     *
+     * It starts crossed out, which is honest rather than pessimistic: at this
+     * point in boot the radio has not associated, and a meter that opened on
+     * four bars and fell to zero a second later would be the panel's first
+     * statement of the day being wrong. */
+    s_signal = widget_signal_create(root, &s_signal_state,
+                                    WIDGET_SIGNAL_CHROME_BAR_W,
+                                    WIDGET_SIGNAL_CHROME_GAP,
+                                    WIDGET_SIGNAL_CHROME_H);
+    lv_obj_set_pos(s_signal,
+                   THEME_SCREEN_WIDTH - THEME_SIDE_PADDING -
+                       WIDGET_SIGNAL_W(WIDGET_SIGNAL_CHROME_BAR_W,
+                                       WIDGET_SIGNAL_CHROME_GAP),
+                   SIG_TOP);
+
     /* One page is not a deck — hide the indicator rather than show a lone dot
      * that suggests there is somewhere else to go. */
     if (n_pages < 2) {
@@ -307,6 +342,11 @@ void nav_set_badge(const char *text, bool caution)
     lv_label_set_text(s_badge, text);
     lv_obj_set_style_text_color(s_badge, caution ? THEME_AMBER : THEME_TEXT_LABEL, 0);
     lv_obj_set_hidden(s_badge, false);
+}
+
+void nav_set_signal(int rssi_dbm, bool linked)
+{
+    widget_signal_set(s_signal, rssi_dbm, linked);
 }
 
 void nav_touch_report(void)

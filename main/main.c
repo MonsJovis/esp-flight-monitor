@@ -20,6 +20,7 @@
  *   p  probe the link (DNS, then a raw GET by IP)
  *   u  the OTA update console
  *   y  battery: the judged status and the PMIC registers under it
+ *   W  cycle a PRETENDED WLAN signal through the corner meter's five states
  *   x  what the touch layer has seen (presses, long presses, the last hold)
  *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
  *      the amber caution and the backlight cap can be seen without one
@@ -56,6 +57,7 @@
 #include "debug/dbg_metrics.h"
 #include "nvs_flash.h"
 #include "net/wifi.h"
+#include "wifi_bars.h"
 #include "net/flight_source.h"
 #include "net/source_logic.h"
 #include "net/timesync.h"
@@ -229,6 +231,64 @@ static void power_forget_ui(void)
     s_badge_shown[0] = '\0';
     s_line_shown[0]  = '\0';
     s_badge_caution  = false;
+}
+
+/* ---- The signal meter in the corner (nav.h) -----------------------------
+ *
+ * Pushed once per UI tick rather than on a change, because there is nothing
+ * here to compare against: the RSSI is a live reading off the radio, it
+ * wobbles by a decibel or two between polls, and widget_signal_set() already
+ * refuses to spend a redraw unless the number crosses a bar boundary. A memo
+ * like the battery's would only duplicate that, and would need clearing on
+ * every ui_resume() to avoid the exact "the deck was rebuilt and the meter
+ * never came back" bug the badge already had once.
+ *
+ * A PRETENDED SIGNAL, for the same reason there is a pretended battery: the
+ * five states this meter can be in are a property of where the device is
+ * standing, and four of them cannot be produced on a desk. Walking out of
+ * range to check that the amber stroke appears is not a test anybody runs
+ * twice. 'W' cycles them; a reboot clears it, and nothing persists it.
+ *
+ * The four levels are the measured ones from wifi_bars.h rather than round
+ * numbers, so what is on the glass while this is on is exactly what is on the
+ * glass at those readings. */
+static const struct { int dbm; bool linked; } k_signal_sim[] = {
+    { -55, true },              /* four bars — comfortable */
+    { -65, true },              /* three */
+    { -74, true },              /* two: measured, the poll takes ~900 ms */
+    { -81, true },              /* one: measured, the poll mostly never finishes */
+    { WIFI_RSSI_NONE, false },  /* no link at all — the amber stroke */
+};
+#define SIGNAL_SIM_OFF (-1)
+static int s_signal_sim = SIGNAL_SIM_OFF;
+
+static void signal_sim_cycle(void)
+{
+    s_signal_sim++;
+    if (s_signal_sim >= (int)(sizeof k_signal_sim / sizeof k_signal_sim[0])) {
+        s_signal_sim = SIGNAL_SIM_OFF;
+    }
+    if (s_signal_sim == SIGNAL_SIM_OFF) {
+        printf("\nsimulated signal: off (the real radio again)\n");
+    } else if (!k_signal_sim[s_signal_sim].linked) {
+        printf("\nsimulated signal: no link at all\n");
+    } else {
+        printf("\nsimulated signal: %d dBm -> %d bar(s)\n",
+               k_signal_sim[s_signal_sim].dbm,
+               wifi_bars(k_signal_sim[s_signal_sim].dbm));
+    }
+}
+
+/* Everything downstream is the same path either way — the same widget, the
+ * same ladder, the same redraw. Caller holds display_lock(). */
+static void push_signal(void)
+{
+    if (s_signal_sim != SIGNAL_SIM_OFF) {
+        nav_set_signal(k_signal_sim[s_signal_sim].dbm,
+                       k_signal_sim[s_signal_sim].linked);
+        return;
+    }
+    nav_set_signal(wifi_rssi(), wifi_is_connected());
 }
 
 /* A pretended battery, for the build host.
@@ -459,10 +519,11 @@ static void network_status(void)
             if (ssids[i][0]) ESP_LOGW(TAG, "  stored slot %d: %s", i, ssids[i]);
         }
     }
-    int n = wifi_scan(ssids, 8);
-    for (int i = 0; i < n; i++) {
-        ESP_LOGW(TAG, "  in range: %s", ssids[i]);
-    }
+    /* NULL, not a throwaway array: wifi_scan() logs the dBm and the channel
+     * of everything it sees on its way past, so asking for the numbers here
+     * only to print them again would put each network on the console twice. */
+    int n = wifi_scan(ssids, NULL, 8);
+    ESP_LOGW(TAG, "  %d network(s) in range, strongest first (listed above)", n);
 
     /* Which DNS servers did DHCP actually give us? A poll that dies in
      * getaddrinfo() looks identical to one that dies in connect(), and the
@@ -681,6 +742,7 @@ static void ui_task(void *arg)
             screen_radar_update(ac, n, rt, n, g_settings.radius_nm);
             screen_radar_set_clock(vm.clock_valid ? vm.clock : "");
         }
+        push_signal();
         nav_tick(vm.state == VIEW_EMPTY_SKY);
         display_unlock();
     }
@@ -823,10 +885,11 @@ static void wifi_scan_task(void *arg)
      * the first is still reading them. Exactly the shape the review found in
      * geo_search_task (D63). 264 + 132 bytes on a 4 KB stack is not a reason
      * to share a buffer. */
-    char found[8][WIFI_SSID_LEN];
-    char saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
+    char   found[8][WIFI_SSID_LEN];
+    int8_t rssi[8];
+    char   saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
 
-    int n = wifi_scan(found, 8);
+    int n = wifi_scan(found, rssi, 8);
     int n_saved = (wifi_creds_list(saved, WIFI_MAX_NETWORKS) == ESP_OK)
                       ? WIFI_MAX_NETWORKS : 0;
     /* The count, every time, and the sign matters: -1 is "the radio could not
@@ -838,7 +901,7 @@ static void wifi_scan_task(void *arg)
     display_lock(0);
     bool shown = nav_overlay_open();
     if (shown) {
-        screen_wifi_set_networks((const char (*)[WIFI_SSID_LEN])found, n,
+        screen_wifi_set_networks((const char (*)[WIFI_SSID_LEN])found, rssi, n,
                                  (const char (*)[WIFI_SSID_LEN])saved, n_saved);
         screen_wifi_set_status(NULL, wifi_is_connected(), false);
     }
@@ -1728,6 +1791,7 @@ static void on_cmd(char c)
     else if (c == 'f') { ui_suspend(); dbg_font_card(); }
     else if (c == 'y') battery_console();
     else if (c == 'Y') battery_sim_cycle();
+    else if (c == 'W') signal_sim_cycle();
     else if (c == 'x') nav_touch_report();
 }
 
@@ -1809,7 +1873,7 @@ void app_main(void)
      * line and the header block above claiming a console this firmware no
      * longer has. AGENTS.md §11 rule 1 is about exactly that. */
     ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
-                  "u=update y=akku Y=akkusim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
+                  "u=update y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
                   "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a
