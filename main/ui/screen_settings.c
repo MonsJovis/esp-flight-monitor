@@ -1,8 +1,9 @@
 /* screen_settings.c — see screen_settings.h for the contract.
  *
- * Layout: one scrolling column, PAD-indented, sections stacked top to bottom
- * in the order the brief specifies (Ort, Umkreis, Helligkeit, Nachtabsenkung,
- * WLAN, Zurück). Unlike screen_overhead.c, nothing here auto-shrinks or
+ * Layout: one scrolling column, PAD-indented, sections stacked top to bottom:
+ * Ort, Umkreis, Helligkeit, Nachtabsenkung, WLAN, Akku, Zurück, and under
+ * those, in chrome type, the data attributions and the firmware version.
+ * Unlike screen_overhead.c, nothing here auto-shrinks or
  * reflows at runtime — every font is fixed, so every position is computed
  * ONCE in screen_settings_create() from measured font line-heights, and
  * screen_settings_update() only ever changes text, colour and visibility on
@@ -19,6 +20,7 @@
 #include "fmt_de.h"
 #include "fonts/fonts.h"
 #include "strings_de.h"
+#include "net/ota.h"          /* ota_running_version() */
 
 /* Every German literal this screen shows lives in main/strings_de.h, together
  * with the reasoning for each one; tools/check_strings.py fails the build if
@@ -632,6 +634,25 @@ void screen_settings_create(lv_obj_t *parent)
     lv_label_set_text(attrib2, STR_ATTRIBUTION_2);
     lv_obj_update_layout(attrib2);
     lv_obj_set_pos(attrib2, PAD + (CONTENT_W - lv_obj_get_width(attrib2)) / 2, y);
+    /* GAP_LABEL rather than GAP_INNER: the attributions are one item on two
+     * lines, and the version is a different fact that happens to share their
+     * type. Four extra pixels is enough to say so without a rule or heading. */
+    y += lv_obj_get_height(attrib2) + GAP_LABEL;
+
+    /* ================= 9. Version =================
+     * What the panel is running, for the phone call where something looks
+     * wrong and he is in Pattaya. ota_running_version() rather than reading
+     * esp_app_desc_t here, so the string on the glass is the one the update
+     * logic compares against the manifest. Computed once, like every other
+     * position and string on this screen: it cannot change without a reboot,
+     * because installing an update IS one. Same chrome tier as the
+     * attributions — findable, not prominent. */
+    char version[48];
+    snprintf(version, sizeof version, FMT_VERSION, ota_running_version());
+    lv_obj_t *ver = make_label(s_cont, &plex_mono_12, THEME_TEXT_LABEL);
+    lv_label_set_text(ver, version);
+    lv_obj_update_layout(ver);
+    lv_obj_set_pos(ver, PAD + (CONTENT_W - lv_obj_get_width(ver)) / 2, y);
 }
 
 void screen_settings_set_battery(const char *line)

@@ -209,6 +209,15 @@
  * been truncated — which for an attribution is not a cosmetic problem. */
 #define STR_ATTRIBUTION_2          "Orte Open-Meteo \xC2\xB7 GeoNames (CC BY 4.0)"
 
+/* The running firmware version, on its own line under the two attributions.
+ * It exists for one conversation: for half the year the device is 9,000 km
+ * from anyone who could look at it, and "what does it say at the very bottom
+ * of Einstellungen?" is the only way to learn what it is running. "Version"
+ * is the German word as well. The %s is ota_running_version() — the same
+ * string the update logic compares against the manifest, so what he reads
+ * out and what the device believes cannot be two different things. */
+#define FMT_VERSION                "Version %s"
+
 /* ---- Akku (main/power/battery_policy.c) ------------------------------- */
 
 /* "Akku", never "Batterie". In Austrian everyday speech a Batterie is the
