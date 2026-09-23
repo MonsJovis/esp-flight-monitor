@@ -27,6 +27,7 @@
 #pragma once
 #include "lvgl.h"
 #include "settings.h"
+#include "fmt_de.h"    /* update_state_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,6 +78,35 @@ void screen_settings_update(const settings_t *s);
  * Caller MUST hold display_lock().
  */
 void screen_settings_set_battery(const char *line);
+
+/* ---- Software: the update row (D74) ------------------------------------
+ *
+ * The device already updates itself in the night window. This is the half he
+ * can reach: a row that checks, and — once something is offered — installs
+ * without waiting for 22:00.
+ *
+ * Both callbacks fire on the display task from a tap. Wire them to
+ * ota_request_check() and ota_request_install_now(); this file never touches
+ * the network, exactly as screen_geo.h and screen_wifi.h do not.
+ */
+typedef void (*settings_update_cb)(void);
+void screen_settings_set_update_cbs(settings_update_cb check,
+                                    settings_update_cb install);
+
+/* Move the row to `state`. `version` is read only for UPD_AVAILABLE.
+ *
+ * Safe to call when the screen is closed — the state is kept here and
+ * rendered the next time it is built, the same arrangement
+ * screen_settings_set_battery() uses and for the same reason (D58: a task
+ * writing through a label pointer into a deleted tree).
+ *
+ * UPD_INSTALLING raises a full-screen takeover on lv_layer_top() that
+ * swallows touch for the ~26 s the download and flash write take, and
+ * survives the settings overlay being torn down underneath it. Any other
+ * state takes it down again.
+ *
+ * Caller holds display_lock(). */
+void screen_settings_set_update_state(update_state_t state, const char *version);
 
 /* Fired once per completed user change: a location card tap, the auto-dim
  * switch toggling, or a slider drag ENDING — deliberately not once per pixel

@@ -74,6 +74,14 @@ static int64_t        s_last_check_ms;
  * not. ota_should_check() waits an hour after a failure instead of a day. */
 static bool           s_last_check_failed;
 
+/* The manual path (D74). s_check_requested distinguishes "he tapped" from the
+ * daily tick, because the two want different things when the answer is no:
+ * the tick may say nothing and wait, a tap must always come back with an
+ * answer even when that answer is "no network". */
+static void (*s_status_cb)(update_state_t, const char *);
+static volatile bool  s_check_requested;
+static volatile bool  s_install_now;
+
 /* The settings the policy needs. main.c owns the live copy; this is a
  * snapshot taken whenever it changes, because the OTA task must not reach
  * into another module's globals. */
@@ -116,6 +124,13 @@ void ota_get_url(char *out, size_t outsz)
         out[0] = '\0';
     }
     nvs_close(h);
+}
+
+bool ota_has_url(void)
+{
+    char url[OTA_URL_LEN];
+    ota_get_url(url, sizeof url);
+    return url[0] != '\0';
 }
 
 bool ota_set_url(const char *url)
@@ -416,8 +431,34 @@ void ota_confirm_running_image(void)
 
 /* ---- the task ---------------------------------------------------------- */
 
+static void report(update_state_t state, const char *version)
+{
+    void (*cb)(update_state_t, const char *) = s_status_cb;
+    if (cb != NULL) {
+        cb(state, version);
+    }
+}
+
+void ota_set_status_cb(void (*cb)(update_state_t state, const char *version))
+{
+    s_status_cb = cb;
+}
+
+void ota_request_install_now(void)
+{
+    if (!s_have_pending) {
+        return;                      /* nothing to install; say nothing */
+    }
+    s_install_now = true;
+    start_task_once();
+    if (s_wake != NULL) {
+        xSemaphoreGive(s_wake);
+    }
+}
+
 void ota_request_check(void)
 {
+    s_check_requested = true;
     s_last_check_ms = 0;               /* make ota_should_check() say yes */
     start_task_once();                 /* may be the first URL ever stored */
     if (s_wake != NULL) {
@@ -476,19 +517,52 @@ static void ota_task(void *arg)
 
     for (;;) {
         ota_ctx_t c = build_ctx();
+        bool asked = s_check_requested;
+        s_check_requested = false;
+
         if (ota_should_check(&c)) {
-            ota_check(NULL, 0);
+            if (asked) {
+                report(UPD_CHECKING, NULL);
+            }
+            char newer[OTA_VERSION_LEN];
+            bool have = ota_check(newer, sizeof newer);
             /* After a check, not every tick: this is the only thing the task
              * does that goes deep, and 4 KB of it was enough to corrupt the
              * touch driver once already. Worth knowing the margin. */
             ESP_LOGI(TAG, "stack headroom after check: %u B",
                      (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            /* Reported for the daily check too, not only a tap: if something
+             * installed itself at 03:00, the row should say so the next time
+             * the screen is opened rather than whatever it said yesterday. */
+            report(have            ? UPD_AVAILABLE
+                   : s_last_check_failed ? UPD_CHECK_FAILED
+                                         : UPD_CURRENT,
+                   have ? newer : NULL);
+        } else if (asked) {
+            /* He tapped and the policy said no — no URL, no network, no
+             * clock. The tick is allowed to say nothing and wait; a tap is
+             * not, because a row left on "Suche nach Updates..." forever is
+             * the silent panel §1 forbids. */
+            ESP_LOGW(TAG, "check requested but not possible "
+                          "(url=%d online=%d clock=%d)",
+                     c.have_url, c.online, c.clock_valid);
+            report(UPD_CHECK_FAILED, NULL);
         }
+
         if (s_have_pending) {
             c = build_ctx();
-            if (ota_should_install(&c)) {
+            bool now = s_install_now;
+            s_install_now = false;
+            /* now || policy: the night window is a precaution against tearing
+             * in front of someone who did not ask for it. He asked. */
+            if (now || ota_should_install(&c)) {
+                report(UPD_INSTALLING, s_pending.version);
                 ota_install_and_reboot();   /* does not return on success */
+                /* Still here, so it failed and we are on the old build. */
+                report(UPD_FAILED, NULL);
             }
+        } else {
+            s_install_now = false;          /* nothing to install any more */
         }
         /* Five minutes. The 24 h interval lives in the policy; this is just
          * how often the policy gets asked, and it has to be fine enough to

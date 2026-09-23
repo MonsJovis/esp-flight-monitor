@@ -1,8 +1,9 @@
 /* screen_settings.c — see screen_settings.h for the contract.
  *
  * Layout: one scrolling column, PAD-indented, sections stacked top to bottom:
- * Ort, Umkreis, Helligkeit, Nachtabsenkung, WLAN, Akku, Zurück, and under
- * those, in chrome type, the data attributions and the firmware version.
+ * Ort, Umkreis, Helligkeit, Nachtabsenkung, WLAN, Akku, Software, Zurück,
+ * and under those, in chrome type, the data attributions and the firmware
+ * version.
  * Unlike screen_overhead.c, nothing here auto-shrinks or
  * reflows at runtime — every font is fixed, so every position is computed
  * ONCE in screen_settings_create() from measured font line-heights, and
@@ -20,7 +21,9 @@
 #include "fmt_de.h"
 #include "fonts/fonts.h"
 #include "strings_de.h"
-#include "net/ota.h"          /* ota_running_version() */
+#include "net/ota.h"          /* ota_running_version(), ota_has_url() */
+#include "net/ota_policy.h"   /* OTA_VERSION_LEN */
+#include "widget_busy.h"
 
 /* Every German literal this screen shows lives in main/strings_de.h, together
  * with the reasoning for each one; tools/check_strings.py fails the build if
@@ -106,10 +109,34 @@ static lv_obj_t *s_dim_window;
 static lv_obj_t *s_akku_value;
 static char      s_akku_line[64];
 
+/* The Software section (D74). Same arrangement as the battery line above and
+ * for the same reason: the OTA task reports a state whether this screen is
+ * open or not, so the STATE lives here and outlives the tree, and every
+ * pointer into the tree is dropped when LVGL tears it down. */
+static lv_obj_t      *s_upd_status;
+static lv_obj_t      *s_upd_busy;
+static lv_obj_t      *s_upd_row;
+static lv_obj_t      *s_upd_row_label;
+static update_state_t s_upd_state;
+static char           s_upd_version[OTA_VERSION_LEN];
+
+/* The install takeover. NOT a child of s_cont: it lives on lv_layer_top() so
+ * that closing Einstellungen mid-install cannot delete the one thing telling
+ * him why the panel is about to go dark. */
+static lv_obj_t *s_upd_overlay;
+
+/* Defined with the rest of the Software section, below create(). */
+static void update_row_apply(void);
+static void upd_row_event_cb(lv_event_t *e);
+
 static void on_cont_deleted(lv_event_t *e)
 {
     (void)e;
-    s_akku_value = NULL;
+    s_akku_value    = NULL;
+    s_upd_status    = NULL;
+    s_upd_busy      = NULL;
+    s_upd_row       = NULL;
+    s_upd_row_label = NULL;
 }
 
 /* This screen's own working copy of the settings — every card tap, slider
@@ -122,6 +149,8 @@ static settings_changed_cb s_changed_cb;
 static settings_wifi_cb    s_wifi_cb;
 static settings_geo_cb     s_geo_cb;
 static settings_exit_cb    s_exit_cb;
+static settings_update_cb  s_upd_check_cb;
+static settings_update_cb  s_upd_install_cb;
 
 /* ----------------------------------------------------------------------
  * Small widget helpers
@@ -593,7 +622,45 @@ void screen_settings_create(lv_obj_t *parent)
     lv_obj_set_pos(s_akku_value, PAD, y);
     y += body_lh + GAP_SECTION;
 
-    /* ================= 7. Zurück ================= */
+    /* ================= 7. Software =================
+     * The update row. It only exists when there is an update source stored:
+     * a device that leaves with no URL contacts nothing (D44), and offering
+     * "Nach Updates suchen" on one would be a button whose only possible
+     * answer is "Keine Verbindung". A feature that ships off costs nothing
+     * while it is off, on the glass as well as in the heap (D52). */
+    if (ota_has_url()) {
+        lv_obj_t *h_soft = make_label(s_cont, &plex_sans_cond_34, THEME_TEXT_LABEL);
+        lv_label_set_text(h_soft, STR_HEADING_SOFTWARE);
+        lv_obj_set_pos(h_soft, PAD, y);
+        y += heading_lh + GAP_LABEL;
+
+        /* Never blank: fmt_update_status() has a line for every state, and
+         * UPD_IDLE's is the prompt itself. */
+        s_upd_status = make_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+        lv_obj_set_pos(s_upd_status, PAD, y);
+        y += body_lh + GAP_LABEL;
+
+        s_upd_busy = widget_busy_create(s_cont, CONTENT_W);
+        lv_obj_set_pos(s_upd_busy, PAD, y);
+        y += WIDGET_BUSY_H + GAP_LABEL;
+
+        s_upd_row = make_row(s_cont, y, TOUCH_ROW_H);
+        lv_obj_set_style_bg_color(s_upd_row, THEME_GROUND, 0);
+        lv_obj_set_style_border_color(s_upd_row, THEME_BORDER_IDLE, 0);
+        s_upd_row_label = make_label(s_upd_row, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+        lv_label_set_text(s_upd_row_label, STR_UPDATE_CHECK);
+        lv_obj_set_pos(s_upd_row_label, CARD_PAD_H, (TOUCH_ROW_H - body_lh) / 2);
+        lv_obj_add_event_cb(s_upd_row, upd_row_event_cb, LV_EVENT_CLICKED, NULL);
+
+        y += TOUCH_ROW_H + GAP_SECTION;
+
+        /* Whatever the OTA task last reported, not UPD_IDLE: the screen is
+         * rebuilt on every open, and forgetting that an update is waiting
+         * because he closed the screen and came back would be a lie. */
+        update_row_apply();
+    }
+
+    /* ================= 8. Zurück ================= */
     lv_obj_t *back_row = make_row(s_cont, y, TOUCH_ROW_H);
     lv_obj_set_style_bg_color(back_row, THEME_GROUND, 0);
     lv_obj_set_style_border_color(back_row, THEME_BORDER_IDLE, 0);
@@ -608,7 +675,7 @@ void screen_settings_create(lv_obj_t *parent)
 
     y += TOUCH_ROW_H + GAP_SECTION;
 
-    /* ================= 8. Datenquellen =================
+    /* ================= 9. Datenquellen =================
      * A licence obligation, not a credit line we chose to show: adsb.lol's
      * position data is ODbL 1.0 and adsb.im supplies the routes (AGENTS.md,
      * "Data licences"). It goes at the foot of the one screen he reaches
@@ -639,7 +706,7 @@ void screen_settings_create(lv_obj_t *parent)
      * type. Four extra pixels is enough to say so without a rule or heading. */
     y += lv_obj_get_height(attrib2) + GAP_LABEL;
 
-    /* ================= 9. Version =================
+    /* ================= 10. Version =================
      * What the panel is running, for the phone call where something looks
      * wrong and he is in Pattaya. ota_running_version() rather than reading
      * esp_app_desc_t here, so the string on the glass is the one the update
@@ -653,6 +720,136 @@ void screen_settings_create(lv_obj_t *parent)
     lv_label_set_text(ver, version);
     lv_obj_update_layout(ver);
     lv_obj_set_pos(ver, PAD + (CONTENT_W - lv_obj_get_width(ver)) / 2, y);
+}
+
+/* ----------------------------------------------------------------------
+ * Software: the update row (D74)
+ * ---------------------------------------------------------------------- */
+
+/* The full-screen takeover, for the ~26 s a download and flash write take.
+ *
+ * On lv_layer_top() rather than in the settings tree, so that it cannot be
+ * deleted by anything he does underneath it, and CLICKABLE with no handler so
+ * every tap lands on it and goes nowhere. During those seconds the device
+ * must not accept navigation: the next thing that happens is a reboot.
+ *
+ * It is also the answer to the tearing question the night window exists for
+ * (D72): if writing 2 MB does garble this panel, it garbles a screen that is
+ * two lines of static text and a 4 px bar, in front of someone who just
+ * asked for an update and has been told to wait. */
+static void takeover_show(void)
+{
+    if (s_upd_overlay != NULL) {
+        return;
+    }
+    s_upd_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_upd_overlay);
+    lv_obj_set_size(s_upd_overlay, THEME_SCREEN_WIDTH, THEME_SCREEN_HEIGHT);
+    lv_obj_set_pos(s_upd_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_upd_overlay, THEME_GROUND, 0);
+    lv_obj_set_style_bg_opa(s_upd_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_clickable(s_upd_overlay, true);    /* swallow every tap */
+    lv_obj_set_scrollable(s_upd_overlay, false);
+
+    lv_obj_t *title = make_label(s_upd_overlay, &plex_sans_cond_34, THEME_TEXT_PRIMARY);
+    lv_label_set_text(title, STR_UPDATE_INSTALLING);
+    lv_obj_update_layout(title);
+    int32_t ty = THEME_SCREEN_HEIGHT / 2 - 60;
+    lv_obj_set_pos(title, (THEME_SCREEN_WIDTH - lv_obj_get_width(title)) / 2, ty);
+
+    lv_obj_t *busy = widget_busy_create(s_upd_overlay, CONTENT_W);
+    lv_obj_set_pos(busy, PAD, ty + lv_obj_get_height(title) + GAP_SECTION);
+    widget_busy_set_active(busy, true);
+
+    lv_obj_t *hint = make_label(s_upd_overlay, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    lv_label_set_text(hint, STR_UPDATE_REBOOT_HINT);
+    lv_obj_update_layout(hint);
+    lv_obj_set_pos(hint, (THEME_SCREEN_WIDTH - lv_obj_get_width(hint)) / 2,
+                   ty + lv_obj_get_height(title) + 2 * GAP_SECTION + 8);
+}
+
+static void takeover_hide(void)
+{
+    if (s_upd_overlay != NULL) {
+        lv_obj_delete(s_upd_overlay);
+        s_upd_overlay = NULL;
+    }
+}
+
+/* Paint the section from s_upd_state. Called when the state changes and again
+ * every time the screen is rebuilt, which is why it must survive every widget
+ * pointer being NULL. */
+static void update_row_apply(void)
+{
+    if (s_upd_status == NULL) {
+        return;                       /* screen closed; state is kept */
+    }
+    char line[96];
+    fmt_update_status(s_upd_state, s_upd_version, line, sizeof line);
+    lv_label_set_text(s_upd_status, line);
+
+    bool working = (s_upd_state == UPD_CHECKING || s_upd_state == UPD_INSTALLING);
+    if (s_upd_busy != NULL) {
+        widget_busy_set_active(s_upd_busy, working);
+        lv_obj_set_hidden(s_upd_busy, !working);
+    }
+
+    /* A bordered row on this screen means "tappable" — see the Akku section,
+     * which is deliberately not one. While a check or an install is running
+     * there is nothing a tap can start, so the row goes away rather than
+     * sitting there looking pressable and doing nothing. */
+    const char *label = update_action_label(s_upd_state);
+    if (s_upd_row != NULL) {
+        lv_obj_set_hidden(s_upd_row, label == NULL);
+        if (label != NULL) {
+            if (s_upd_row_label != NULL) {
+                lv_label_set_text(s_upd_row_label, label);
+            }
+            /* Cyan while there is something to install: the same "live" the
+             * focused field and a pressed key already use (DESIGN.md §2).
+             * No new token. */
+            lv_obj_set_style_border_color(s_upd_row,
+                s_upd_state == UPD_AVAILABLE ? THEME_CYAN : THEME_BORDER_IDLE, 0);
+        }
+    }
+}
+
+static void upd_row_event_cb(lv_event_t *e)
+{
+    (void)e;
+    /* Read the state, not the label: the label is what he saw, this is what
+     * the device knows. */
+    if (s_upd_state == UPD_AVAILABLE) {
+        if (s_upd_install_cb != NULL) {
+            s_upd_install_cb();
+        }
+    } else if (s_upd_check_cb != NULL) {
+        s_upd_check_cb();
+    }
+}
+
+void screen_settings_set_update_cbs(settings_update_cb check,
+                                    settings_update_cb install)
+{
+    s_upd_check_cb   = check;
+    s_upd_install_cb = install;
+}
+
+void screen_settings_set_update_state(update_state_t state, const char *version)
+{
+    s_upd_state = state;
+    if (version != NULL) {
+        snprintf(s_upd_version, sizeof s_upd_version, "%s", version);
+    } else {
+        s_upd_version[0] = '\0';
+    }
+
+    if (state == UPD_INSTALLING) {
+        takeover_show();
+    } else {
+        takeover_hide();
+    }
+    update_row_apply();
 }
 
 void screen_settings_set_battery(const char *line)

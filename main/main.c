@@ -24,6 +24,8 @@
  *   x  what the touch layer has seen (presses, long presses, the last hold)
  *   Y  cycle a PRETENDED battery (60 %, 18 %, 5 %, off) so the badge,
  *      the amber caution and the backlight cap can be seen without one
+ *   U  cycle a PRETENDED update state through the Software row, so all
+ *      seven of them can be read back without publishing a release
  *   q  open Ortssuche                      Q  open it and run one search
  *   z  the same, then TAP the first hit    Z  the empty and no-answer states
  *   K  open WLAN and walk it to the password step (its keyboard)
@@ -1519,6 +1521,49 @@ static void on_settings_changed(const settings_t *s)
     display_unlock();
 }
 
+/* Called FROM THE OTA TASK as the update flow moves (D74). Takes the display
+ * lock and writes into the screen, which is what geo_search_task() does and is
+ * safe for the same reason; the screen keeps the state itself, so this is also
+ * safe while Einstellungen is closed. Nothing deep happens here: the task has
+ * roughly 6 KB of stack left once a TLS handshake has unwound. */
+static void on_ota_status(update_state_t state, const char *version)
+{
+    display_lock(0);
+    screen_settings_set_update_state(state, version);
+    display_unlock();
+}
+
+/* Walk the Software row through every state it has (D74).
+ *
+ * The same argument as Y and W: six of these seven states need a release, a
+ * dead network or a failed flash write to reach, and none of those is a thing
+ * anyone provokes twice. This puts each one on the glass so it can be read —
+ * and photographed with tools/grab_screen.py — from the build host.
+ *
+ * UPD_INSTALLING raises the takeover, which swallows touch on purpose. The
+ * next press of U moves past it and takes it down again, so the console can
+ * always get the device back. */
+static void update_sim_cycle(void)
+{
+    static const struct { update_state_t st; const char *ver; } steps[] = {
+        { UPD_IDLE,         NULL    },
+        { UPD_CHECKING,     NULL    },
+        { UPD_AVAILABLE,    "9.9.9" },
+        { UPD_CURRENT,      NULL    },
+        { UPD_CHECK_FAILED, NULL    },
+        { UPD_FAILED,       NULL    },
+        { UPD_INSTALLING,   "9.9.9" },
+    };
+    static unsigned i = 0;
+
+    i = (i + 1) % (sizeof steps / sizeof steps[0]);
+    ESP_LOGW(TAG, "update row: pretending state %u of %u",
+             i + 1, (unsigned)(sizeof steps / sizeof steps[0]));
+    display_lock(0);
+    screen_settings_set_update_state(steps[i].st, steps[i].ver);
+    display_unlock();
+}
+
 static void build_settings_screen(lv_obj_t *parent)
 {
     screen_settings_create(parent);
@@ -1526,6 +1571,7 @@ static void build_settings_screen(lv_obj_t *parent)
     screen_settings_set_wifi_cb(open_wifi);
     screen_settings_set_geo_cb(open_geo);
     screen_settings_set_exit_cb(close_overlay);
+    screen_settings_set_update_cbs(ota_request_check, ota_request_install_now);
     screen_settings_update(&g_settings);
 }
 
@@ -1853,6 +1899,7 @@ static void on_cmd(char c)
     else if (c == 'y') battery_console();
     else if (c == 'Y') battery_sim_cycle();
     else if (c == 'W') signal_sim_cycle();
+    else if (c == 'U') update_sim_cycle();
     else if (c == 'x') nav_touch_report();
 }
 
@@ -1927,6 +1974,7 @@ void app_main(void)
     apply_settings();
 
     xTaskCreate(ui_task, "ui", 4096, NULL, 4, NULL);
+    ota_set_status_cb(on_ota_status);
     ota_start();
 
     /* Every key on_cmd() answers to, and tools/check_console_keys.py fails the
@@ -1934,7 +1982,7 @@ void app_main(void)
      * line and the header block above claiming a console this firmware no
      * longer has. AGENTS.md §11 rule 1 is about exactly that. */
     ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
-                  "u=update y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
+                  "u=update U=updatesim y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
                   "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a

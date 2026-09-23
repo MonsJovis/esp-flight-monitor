@@ -218,6 +218,42 @@
  * out and what the device believes cannot be two different things. */
 #define FMT_VERSION                "Version %s"
 
+/* ---- Software: the update row (main/ui/screen_settings.c, D74) ---------
+ *
+ * The device already updates itself in the night window. This is the other
+ * half: he is standing in front of it, something looks wrong, and the useful
+ * question is "is there a newer one, and can I have it now" rather than
+ * "wait until tonight".
+ *
+ * "Update", not "Aktualisierung". The purer German is the less familiar one —
+ * this is the word Windows and iOS have been putting in front of him for
+ * twenty years, and §1's rule is that he should not have to learn anything.
+ */
+#define STR_HEADING_SOFTWARE       "Software"
+#define STR_UPDATE_CHECK           "Nach Updates suchen"
+
+/* NOTE on "..." — three ASCII periods, not U+2026. The font subset has no
+ * ellipsis glyph; see the note at STR_GEO_SEARCHING. */
+#define STR_UPDATE_CHECKING        "Suche nach Updates..."
+
+#define STR_UPDATE_CURRENT         "Alles aktuell"
+
+/* Not "Fehler" and not an error code. The only thing he can do about either
+ * failure is try again later, so both say what happened in the terms he has:
+ * the device could not reach the internet, or the update did not work. */
+#define STR_UPDATE_CHECK_FAILED    "Keine Verbindung"
+#define STR_UPDATE_FAILED          "Update hat nicht geklappt"
+
+#define FMT_UPDATE_AVAILABLE       "Version %s ist verfügbar"
+#define STR_UPDATE_INSTALL         "Jetzt installieren"
+
+/* The full-screen takeover, for the ~26 s the download and flash write take.
+ * Two lines: what is happening, and the one thing he needs to expect, which
+ * is that the panel goes dark and comes back by itself. Without the second
+ * line a reboot in the middle of an update looks exactly like a crash. */
+#define STR_UPDATE_INSTALLING      "Update wird installiert"
+#define STR_UPDATE_REBOOT_HINT     "Das Gerät startet danach neu."
+
 /* ---- Akku (main/power/battery_policy.c) ------------------------------- */
 
 /* "Akku", never "Batterie". In Austrian everyday speech a Batterie is the

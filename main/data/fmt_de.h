@@ -101,6 +101,38 @@ size_t fmt_time_de(const struct tm *t, char *out, size_t n);
  * than a fragment. */
 size_t utf8_copy(char *out, size_t n, const char *src);
 
+/* ---- the update row (D74) ---------------------------------------------
+ *
+ * What the Software section says, for each state the update flow can be in.
+ * Here rather than in screen_settings.c for the reason every other string
+ * decision is: the screen positions text and picks colours, it does not
+ * decide wording, and a mapping that lives here can be checked on the host
+ * in milliseconds instead of by provoking five states on real hardware.
+ */
+typedef enum {
+    UPD_IDLE = 0,       /* nothing has been asked yet                       */
+    UPD_CHECKING,       /* the manifest fetch is in flight                  */
+    UPD_CURRENT,        /* checked, and the running build is the newest     */
+    UPD_AVAILABLE,      /* checked, and something newer is offered          */
+    UPD_CHECK_FAILED,   /* the check did not reach a manifest               */
+    UPD_INSTALLING,     /* downloading and writing; the takeover is up      */
+    UPD_FAILED,         /* the install did not complete; still on the old   */
+} update_state_t;
+
+/* The status line under the heading. `version` is only read for
+ * UPD_AVAILABLE and may be NULL otherwise; a NULL or empty version in that
+ * state degrades to STR_UPDATE_CHECK rather than printing "Version  ist
+ * verfügbar", because a half-built sentence on the glass is worse than no
+ * news. Returns the number of bytes written, like the rest of this file. */
+size_t fmt_update_status(update_state_t state, const char *version,
+                         char *out, size_t n);
+
+/* The tappable row's own label: "Nach Updates suchen", or "Jetzt
+ * installieren" once there is something to install. Returns a static string;
+ * never NULL. NULL when the row must not be tappable at all — while a check
+ * or an install is running, there is nothing useful a second tap can do. */
+const char *update_action_label(update_state_t state);
+
 #ifdef __cplusplus
 }
 #endif

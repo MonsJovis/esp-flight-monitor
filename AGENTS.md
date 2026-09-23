@@ -4,9 +4,9 @@ Operating manual for AI agents working in this repo. Read this before touching c
 
 > **Status, 2026-09-21.** This is no longer a brief. The device is built, verified against
 > live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); seventy-three decisions are written up with their reasoning
+> ([docs/PLAN.md](./docs/PLAN.md)); seventy-four decisions are written up with their reasoning
 > and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
-> **35,562 checks across twelve suites, 0 failed**.
+> **35,711 checks across twelve suites, 0 failed**.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -168,7 +168,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 35,562 checks, plus the font, string and console-key gates
+make -C test/host        # 35,711 checks, plus the font, string and console-key gates
 ```
 
 **Before your first `idf.py build`, generate a signing key.** Every build is signed now
@@ -218,6 +218,10 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
 - `u` update console — `v` LVGL heap report
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
+- `U` step the **Software** row in Einstellungen through all seven update states —
+  idle, checking, available, current, no connection, failed, installing — without
+  publishing a release. The installing state raises the full-screen takeover, which
+  swallows touch on purpose; the next `U` takes it down again.
 - `W` pretend a WLAN signal, so the corner meter can be seen at all five of its levels
   (four bars, three, two, one, no link at all) without walking the device out of range
 - `x` what the touch layer has actually registered (presses, long presses, the last hold)

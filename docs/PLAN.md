@@ -350,6 +350,12 @@ caused by the sweep:
       `net/ota_policy.c`. HTTPS only, rollback on, installs only inside the night dim
       window because flash writes tear this panel. **Off unless an update URL is stored
       in NVS.** D44–D45.
+- [x] **A manual update path — D74.** A **Software** section in Einstellungen: one row
+      that checks now, and — once something is offered — installs now, without waiting for
+      the night window. Wording and row state are in `fmt_de.c` and host-tested (401
+      checks in that suite); the install raises a full-screen takeover that swallows touch
+      until the reboot. `U` walks all seven states from the console. **Not yet seen on the
+      glass** — the panel has not been attached since the 21st.
 - [x] **Release infrastructure — D72.** The repo is public, `.github/workflows/release.yml`
       publishes a signed image and its manifest on every `v*` tag, and
       `tools/check_release.py` reads the finished binary back to prove its version and

@@ -3,6 +3,7 @@
  */
 #include "fmt_de.h"
 #include "flight_types.h"
+#include "strings_de.h"
 #include "test_util.h"
 
 #include <stdint.h>
@@ -94,8 +95,76 @@ static void test_utf8_copy(void)
     CHECK_INT(utf8_copy(out, 3, "\x80\x80\x80\x80"), 0);
 }
 
+static void test_update_status(void)
+{
+    char out[96];
+
+    GROUP("fmt_update_status: every state says something, and never nothing");
+    /* A blank status line under a heading is the "silent panel" AGENTS.md §1
+     * forbids, so the real assertion here is that no state produces one. */
+    const update_state_t all[] = { UPD_IDLE, UPD_CHECKING, UPD_CURRENT,
+                                   UPD_AVAILABLE, UPD_CHECK_FAILED,
+                                   UPD_INSTALLING, UPD_FAILED };
+    for (unsigned i = 0; i < sizeof all / sizeof all[0]; i++) {
+        out[0] = '\0';
+        size_t w = fmt_update_status(all[i], "0.7.0", out, sizeof out);
+        CHECK(w > 0);
+        CHECK(out[0] != '\0');
+    }
+
+    GROUP("fmt_update_status: the version is only spoken when there is one");
+    fmt_update_status(UPD_AVAILABLE, "0.7.0", out, sizeof out);
+    CHECK_STR(out, "Version 0.7.0 ist verfügbar");
+    fmt_update_status(UPD_AVAILABLE, "1.10.3", out, sizeof out);
+    CHECK_STR(out, "Version 1.10.3 ist verfügbar");
+
+    GROUP("fmt_update_status: a missing version degrades, it does not print a hole");
+    /* "Version  ist verfügbar" on the glass is worse than no news. */
+    fmt_update_status(UPD_AVAILABLE, NULL, out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_CHECK);
+    fmt_update_status(UPD_AVAILABLE, "", out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_CHECK);
+
+    GROUP("fmt_update_status: the other states ignore the version entirely");
+    fmt_update_status(UPD_CURRENT, "9.9.9", out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_CURRENT);
+    fmt_update_status(UPD_CHECK_FAILED, "9.9.9", out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_CHECK_FAILED);
+    fmt_update_status(UPD_FAILED, NULL, out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_FAILED);
+    fmt_update_status(UPD_INSTALLING, NULL, out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_INSTALLING);
+    fmt_update_status(UPD_IDLE, NULL, out, sizeof out);
+    CHECK_STR(out, STR_UPDATE_CHECK);
+
+    GROUP("fmt_update_status: a short buffer truncates, it never overflows");
+    for (size_t n = 1; n < 40; n++) {
+        char small[40];
+        memset(small, '#', sizeof small);
+        size_t w = fmt_update_status(UPD_AVAILABLE, "0.7.0", small, n);
+        CHECK(w < n);                    /* always room for the NUL */
+        CHECK(small[n - 1] == '\0' || strlen(small) < n);
+        CHECK(small[39] == '#');         /* nothing written past the buffer */
+    }
+    CHECK_INT((int)fmt_update_status(UPD_IDLE, NULL, NULL, 10), 0);
+    CHECK_INT((int)fmt_update_status(UPD_IDLE, NULL, out, 0), 0);
+
+    GROUP("update_action_label: tappable only when a tap would do something");
+    /* NULL is the row saying "do not offer me": a second tap during a check
+     * or an install has nothing to start. */
+    CHECK(update_action_label(UPD_CHECKING) == NULL);
+    CHECK(update_action_label(UPD_INSTALLING) == NULL);
+    CHECK_STR(update_action_label(UPD_AVAILABLE), STR_UPDATE_INSTALL);
+    CHECK_STR(update_action_label(UPD_IDLE), STR_UPDATE_CHECK);
+    CHECK_STR(update_action_label(UPD_CURRENT), STR_UPDATE_CHECK);
+    CHECK_STR(update_action_label(UPD_CHECK_FAILED), STR_UPDATE_CHECK);
+    CHECK_STR(update_action_label(UPD_FAILED), STR_UPDATE_CHECK);
+}
+
 int main(void)
 {
+    test_update_status();
+
     GROUP("nm_to_km / ft_to_m");
     CHECK_NEAR(nm_to_km(1.0f), 1.852, 1e-4);
     CHECK_NEAR(nm_to_km(0.0f), 0.0, 1e-6);

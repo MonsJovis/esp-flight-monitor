@@ -283,3 +283,50 @@ size_t utf8_copy(char *out, size_t n, const char *src)
     out[cut] = '\0';
     return cut;
 }
+
+/* ---- the update row (D74) ---------------------------------------------- */
+
+size_t fmt_update_status(update_state_t state, const char *version,
+                         char *out, size_t n)
+{
+    if (out == NULL || n == 0) {
+        return 0;
+    }
+    if (state == UPD_AVAILABLE) {
+        if (version == NULL || version[0] == '\0') {
+            /* Checked, something is newer, and we cannot say what. Fall back
+             * to the neutral prompt rather than print a sentence with a hole
+             * in it. */
+            return utf8_copy(out, n, STR_UPDATE_CHECK);
+        }
+        int w = snprintf(out, n, FMT_UPDATE_AVAILABLE, version);
+        if (w < 0) {
+            out[0] = '\0';
+            return 0;
+        }
+        return (size_t)w < n - 1 ? (size_t)w : n - 1;
+    }
+
+    const char *s;
+    switch (state) {
+        case UPD_CHECKING:     s = STR_UPDATE_CHECKING;     break;
+        case UPD_CURRENT:      s = STR_UPDATE_CURRENT;      break;
+        case UPD_CHECK_FAILED: s = STR_UPDATE_CHECK_FAILED; break;
+        case UPD_INSTALLING:   s = STR_UPDATE_INSTALLING;   break;
+        case UPD_FAILED:       s = STR_UPDATE_FAILED;       break;
+        case UPD_IDLE:
+        default:               s = STR_UPDATE_CHECK;        break;
+    }
+    return utf8_copy(out, n, s);
+}
+
+const char *update_action_label(update_state_t state)
+{
+    switch (state) {
+        case UPD_AVAILABLE:  return STR_UPDATE_INSTALL;
+        /* Nothing a second tap can do while one is already running. */
+        case UPD_CHECKING:
+        case UPD_INSTALLING: return NULL;
+        default:             return STR_UPDATE_CHECK;
+    }
+}

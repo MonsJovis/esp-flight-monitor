@@ -2280,3 +2280,75 @@ twenty-four hours asserting both intervals against both outcomes — a sweep rat
 three points, because the two must not swap or blur anywhere in between. Reverting the
 one-line policy change was watched failing those tests before they were trusted (§11
 rule 2). The suite is **35,562** overall.
+
+## D74 — The other half of updating: the one he can reach
+
+**2026-09-23.** D72 and D73 built the unattended path: check daily, install between 22:00
+and 07:00, tell nobody. That is the right default and it is not the whole job. The owner
+asked for the half that has a person in front of it — a row that checks now, and offers to
+install now — and the reason is the same one the night window exists for, pointed the other
+way: he is *looking at the panel*, something seems wrong, and "wait until tonight" is not an
+answer.
+
+**The night window is skipped on purpose, and only here.** `ota_request_install_now()` sets
+a flag the task honours instead of `ota_should_install()`. The window is a precaution
+against a 2 MB flash write tearing the panel in front of someone who did not ask for it
+(D72 — still unmeasured). A tap on "Jetzt installieren" is exactly the case that reasoning
+does not cover: he asked, and the takeover tells him to expect a wait and a reboot. Every
+gate that is about *safety* rather than *timing* still stands — https only, the signature,
+the size check, and the version that already rolled back once.
+
+**It may also be how the tearing question finally gets answered.** If a full image write
+does garble this display, it now does so on a screen that is two lines of static text and a
+4 px bar, in front of someone who has been told to wait — which is the cheapest possible
+place to find out.
+
+**A tap must always come back with an answer.** The daily tick is allowed to find no
+network and say nothing; a tap is not, because a row left on "Suche nach Updates..."
+forever is the silent panel §1 forbids. So `s_check_requested` distinguishes the two, and
+when the policy refuses a requested check — no URL, no network, no clock — the task reports
+`UPD_CHECK_FAILED` rather than going quiet. The status callback also fires for the *daily*
+check, so a row opened the morning after a 03:00 install says what actually happened
+instead of whatever it said yesterday.
+
+**The wording is state, not sentences in the screen.** `fmt_update_status()` and
+`update_action_label()` live in `main/data/fmt_de.c` with every other German decision, and
+`test/host/test_fmt_de.c` pins them at **401 checks**: every state produces a non-empty
+line (the real assertion — a blank status line under a heading is the silent panel again),
+the version is spoken only when there is one, a NULL version degrades to the neutral prompt
+rather than printing "Version  ist verfügbar", and a sweep of every buffer size from 1 to
+39 proves it truncates without ever writing past the end.
+
+**A bordered row on that screen means "tappable".** The Akku section is deliberately not
+one, because "a row that looks tappable and does nothing is how a non-technical user
+decides the device is broken". So while a check or an install is running,
+`update_action_label()` returns NULL and the row is *hidden* rather than greyed — there is
+nothing a second tap could start. The border turns cyan when something is installable,
+reusing the "live" this device already has; DESIGN.md §2's six colours stand.
+
+**The section does not exist without an update source.** A device that ships with no URL
+contacts nothing (D44), so offering it a "Nach Updates suchen" row whose only possible
+answer is "Keine Verbindung" would be a button that lies. `ota_has_url()` gates the whole
+section — a feature that ships off costing nothing while off (D52), on the glass as well
+as in the heap.
+
+**The takeover lives on `lv_layer_top()`, not in the settings tree.** Closing Einstellungen
+mid-install must not delete the one thing explaining why the panel is about to go dark, and
+during those seconds the device must not accept navigation at all: the next event is a
+reboot. It is clickable with no handler, so every tap lands on it and goes nowhere.
+
+**The state outlives the screen**, which is D58 again — the WiFi scan task writing into a
+deleted tree. Einstellungen is rebuilt on every open, the OTA task reports whether it is
+open or not, so the state lives in statics and every pointer *into* the tree is dropped by
+`on_cont_deleted()`. `screen_settings_set_update_state()` is safe to call with the screen
+closed and simply renders the next time it is built.
+
+**`U` walks all seven states**, the same argument as `Y` for a pretended battery and `W`
+for a pretended signal: six of them need a release, a dead network or a failed flash write
+to reach, and none of those is something anyone provokes twice. The console-key gate caught
+it immediately — the key was in `on_cmd()`, the header and the ready line, and missing from
+AGENTS.md §3.
+
+**Not yet seen on the glass.** The panel has not been attached since the 21st, so this
+ships as a commit and not as a release: a full-screen takeover is exactly the kind of
+change that a screenshot, not a clean build, is allowed to sign off.

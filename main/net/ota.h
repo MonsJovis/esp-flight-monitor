@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "data/fmt_de.h"    /* update_state_t */
 #include "data/settings.h"
 
 #ifdef __cplusplus
@@ -40,6 +41,11 @@ const char *ota_running_version(void);
 
 /* Update source. `out` gets "" when none is stored. */
 void ota_get_url(char *out, size_t outsz);
+
+/* True when an update source is stored at all. The UI asks before it offers
+ * a "Nach Updates suchen" row, because on a device that left with no URL the
+ * only answer that row could ever give is "Keine Verbindung" (D74). */
+bool ota_has_url(void);
 
 /* Stores (or, with NULL/"", clears) the manifest URL in NVS. Returns false if
  * the URL is not https:// or does not fit. */
@@ -75,6 +81,37 @@ void ota_install_and_reboot(void);
  * whenever the settings change; the task must not reach into another module's
  * globals to read them. */
 void ota_settings_update(const settings_t *s);
+
+/* ---- the manual path (D74) ---------------------------------------------
+ *
+ * Everything above is the unattended one: check daily, install in the night
+ * window. This is the other half — he is standing in front of the panel and
+ * wants to know now.
+ *
+ * The callback is invoked FROM THE OTA TASK as the flow moves through
+ * update_state_t, with the offered version for UPD_AVAILABLE and NULL
+ * otherwise. The implementation takes display_lock() and touches LVGL, which
+ * is the same thing geo_search_task() does and is safe for the same reason;
+ * what it must not do is anything deep, because the task has about 6 KB of
+ * stack left after a TLS handshake.
+ *
+ * It is also called for the DAILY check, not just a manual one. That is
+ * deliberate: if an update installs itself at 03:00 the row should already
+ * say so the next time he opens the screen, rather than claiming the state
+ * from whenever he last looked. */
+void ota_set_status_cb(void (*cb)(update_state_t state, const char *version));
+
+/* Install the pending update NOW, without waiting for the night window.
+ *
+ * The window exists because a 2 MB flash write may tear this panel and
+ * nobody should meet that while glancing at a clock. A tap on "Jetzt
+ * installieren" is the one case where that reasoning does not apply: he is
+ * looking at the panel on purpose, he asked for this, and the takeover tells
+ * him what is happening. Every other gate still stands — https only, the
+ * signature, the size, and the version that already rolled back once.
+ *
+ * Does nothing if no update is pending. Safe from any task. */
+void ota_request_install_now(void);
 
 /* Starts the background task that checks daily and installs at night. Safe to
  * call with no URL stored — it simply never does anything. */
