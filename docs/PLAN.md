@@ -797,7 +797,8 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       altitude; one route line — *Landung in etwa 45 Min.*, or while climbing out *43 km
       von Wien entfernt*; departure time deliberately not shown (no source knows it). The
       give-way rule now closes up, so a two-line type name no longer costs the registration.
-- [ ] **Read aloud** the four new strings from D79 (D51, D56, D57).
+- [ ] **Read aloud** the new strings from D79 — the `FMT_ARRIVAL_*`, `STR_ARRIVAL_SOON`,
+      `FMT_FROM_ORIGIN` and `FMT_KMH` block in `main/strings_de.h` (D51, D56, D57).
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected, 30 s idle. Then his eye: three sizes
