@@ -37,11 +37,11 @@ Semantics follow **FAA AC 25-11A** (Electronic Flight Displays), not decoration:
 
 | Token | Hex | Meaning (AC 25-11A) | Used for |
 |---|---|---|---|
-| `magenta` | `#FF3FDA` | Pilot-selectable reference / active route — *the thing you are heading toward* | The route, the bearing marker, the selected aircraft |
+| `magenta` | `#FF3FDA` | Pilot-selectable reference / active route — *the thing you are heading toward* | The route, the bearing marker, the **nearest** aircraft on the radar |
 | `green` | `#00E676` | Engaged modes, normal conditions | "ÜBER DIR" status, home marker, saved WiFi |
-| `cyan` | `#22E3FF` | Armed modes / secondary data | Altitude, distance, settings values |
-| `amber` | `#FFB300` | Caution, abnormal source | "KEIN FLUGPLAN", missing values, no network |
-| `white` | `#FFFFFF` | Scales, figures, units, labels | The hero destination |
+| `cyan` | `#22E3FF` | Armed modes / secondary data | Altitude, distance, settings values, every radar aircraft but the nearest |
+| `amber` | `#FFB300` | Caution, abnormal source | "KEIN FLUGPLAN", missing values, no network, the radar's stale tag — and on the radar **nothing else** (D76) |
+| `white` | `#FFFFFF` | Scales, figures, units, labels | The hero destination, the radar's selection ring (§5.5) |
 | `grey` | `#94A5B2` | — | Labels |
 
 ### Text tones
@@ -289,10 +289,39 @@ power. One request in flight gets a bar. A standing condition gets a sentence.
 | 5.2 | **Ohne Route** | Same screen when there is no flight plan — see below. |
 | 5.3 | **Himmel frei** | Empty sky: clock, date, last aircraft seen. Never a blank panel. |
 | 5.4 | **Liste** | Everything nearby, sorted by distance. Tap a row for its card. |
-| 5.5 | **Radar** | PPI scope, range rings, heading-rotated glyphs. |
+| 5.5 | **Radar** | PPI scope, range rings, heading-rotated glyphs sized by altitude, trails, a ring on whatever the caption names. |
 | 5.6 | **Einstellungen** | Location preset, radius, brightness. |
 | 5.7 | **WLAN** | Provisioning, both networks remembered — the device travels. |
 | 5.8 | **Ort suchen** | Type a town, tap the right one. How "Eigener Ort" gets set. |
+
+### §5.5's legend: every channel answers one question
+
+| Channel | Answers | Encoding | Decided by |
+|---|---|---|---|
+| **Colour** | Which is nearest? | magenta = nearest, cyan = every other | the device, with hysteresis (D76) |
+| **Fill** | Is there a route? | filled = yes, hollow = no | the data |
+| **Shape** | Is there a heading? | triangle pointing along it = yes, dot = no | the data |
+| **Size** | Could I hear it? | large < 5 000 ft, medium, small ≥ 20 000 ft | the data (D76) |
+| **Trail** | Where has it been? | up to four fading dots, 15 s apart | the data (D76) |
+| **White ring** | Which one is the caption about? | ring round one mark | **him**, with a finger (D75) |
+| **Dimmed + amber tag** | Is any of this live? | everything at 50 %, `KEINE DATEN` top centre | the network (D76) |
+
+Two rules hold the table together:
+- **One channel, one question.** Before D75 the colour channel answered both "nearest" and
+  "selected". Before D76 it also answered "no route", in the caution colour, for the most
+  ordinary aircraft in the sky. Each overload is how a channel stops meaning anything.
+- **Colour and ring start out together.** The caption defaults to the nearest, so the ring
+  sits on the magenta mark until he taps something else. They only come apart as the direct
+  result of something he just did, which is the moment the difference is worth seeing.
+
+**Touch.** Tap a mark: the ring moves there as the finger lands, and the caption follows.
+Tap the caption (it carries `→`, and fills while pressed): the detail layer opens. Tap the
+empty scope, or look at the radar for 30 s without touching it: back to the nearest. (Time
+spent on the detail card does not count, and a long press is not a tap.) Long press anywhere
+that is not a mark or the caption: Einstellungen, as §6 says — and the selection survives it.
+
+**The caption's ladder**, when a line will not hold everything: first the arrow gives way,
+then the name. The distance never does (D48, D50, D76).
 
 ### §5.8 exists because §5.6's escape hatch had no way in
 

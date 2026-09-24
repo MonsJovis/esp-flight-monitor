@@ -757,6 +757,43 @@ compared a buffer with itself.
 and the simulation is what stands in for walking out of range — which is exactly what `W`
 exists for, and is recorded as a simulation rather than claimed as a live observation.
 
+
+---
+
+## M13 — The radar, challenged
+
+Started by the owner's photo of his own panel and one question: *what do the colours
+mean?* The radar was then checked against real traffic displays (AC 25-11A, TCAS, ATC
+PPI) and against UX practice. D75 and D76 have the reasoning.
+
+- [x] **The tapped aircraft is ringed** — magenta keeps "nearest", a white ring says what
+      the caption is about (D75). Plus the selection-clear on leaving the page, which had
+      been dead code since D60 (`prev_page == 2` in a two-page deck).
+- [x] **Amber freed** — route-less aircraft are cyan and hollow; on the radar amber means
+      only "not live".
+- [x] **Altitude as mark size**, three bands; the ring scales with the mark.
+- [x] **Trails** — four fading fixes, 15 s apart, with a jump guard, and not recorded
+      while stale. `main/data/radar_logic.c`, `test/host/test_radar.c`.
+- [x] **Stale data on the default screen** — marks dimmed, amber `KEINE DATEN` top centre,
+      from the same `net` as the detail layer.
+- [x] **Touch feedback** — ring preview on press, pressed pill and `→` on the caption, and
+      a ladder in which the arrow gives way before the name.
+- [x] **A way out of a selection** — tap the empty scope, or 30 s on the radar without a
+      touch; the long press to Einstellungen still reaches the deck from the scope. After
+      review: time on the detail card no longer counts, and a long press no longer lets go.
+- [x] **Hysteresis on "nearest"**, and the caption tap opens what the caption names.
+- [x] **`test/sim/`** — the radar on the host: real LVGL in the device's DIRECT mode,
+      scripted touch, pixel checks, ASan/UBSan fatal, a stress run, in CI. Mutation-tested:
+      20 of 21 breakages caught, the one survivor equivalent. Found three bugs the review
+      had not (arrow over name, trail ghosts, pill through the S) and one old one (the range
+      read-out's position was an accident of `lv_obj_get_x()`).
+- [ ] **On the glass.** No board was attached for any of this. Flash it, then settle the
+      questions only his eye can: three sizes readable from the chair, trails read as
+      history not clutter, 13 px amber findable. Run `v` before and after opening the WLAN
+      keyboard (the change costs +1.6 KB of internal RAM).
+- [ ] **Open, for the owner:** rotate the scope so up is the direction the wall faces,
+      instead of north? A question, not a defect — only he knows whether mapping screen-north
+      to room-north is a problem he actually has.
 ---
 
 ## Accelerators

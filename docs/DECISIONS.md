@@ -2358,3 +2358,272 @@ What that does NOT settle is the tearing question, and it is worth being precise
 the install that delivered this ran unattended at night, so nobody was in front of the
 panel while 2 MB went into flash. The one measurement this feature was expected to make
 comes the first time somebody taps **Jetzt installieren** and watches.
+
+## D75 — What the caption is talking about gets a ring, and the clear that never ran
+
+**Decision:** the aircraft the radar caption names is drawn with a **white ring around it**.
+Magenta keeps meaning what it has always meant on this screen — the single nearest aircraft
+— and does not move when he taps.
+
+**Why the two had to come apart.** Magenta and the caption were one channel answering two
+questions. *Which is nearest* is a fact the device computes, and it changes between polls
+with nobody touching anything: every fix is carried forward and the array re-sorted
+(main.c), so the magenta mark can hop across the scope on its own. *Which one is the
+caption about* is a fact **he** establishes with a finger. Tying the second to the first
+meant tapping a mark changed nothing anywhere near the mark — the caption re-pointed 190 px
+away at the bottom edge and the scope looked exactly as it had. D59 recorded the tap as
+confirmed working, and it was: it just could not be seen where it happened.
+
+It also silently broke the one thing the scope was still saying. Ask about a distant
+aircraft and the panel showed a magenta mark near the centre over a caption reading
+`42,8 km` — two pieces of chrome flatly disagreeing, with nothing on screen to say which
+one to believe. Found by the owner looking at a photograph of his own device and asking
+what the colours meant.
+
+**Why a ring and not a colour.** DESIGN.md §2's ceiling is six chromatic codes (DO-257A
+§2.1.6) and it is a hard one; "replace one instead" was not on offer here because all six
+are load-bearing. An enclosure is a different visual channel from hue, so it costs the
+ceiling nothing, it survives reduced colour discrimination, and a ring drawn round the
+thing you picked is the oldest selection idiom there is. THEME_WHITE, already in the
+palette.
+
+**They coincide until he taps.** The caption defaults to the nearest, so a radar nobody has
+touched shows the ring sitting on the magenta mark and reads as one indicator rather than
+two. They can only come apart as the direct result of something he just did — which is
+precisely when the difference is worth a second glyph. Moved in the same tick as the
+caption, from the same cache, for the reason the caption already did not wait: feedback
+that lands twelve seconds after the finger lifts is feedback he has given up on.
+
+**DESIGN.md §2 said "the selected aircraft" in the magenta row and it was never true of
+this screen.** Corrected there rather than here.
+
+**The second bug, which is the reason to read this entry even if the ring is uncontroversial.**
+`screen_radar_clear_selection()` — "leaving the radar drops whatever mark he had tapped" —
+was guarded by `prev_page == 2`. The deck had three pages when that was written and the
+radar was the third. **D60 collapsed it to two** (`PAGE_RADAR 0`, `PAGE_LISTE 1`) and this
+line was not one of the places that got updated, so `nav_page()` has returned 0 or 1 ever
+since and the branch was unreachable. The selection was never cleared: a mark tapped once
+stayed the subject of the caption across every visit to the radar until that aircraft
+flew out of range, however many minutes later.
+
+Nothing failed, nothing logged, and a confident comment sat on top of it describing
+behaviour the code had stopped having. **AGENTS.md §11's first failure pattern, in a
+function three lines long** — and worth recording as a data point about where that pattern
+actually lives: not in the gnarly code, which gets read carefully, but in a literal beside
+a comment nobody doubted. The page constants existed already; the line simply did not use
+them. It does now.
+
+Note the clear deliberately does **not** fire for the detail layer, which is an overlay and
+leaves `nav_page()` alone — tap the caption, read the card, come back, and the same
+aircraft is still ringed, which is the whole point of having tapped it.
+
+**`screen_radar_clear_selection()` still touches no LVGL**, and that is not laziness: its
+caller in `ui_task()` runs *before* `display_lock()` is taken. Hiding the ring there would
+have been a one-line lock violation of the rule AGENTS.md §7 calls non-negotiable, in the
+commit that fixed the function. The ring catches up on the next `screen_radar_update()`,
+which is under the lock, and the page is not on screen at that moment anyway.
+
+**Verified:** host suite green (all gates), firmware builds and signs. **Not verified on
+the glass** — no board was attached when this was written. The ring's geometry is arithmetic
+(r=16 with a 2 px border clears the triangle's 11 px nose by 3 px at every rotation), but
+whether a 2 px white circle reads as "this one" from his chair is D59's kind of question and
+needs the finger and the eye of the person holding it.
+
+## D76 — The radar, challenged: seven findings, a simulator to test them, and what it found
+
+**Where this came from.** D75 came out of the owner photographing his own panel and asking
+what the colours meant. Asked for the rest of the radar to be challenged against real radar
+displays and against UX practice, the review found seven things. All seven are fixed here.
+An eighth — rotating the scope so "up" is the direction the wall faces, instead of north — is
+a question for the man in the chair, not a defect, and is left open.
+
+**1. Amber no longer means "no flight plan".** AC 25-11A makes amber the caution colour, and
+TCAS spends it on exactly one thing: a traffic advisory. The radar was spending it on every
+private aircraft in the sky — by DESIGN.md's own count 14 of 38 aircraft, and precisely the
+low, loud ones he actually hears. It was also redundant, because filled-vs-hollow already
+carried route-known without loss. Route-less aircraft are now **cyan and hollow**. On this
+screen amber means one thing: what you are looking at is not live (item 4). DO-257A's rule
+is that colour must never be the *only* carrier, not that every fact needs a colour, so a
+shape-only distinction is fine for a fact with no colour meaning of its own. The detail
+layer's amber `KEIN FLUGPLAN` tag is DESIGN.md §2's own assignment and was deliberately
+left alone. Whether it has the same problem is a fair question, but it is a separate one.
+
+**2. Altitude is shown, as size.** Every real traffic display puts altitude on every
+target — TCAS as a relative-altitude tag with a trend arrow, ATC in the data block. This
+scope showed it nowhere, so it could not answer the reactive question (AGENTS.md §1):
+*which one is the one I can hear?* Distance does not answer it: a jet 3 km out at 11 000 m
+is silent, and a Cessna 8 km out at 700 m rattles the window. Text is ruled out by the type
+pass, so the answer uses a channel that was free: **mark size in three bands**, large below
+5 000 ft, small at or above 20 000 ft. It is three steps rather than a continuous scale,
+because a continuous size can only be compared, and he is not comparing, he is looking for
+the big one. Unknown altitude and "on the ground" both get the middle size: a taxiing
+airliner at Schwechat drawn as the lowest thing in the sky would be a confident wrong answer.
+This is a UX inference, not a certified-avionics convention. The mark box grew from 28 to
+34 px to fit the largest band and the touch pad shrank to match, so the finger target is
+unchanged at 56 px. The selection ring now scales with the mark it circles.
+
+**3. Trails.** Every PPI radar draws its history as fading returns behind each target. Here
+it is up to four dots, 15 s apart, stored as (distance, bearing) so they survive a change of
+radius, and dropped after 75 s so there is no long jump when he comes back from the Liste.
+A trail also shows direction for an aircraft that reports no track, without claiming a
+heading nobody sent, which is the rule the plain dot already follows. Two rules came out of
+the simulator rather than out of the review:
+
+- **A jump no aircraft could make restarts the trail.** The limit is 800 kt plus 1 nm of
+  slack, checked on *every* observation. ADS-B does report the odd wild position. The first
+  simulator frames showed the result without this rule: a dot 190 px from the aircraft it
+  belonged to, a ghost on the scope. Checking only when a fix is due would miss a jump and a
+  jump back inside one step, which is the case the simulator actually produced.
+- **Nothing is recorded while the data is stale.** The first reason written for this — that
+  frozen positions would pile the trail up under the mark — was wrong. A mutant that did
+  record while stale passed every check, because the pile sits under the mark and is never
+  drawn. The real reason only appears when the data returns. A fix taken while stale is
+  stamped "now" for a position that is minutes old. When a *slow* aircraft turns out to have
+  moved a few pixels, that fix is drawn as its newest trail dot, at a spot it left long ago;
+  a fast aircraft trips the jump guard either way. The simulator now builds exactly that
+  case, and the comment now gives that reason.
+
+**4. Stale data shows on the default screen.** `screen_radar_update()` took no network
+state. When the feed died, the detail layer said **KEINE DATEN**, while the radar — the
+default screen since D60, the thing on the wall — kept drawing the last picture. The marks
+froze where they were, and with WiFi fine the corner meter showed four bars. The radar now
+takes the same `net` the detail layer's tag is built from (`screen_radar_set_net()`), so the
+two cannot disagree. When stale, every mark and trail is drawn at 50 %, trails stop and fade
+(item 3), and the amber tag takes the identity line's slot, top centre. It is the same face
+and the same two words as the detail layer's tag.
+
+**5. The affordances the rest of the device already had.** Every list and settings row fills
+with `THEME_SURFACE_SEL` when pressed, and every row that leaves the screen carries
+`STR_ROW_ARROW`. The radar had neither — on the one screen where "did my tap land?" was a
+real problem.
+
+- **Marks:** the ring jumps to the mark the moment a finger lands, and goes back if the
+  finger slides off into a swipe. A 16 px glyph has nothing to fill, so the ring that is
+  about to move there anyway serves as the pressed state.
+- **Caption:** a pill (`SURFACE_SEL` fill, `BORDER_IDLE` edge — the device's existing
+  pressed card) shows behind the caption while it is pressed. Its top is pinned 1 px above
+  the caption box instead of padded evenly: the S cardinal above ends at y=413, and an
+  even 4 px drew the pill through it. That was measured in the simulator, not judged by eye.
+- **The arrow**, and the ladder that decides what gives way. The first cut let the arrow
+  outrank the name. The simulator's frames showed the cost: "Unbekanntes Flugzeug 11,1 km NO"
+  and "Cessna 172 Skyhawk 22,2 km SSW" both fit on one line before the arrow existed, and
+  both lost their name to it — a regression against D50 introduced by this very change. The
+  order now:
+  1. name, distance and arrow, if all three fit;
+  2. otherwise the **arrow gives way first**, because the name is information and the arrow
+     is a hint he learns once;
+  3. then the name gives way (D50).
+
+  The distance never gives way.
+
+**6. A way out of a selection.** A tapped mark stayed the caption's subject until the
+aircraft left range. D75 made that at least end when he leaves the page. Now:
+- **tap the empty scope** to let go — the gesture had no meaning before, and this is the one
+  it has everywhere else;
+- a selection nobody has touched the screen about for **30 s** goes back to the nearest —
+  the same 30 s as DESIGN.md §6's auto-return, for the same reason.
+
+The first of these needed care. `nav.c`'s `bubble_decorative()` stops at any object with a
+callback, so once the scope container owned a click, nothing inside it would bubble a press
+any more. The long press to Einstellungen from the scope — which D62 found had never once
+worked by finger, and fixed — would have died again, silently. So the container bubbles itself, and every
+decorative object inside it (rings, home marker, trail layer, pill) is made non-clickable,
+so a press falls through to the container. The simulator checks the long press on a ring's
+outline, in the corner, and on a mark (where it must *not* reach the deck).
+
+**7. The magenta mark no longer flickers.** Two aircraft at nearly the same range swapped the
+nearest on every poll, so the magenta mark jumped between them with nobody touching
+anything. The previous nearest now keeps the title until another aircraft is more than 10 %
+closer (with a 0.25 nm floor for aircraft right overhead). That opened a hole the simulator
+then caught: the caption named the radar's own nearest, but a caption tap opened index 0 of
+the caller's array — which, with hysteresis holding, can be a different aircraft. He would
+have read one name and been shown another. The tap now opens what the caption names.
+
+**Found on the way, and fixed.**
+
+- **The range read-out was top-left by accident.** The code asked for bearing 135 (SO, down
+  by the scope) and then "clamped it into the panel" using `lv_obj_get_x/y`. Those return
+  the coordinates of the *last layout pass*, not the position just set, so a label never
+  laid out read (0,0), was clamped to (20,20), and stayed there on every update after.
+  Everything else in the top row — the clock's "opposite corner", the identity line's
+  neighbour check — had long since been built around the accident. So the accident is now
+  what the code says, explicitly. It also cost the first version of item 4 a collision: the
+  stale tag went into the "free" top-left corner, printed over "55,6 km", and was caught
+  only because it was rendered. That is AGENTS.md §11's first pattern twice in one file.
+- The file header still described "exactly TWO labels, beside the nearest and
+  second-nearest". That had not been true since D35. Corrected.
+
+**The simulator — `make -C test/sim`.** D59 recorded that the radar's taps "could not be
+verified from here" and needed a finger. Every item above is drawing or touch routing, and
+the board was not attached for any of this. So there is now a finger. The simulator runs
+real LVGL 9.6 compiled for the host and the real `screen_radar.c`, inside a real
+`lv_tileview` as `nav.c` builds the deck. It renders into a 480×480 RGB565 framebuffer, a
+pointer device follows a script, and the clock only moves when the script says so. It
+checks from pixels, never from the screen's private state: pure white is drawn only by the
+ring, exact magenta only by the nearest mark, and exact amber only by the stale tag.
+Screenshots of every step land in `test/sim/out/`. Things worth knowing about it:
+
+- **It renders in DIRECT mode, like the device** (`CONFIG_BSP_DISPLAY_LVGL_DIRECT_MODE=y`).
+  The first version used FULL mode, which repaints every pixel on every frame, and so it
+  could not see a forgotten `lv_obj_invalidate()`. A mutant that removed the trail layer's
+  invalidate survived it. A harness that is kinder than the device tests a different device.
+- **Mutation-tested**, per §11's second pattern. 21 deliberate breakages across the screen
+  and `radar_logic.c`; 20 are caught. The survivor is an equivalent mutant — removing the
+  per-mark invalidate — because the trail layer's invalidate already covers the whole scope
+  on every update. Two false passes were found and fixed along the way. A stale binary made
+  "caption opens index 0" look like a survivor (the edit and the build fell in the same
+  second). And "recorded while stale" really did survive, until the test was rebuilt around
+  the case that matters (item 3).
+- **ASan and UBSan are on, and fatal.** Proved by planting a one-past-the-end read in the
+  trail loop: the build fails with `index 4 out of bounds for type 'const radar_fix_t[4]'`.
+  The compiler also flagged one undefined behaviour in the test itself: two
+  random-number-generator (LCG) calls in one expression, unsequenced. That was fixed too.
+- **A stress run** of 600 random steps — taps, swipes, long presses, changing skies,
+  outages — checks invariants after every step: with live data and aircraft up there is
+  exactly one ring and it sits on an aircraft; live data means no amber; an empty sky has no
+  ring. Run locally across 25 seeds, that is 15 000 steps with no failures. It first reported
+  41 "rings on no aircraft", which turned out to be the harness: its measurement box cut off
+  the outer arc of rings round aircraft clamped to the outer ring.
+- **In CI**, as a step after the firmware build, because LVGL's source lives in
+  `managed_components/`, which only the build fills in. It was run locally in the exact CI
+  image (`espressif/idf:v5.4`, Linux, gcc) before being trusted there: all suites green,
+  zero warnings. Leak detection is off, because LVGL's objects are never freed and
+  LeakSanitizer — on by default under Linux — would report them.
+
+**A review round, and two more gaps in item 6.** A code review of this change found three
+things. All three were reproduced in the simulator before they were fixed.
+- **The 30 s timeout ran while he read the detail card.** `ui_task` never calls
+  `screen_radar_update()` while the detail layer is up, and no press lands on the radar
+  then, so reading a card for 40 s cost him the very aircraft he had opened it for. That
+  broke the promise main.c makes ("tap the caption, read the card, come back, and the same
+  aircraft is still ringed"). The timeout now counts only time spent *looking at the radar*:
+  a gap of more than 5 s between two updates means the radar was covered, and the idle
+  clock restarts.
+- **A long press on the empty scope also let go of the selection.** LVGL 9 sends `CLICKED`
+  on release even after a long press; only `SHORT_CLICKED` is skipped. So opening
+  Einstellungen from the scope — or holding past 400 ms and thinking better of it — dropped
+  the aircraft he had tapped. The deselect now listens for `SHORT_CLICKED`: a hold is not a
+  tap.
+- **Two header comments still described the first cut**: no-route drawn amber, and the
+  stale tag in the top-left corner. Both corrected. That is §11's first pattern for the
+  third time in this entry, in comments written the same day as the code.
+
+**Cost.** Static RAM in `screen_radar.c` goes from 3 756 to 5 340 bytes (+1 584, nearly all
+of it the trail table), in internal RAM, because `CONFIG_SPIRAM_ALLOW_BSS_EXT_MEM` is off and
+turning it on is a device-wide change nobody asked for. For scale, M12 measured 58 KB of
+internal RAM free after its stress run. Four more LVGL objects. The trail layer invalidates
+a 288 px square every 2 s. `radar_logic.c` holds no state of its own.
+
+**Verified:** host suite green, including the new `test_radar` (43 checks, mutation-tested);
+simulator green (82 checks, after the review round); firmware builds and signs with no warnings in the new code;
+both suites also green in the CI container.
+
+**Not verified on the glass — no board was attached.** Everything above was checked on the
+host, against the device's own LVGL, fonts, colour format and render mode, and that settles a
+lot. It does not settle these, which need his eye and his finger:
+- whether the three mark sizes are distinguishable from the armchair;
+- whether the trails read as history or as clutter;
+- whether a 13 px amber tag is findable when the data is stale — the same question
+  AGENTS.md §8 already asks about the 13 px identity line;
+- and, once the board is attached, whether the internal-heap headroom is still comfortable:
+  `v` on the console, before and after a WLAN keyboard open (D58's failure).
