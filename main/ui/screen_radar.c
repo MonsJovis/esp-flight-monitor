@@ -17,33 +17,58 @@
  * the sky in text. So, per the task brief's own resolution ("if that means
  * fewer labels on screen, show fewer labels"):
  *
- *   - Exactly TWO aircraft get a text label: the nearest (always, per
- *     DESIGN.md §2 — it is also the magenta "thing you are heading
- *     toward") and the second-nearest. Two, not more, because two label
- *     blocks at this mandated size already use a meaningful fraction of
- *     the scope; a third risked overlapping one of the first two on
- *     ordinary traffic (the measured samples in AGENTS.md §6 run 7-13
- *     aircraft at 30 nm), which is worse than not labelling it.
- *   - Every OTHER aircraft is still drawn — coloured and shaped, per the
- *     colour/shape table below — just without a name or a distance figure
- *     next to it. A radar screen with fewer captions than mockuped is still
- *     a radar screen; one with thirteen overlapping 10 px labels is not
- *     readable, is not the same failure this project was warned about.
+ *   - ONE caption, in a band UNDER the scope, not beside any mark (D35).
+ *     It names the aircraft with the white selection ring round it — the
+ *     nearest until he taps another (D75). This comment said "exactly TWO
+ *     labels, beside the nearest and second-nearest" until D76; that was
+ *     true before D35 and the code stopped doing it then. The second label
+ *     slot (s_labels[1]) is still built, and always hidden.
+ *   - Every aircraft is drawn — coloured, shaped, sized and trailed, per the
+ *     table below — without words. A radar screen with fewer captions than
+ *     mockuped is still a radar screen; one with thirteen overlapping 10 px
+ *     labels is not readable, and is the failure this project was warned
+ *     about.
  *
  * Colour + shape table (RTCA DO-257A §2.1.6 — never colour alone):
  *
  *   nearest aircraft     -> THEME_MAGENTA  ("the thing you're heading toward")
- *   other, route known   -> THEME_CYAN     (secondary data)
- *   other, no route      -> THEME_AMBER    (caution, abnormal source)
+ *   every other aircraft -> THEME_CYAN     (secondary data), route or not
+ *
+ *   captioned aircraft   -> a white RING around it, whatever colour it is
+ *   altitude             -> mark SIZE: large below ~1 500 m, small at cruise
+ *   where it has been    -> a fading trail of up to four dots behind it
+ *   data gone stale      -> every mark dimmed, AND an amber tag top-left
+ *
+ * No-route aircraft USED to be amber (D76). Amber is AC 25-11A's caution
+ * colour — TCAS spends it on one thing, a traffic advisory — and here it was
+ * being spent on the most ordinary aircraft in the sky, every private
+ * aircraft there is, which are also the ones he actually hears. It was also
+ * redundant: filled-vs-hollow already carries route-known losslessly. Amber
+ * on this screen now means exactly one thing, the one thing it should: what
+ * you are looking at is not live.
+ *
+ * The ring is a separate channel from the colour on purpose, and D75 is the
+ * argument for it. Colour answers "which one is nearest", which the device
+ * decides and which moves on its own between polls; the ring answers "which
+ * one is the caption talking about", which HE decides by tapping. Those are
+ * two different questions and they had been sharing one answer: tapping a
+ * mark re-pointed the caption and left the scope looking exactly as it had,
+ * so the only evidence a tap had landed was 190 px away at the bottom edge.
+ * They coincide until he taps — the caption defaults to the nearest, so the
+ * ring starts out on the magenta mark — and they can only come apart as the
+ * direct result of something he just did, which is the moment he needs to
+ * see it.
  *
  *   route known -> FILLED mark   ·   no route  -> HOLLOW/outline mark
  *   has_track   -> triangle, rotated to point at track_deg
  *   no track    -> plain dot (rotating an arrow would claim a heading that
  *                  is not known, which is its own kind of misleading mark)
  *
- * So "no route" is never colour-alone: it is amber AND hollow. "No known
- * heading" is shape-alone by design (dot vs triangle), which is fine
- * because it carries no colour meaning of its own to begin with.
+ * So "no route" is shape-alone now — hollow — and that is fine for the same
+ * reason "no known heading" always was (dot vs triangle): it carries no
+ * colour meaning of its own, so there is no colour it could be confused by.
+ * DO-257A's rule is that colour must never be the ONLY carrier, not that
+ * every fact needs a colour.
  *
  * ============================================================================
  * BEARING -> SCREEN MAPPING, AND HOW IT WAS VERIFIED
@@ -88,6 +113,7 @@
 #include "strings_de.h"
 #include "identity.h"
 #include "widget_signal.h"
+#include "radar_logic.h"
 
 /* ============================================================================
  * FIXED GERMAN STRINGS — audited block, one hard-coded copy in this file:
@@ -121,21 +147,65 @@
 
 #define RADAR_CARDINAL_R 164 /* N/O/S/W sit just outside the outer ring */
 
-#define RADAR_KM_LABEL_BEARING 135.0f /* SO — clear of the rings' own N/O/S/W marks */
-#define RADAR_KM_LABEL_R       148.0f
 
 #define RADAR_HOME_R_OUTER  12
 #define RADAR_HOME_R_INNER  6
 #define RADAR_HOME_BORDER_W 2
 
-/* Aircraft mark bounding box. A triangle with these proportions has a
- * maximum reach of RADAR_MARK_NOSE (11 px) from its own centre at any
- * rotation, so a 28 px box leaves several px of margin on every side. */
-#define RADAR_MARK_BOX       28
+/* Aircraft mark geometry, at the MIDDLE altitude band. The other two bands
+ * scale every one of these (RADAR_SCALE_*), so the largest mark has a nose
+ * reach of 11 x 1.35 = 14.9 px plus 1 px of stroke — inside the 17 px half-box
+ * at any rotation. The box grew from 28 to 34 for that; the touch pad shrank
+ * by the same 3 px a side, so the finger target is still 56 px across. */
+#define RADAR_MARK_BOX       34
 #define RADAR_MARK_NOSE      11
 #define RADAR_MARK_BASE_HALF 7
 #define RADAR_MARK_TAIL      7
 #define RADAR_MARK_DOT_R     7
+
+/* Size by altitude band (radar_logic.h). Three steps, not a continuous scale:
+ * a continuous size cannot be read, only compared, and he is not comparing,
+ * he is looking for the big one. */
+#define RADAR_SCALE_LOW  1.35f
+#define RADAR_SCALE_MID  1.00f
+#define RADAR_SCALE_HIGH 0.75f
+
+/* Stale data: every mark and trail drawn at this opacity. The amber tag says
+ * it in words; this makes the scope itself look like what it is, a picture of
+ * a moment ago. */
+#define RADAR_STALE_OPA  LV_OPA_50
+
+/* Trail dots, newest to oldest. */
+#define RADAR_TRAIL_DOT_R 3
+static const lv_opa_t k_trail_opa[RADAR_TRAIL_LEN] = { LV_OPA_70, LV_OPA_50, LV_OPA_30, LV_OPA_20 };
+
+/* A tapped aircraft stays the caption's subject for this long without a
+ * touch on this screen, then the caption goes back to the nearest. Same 30 s
+ * as DESIGN.md §6's auto-return, for the same reason: the device's resting
+ * job is answering "what is up there now", and a selection nobody is looking
+ * at any more is just the panel refusing to do that job. */
+#define RADAR_SELECTION_TIMEOUT_MS 30000
+
+/* The 30 s is time he spends LOOKING AT THIS SCREEN without touching it, not
+ * wall-clock time. ui_task calls screen_radar_update() every 2 s only while
+ * the radar is what is on screen — never while the detail layer, the Liste or
+ * an overlay covers it — so a gap between two updates longer than this means
+ * the radar was not visible, and the idle clock restarts. Without it, reading
+ * the detail card for 40 s cost him the very aircraft he had opened it for,
+ * breaking the promise in main.c (found in review, reproduced in test/sim). */
+#define RADAR_OFFSCREEN_GAP_MS 5000
+
+/* Selection ring. Its outer radius is the mark's nose reach at its altitude
+ * band plus RADAR_SEL_RING_CLEAR (sel_ring_r()), so with a 2 px border its
+ * inner edge clears the nose by 3 px at every rotation and every band: r=14,
+ * 16 and 20 for the small, middle and large marks — close enough to read as
+ * "this one", far enough not to touch the glyph it is pointing at. It is its
+ * own object rather than part of mark_draw_cb because the largest ring (40 px)
+ * does not fit inside the 34 px mark box, and LVGL clips a draw callback to
+ * the object that owns it. */
+#define RADAR_SEL_RING_R 16       /* at the middle band; see sel_ring_r() */
+#define RADAR_SEL_RING_W 2
+#define RADAR_SEL_RING_CLEAR 5    /* nose-to-ring-outer, px, at every band */
 
 /* See this file's top comment for why exactly two. */
 /* The scope reaches y=404 (centre 240 + cardinal radius 164); the page
@@ -152,13 +222,22 @@
 
 /* Invisible touch margin around each mark. A fingertip is ~10 mm; the mark is
  * a 16 px triangle. */
-#define RADAR_MARK_TOUCH_PAD 14
+#define RADAR_MARK_TOUCH_PAD 11   /* + the 34 px box = the same 56 px as before */
 #define RADAR_CAPTION_TOUCH_PAD 16
 
 #define RADAR_NEAR_LABEL_COUNT 2
 #define RADAR_LABEL_NAME_W     132
 #define RADAR_LABEL_GAP_MARK   6
 #define RADAR_LABEL_LINE_GAP   4
+#define RADAR_CAPTION_ARROW_GAP 8
+#define RADAR_CAPTION_PILL_PAD_H 10
+/* The pill's top is pinned 1 px above the caption box, not padded evenly:
+ * the S cardinal directly above ends at y=413 and the box starts at 416, so
+ * an even 4 px put the pill's edge through the bottom of the S (measured in
+ * test/sim). The text's own ink starts well inside the box, so the pill still
+ * reads as padded; the 4 px below is what the page dots at 464 allow. */
+#define RADAR_CAPTION_PILL_PAD_TOP 1
+#define RADAR_CAPTION_PILL_PAD_BOT 4
 
 #define RADAR_DEG2RAD 0.017453292519943295f
 
@@ -176,6 +255,20 @@ static lv_obj_t *s_lbl_clock;
 static lv_obj_t *s_lbl_identity;   /* which aircraft the caption names */
 static lv_obj_t *s_lbl_cardinal[4];
 static lv_obj_t *s_home_outer, *s_home_inner;
+static lv_obj_t *s_sel_ring;       /* rings the mark the caption is about */
+static lv_obj_t *s_trail_layer;    /* one object, draws every trail */
+static lv_obj_t *s_lbl_stale;      /* amber KEIN NETZ / KEINE DATEN */
+static lv_obj_t *s_cap_arrow;      /* the caption's "this goes somewhere" */
+static lv_obj_t *s_cap_pill;       /* the caption's pressed state */
+
+static int         s_sel_idx     = -1;   /* where the ring is committed */
+static int         s_nearest_idx = -1;
+static char        s_nearest_hex[sizeof ((aircraft_t *)0)->hex];
+static int         s_rng_nm      = 1;
+static net_state_t s_net         = NET_OK;
+static uint32_t    s_last_touch_ms;
+static uint32_t    s_last_update_ms;
+static radar_trails_t s_trails;
 
 /* Per-mark drawing state, read by mark_draw_cb() out of the user_data
  * pointer each object was given at creation time. screen_radar_update()
@@ -183,8 +276,10 @@ static lv_obj_t *s_home_outer, *s_home_inner;
 typedef struct {
     lv_color_t color;
     float      heading_deg;
+    float      scale;        /* altitude band, RADAR_SCALE_* */
     bool       has_track;
     bool       filled;
+    bool       dim;          /* data is stale */
 } radar_mark_state_t;
 
 static lv_obj_t          *s_marks[MAX_AIRCRAFT];
@@ -216,12 +311,23 @@ static int  s_cap_count;
 
 static radar_select_cb s_select_cb;
 
-/* Defined below place_caption(), which they both need. */
+/* Defined below place_caption(), which they all need. */
 static void mark_clicked_cb(lv_event_t *e);
+static void mark_pressed_cb(lv_event_t *e);
+static void mark_released_cb(lv_event_t *e);
 static void caption_clicked_cb(lv_event_t *e);
+static void cont_pressed_cb(lv_event_t *e);
+static void cont_clicked_cb(lv_event_t *e);
+static void wire_caption_press(lv_obj_t *o);
 
 void screen_radar_set_select_cb(radar_select_cb cb) { s_select_cb = cb; }
 
+/* Deliberately touches nothing but this string. Its caller in main.c runs
+ * OUTSIDE display_lock() (ui_task takes the lock further down), and the rule
+ * that all LVGL calls happen on the display task behind the mutex is not one
+ * this screen gets to bend for a tidier-looking ring. The ring catches up on
+ * the next screen_radar_update(), which is under the lock — and the page is
+ * not on screen at the moment this runs anyway. */
 void screen_radar_clear_selection(void) { s_caption_hex[0] = '\0'; }
 
 /* One label slot = one name label + one distance label, reused for
@@ -312,30 +418,6 @@ static void place_centered_xy(lv_obj_t *obj, int32_t cx, int32_t cy)
     lv_obj_set_pos(obj, cx - w / 2, cy - h / 2);
 }
 
-/* Nudges an already-positioned object back inside the panel, `margin` px
- * from every edge — used for the outer-ring km readout, whose length
- * varies with the German-formatted distance text. */
-static void clamp_into_panel(lv_obj_t *obj, int32_t margin)
-{
-    int32_t x = lv_obj_get_x(obj);
-    int32_t y = lv_obj_get_y(obj);
-    int32_t w = lv_obj_get_width(obj);
-    int32_t h = lv_obj_get_height(obj);
-    if (x < margin) {
-        x = margin;
-    }
-    if (y < margin) {
-        y = margin;
-    }
-    if (x + w > THEME_SCREEN_WIDTH - margin) {
-        x = THEME_SCREEN_WIDTH - margin - w;
-    }
-    if (y + h > THEME_SCREEN_HEIGHT - margin) {
-        y = THEME_SCREEN_HEIGHT - margin - h;
-    }
-    lv_obj_set_pos(obj, x, y);
-}
-
 /* ============================================================================
  * Aircraft mark drawing — one lv_obj_t per potential aircraft (built once in
  * screen_radar_create()), each with this single draw-event callback bound
@@ -361,6 +443,8 @@ static void mark_draw_cb(lv_event_t *e)
     lv_obj_get_coords(obj, &area);
     float cx = ((float)area.x1 + (float)area.x2) / 2.0f;
     float cy = ((float)area.y1 + (float)area.y2) / 2.0f;
+    float    k   = (st->scale > 0.0f) ? st->scale : 1.0f;
+    lv_opa_t opa = st->dim ? RADAR_STALE_OPA : LV_OPA_COVER;
 
     if (st->has_track) {
         float b = fmodf(st->heading_deg, 360.0f);
@@ -377,9 +461,9 @@ static void mark_draw_cb(lv_event_t *e)
          * nose to the right, matching where an eastbound aircraft's own
          * mark sits relative to its neighbours. */
         const float local_pts[3][2] = {
-            { 0.0f,                          -(float)RADAR_MARK_NOSE },
-            { -(float)RADAR_MARK_BASE_HALF,   (float)RADAR_MARK_TAIL },
-            {  (float)RADAR_MARK_BASE_HALF,   (float)RADAR_MARK_TAIL },
+            { 0.0f,                              -(float)RADAR_MARK_NOSE * k },
+            { -(float)RADAR_MARK_BASE_HALF * k,   (float)RADAR_MARK_TAIL * k },
+            {  (float)RADAR_MARK_BASE_HALF * k,   (float)RADAR_MARK_TAIL * k },
         };
         lv_point_precise_t pts[3];
         for (int k = 0; k < 3; k++) {
@@ -398,16 +482,16 @@ static void mark_draw_cb(lv_event_t *e)
             dsc.p[1]  = pts[1];
             dsc.p[2]  = pts[2];
             dsc.color = st->color;
-            dsc.opa   = LV_OPA_COVER;
+            dsc.opa   = opa;
             lv_draw_triangle(layer, &dsc);
         } else {
-            /* No route: same triangle, drawn hollow — DO-257A never-colour-
-             * alone, so "no route" is amber AND an outline, not amber alone. */
+            /* No route: same triangle, drawn hollow. Same colour as a routed
+             * one since D76 — the outline IS the message. */
             lv_draw_line_dsc_t ldsc;
             lv_draw_line_dsc_init(&ldsc);
             ldsc.color       = st->color;
             ldsc.width       = 2;
-            ldsc.opa         = LV_OPA_COVER;
+            ldsc.opa         = opa;
             ldsc.round_start = 1;
             ldsc.round_end   = 1;
             for (int k = 0; k < 3; k++) {
@@ -425,21 +509,84 @@ static void mark_draw_cb(lv_event_t *e)
         rdsc.radius = LV_RADIUS_CIRCLE;
         if (st->filled) {
             rdsc.bg_color     = st->color;
-            rdsc.bg_opa       = LV_OPA_COVER;
+            rdsc.bg_opa       = opa;
             rdsc.border_width = 0;
         } else {
             rdsc.bg_opa        = LV_OPA_TRANSP;
             rdsc.border_color = st->color;
+            rdsc.border_opa   = opa;
             rdsc.border_width = 2;
         }
+        float r = (float)RADAR_MARK_DOT_R * k;
         lv_area_t dot_area = {
-            .x1 = (int32_t)(cx - (float)RADAR_MARK_DOT_R),
-            .y1 = (int32_t)(cy - (float)RADAR_MARK_DOT_R),
-            .x2 = (int32_t)(cx + (float)RADAR_MARK_DOT_R),
-            .y2 = (int32_t)(cy + (float)RADAR_MARK_DOT_R),
+            .x1 = (int32_t)(cx - r),
+            .y1 = (int32_t)(cy - r),
+            .x2 = (int32_t)(cx + r),
+            .y2 = (int32_t)(cy + r),
         };
         lv_draw_rect(layer, &rdsc, &dot_area);
     }
+}
+
+/* Every trail on the scope, drawn by ONE object sized to the scope rather
+ * than one per mark: a trail reaches up to a minute behind its aircraft, far
+ * outside any per-mark box, and a draw callback is clipped to its own object.
+ * Drawn BELOW the marks (created first), so a trail never covers the aircraft
+ * it belongs to — or a neighbour.
+ *
+ * Positions come out of radar_logic as (distance, bearing) and go through
+ * bearing_to_xy() like everything else on this screen, so there is still one
+ * mapping and one place east and west could swap. */
+static void trail_draw_cb(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_area_t   cont;
+    lv_obj_get_coords(s_cont, &cont);    /* s_cont-relative -> absolute */
+
+    for (int i = 0; i < s_cap_count; i++) {
+        if (!s_calc[i].valid) {
+            continue;
+        }
+        const radar_trail_t *t = radar_trails_find(&s_trails, s_cap_hex[i]);
+        if (t == NULL) {
+            continue;
+        }
+        const radar_mark_state_t *st = &s_mark_state[i];
+        for (int k = 0; k < t->count && k < RADAR_TRAIL_LEN; k++) {
+            float r_px = (float)RADAR_R_OUTER * (t->fix[k].dst_nm / (float)s_rng_nm);
+            if (r_px > (float)RADAR_R_OUTER) {
+                r_px = (float)RADAR_R_OUTER;
+            }
+            float x, y;
+            bearing_to_xy(t->fix[k].dir_deg, r_px, &x, &y);
+            /* A fix taken moments ago sits under the mark itself. Drawing it
+             * there only thickens the glyph. */
+            float dx = x - s_calc[i].x, dy = y - s_calc[i].y;
+            if (dx * dx + dy * dy < 36.0f) {
+                continue;
+            }
+            lv_draw_rect_dsc_t d;
+            lv_draw_rect_dsc_init(&d);
+            d.radius       = LV_RADIUS_CIRCLE;
+            d.bg_color     = st->color;
+            d.bg_opa       = st->dim ? (lv_opa_t)(k_trail_opa[k] / 2) : k_trail_opa[k];
+            d.border_width = 0;
+            int32_t ax = cont.x1 + (int32_t)x, ay = cont.y1 + (int32_t)y;
+            lv_area_t a = { ax - RADAR_TRAIL_DOT_R, ay - RADAR_TRAIL_DOT_R,
+                            ax + RADAR_TRAIL_DOT_R, ay + RADAR_TRAIL_DOT_R };
+            lv_draw_rect(layer, &d, &a);
+        }
+    }
+}
+
+/* Scenery must not eat a press. With the container now owning a click of its
+ * own (tap the empty scope to let go of a selection), nav.c's
+ * bubble_decorative() no longer walks in here — it stops at anything with a
+ * callback — so every object on this screen that is only looked at is made
+ * untouchable HERE, and the press falls through to the container. */
+static void make_scenery(lv_obj_t *o)
+{
+    lv_obj_set_clickable(o, false);
 }
 
 /* ============================================================================
@@ -457,6 +604,19 @@ void screen_radar_create(lv_obj_t *parent)
     lv_obj_set_style_pad_all(s_cont, 0, 0);
     lv_obj_set_style_border_width(s_cont, 0, 0);
     lv_obj_set_scrollable(s_cont, false);
+    /* The empty scope is a target now: a tap on it lets go of the selection.
+     * BUBBLE, so the press and the long press still reach nav.c's handlers
+     * on the tile — Einstellungen is "long-press anywhere", and anywhere
+     * includes here. CLICKED bubbles too, harmlessly: the tile has no click
+     * handler. */
+    lv_obj_set_clickable(s_cont, true);
+    lv_obj_set_event_bubble(s_cont, true);
+    lv_obj_add_event_cb(s_cont, cont_pressed_cb, LV_EVENT_PRESSED, NULL);
+    /* SHORT_CLICKED, not CLICKED: LVGL 9 sends CLICKED on release even after
+     * a long press, so holding the scope to open Einstellungen — or holding
+     * past LVGL's 400 ms and thinking better of it — also let go of the
+     * aircraft he had tapped. A hold is not a tap. */
+    lv_obj_add_event_cb(s_cont, cont_clicked_cb, LV_EVENT_SHORT_CLICKED, NULL);
 
     /* --- Range rings — DESIGN.md §2 assigns these two tokens specifically:
      * THEME_HAIRLINE for the outer ring, THEME_HAIRLINE_DIM for the two
@@ -464,6 +624,23 @@ void screen_radar_create(lv_obj_t *parent)
     s_ring_inner = make_ring(s_cont, RADAR_R_INNER, RADAR_RING_W_INNER, THEME_HAIRLINE_DIM);
     s_ring_mid   = make_ring(s_cont, RADAR_R_MID, RADAR_RING_W_INNER, THEME_HAIRLINE_DIM);
     s_ring_outer = make_ring(s_cont, RADAR_R_OUTER, RADAR_RING_W_OUTER, THEME_HAIRLINE);
+    make_scenery(s_ring_inner);
+    make_scenery(s_ring_mid);
+    make_scenery(s_ring_outer);
+
+    /* --- Trails, one layer under every mark. Sized to the scope plus a dot,
+     * not the whole panel, because it is invalidated on every update and the
+     * panel is not the scope. --- */
+    s_trail_layer = lv_obj_create(s_cont);
+    lv_obj_remove_style_all(s_trail_layer);
+    lv_obj_set_size(s_trail_layer, 2 * (RADAR_R_OUTER + RADAR_TRAIL_DOT_R + 1),
+                    2 * (RADAR_R_OUTER + RADAR_TRAIL_DOT_R + 1));
+    lv_obj_set_pos(s_trail_layer, RADAR_CX - RADAR_R_OUTER - RADAR_TRAIL_DOT_R - 1,
+                   RADAR_CY - RADAR_R_OUTER - RADAR_TRAIL_DOT_R - 1);
+    lv_obj_set_scrollable(s_trail_layer, false);
+    make_scenery(s_trail_layer);
+    lv_obj_add_event_cb(s_trail_layer, trail_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
+    radar_trails_reset(&s_trails);
 
     /* --- Outer-ring range readout, in km. Chrome tier — a scale reference,
      * never the thing he has to read up close — so it stays at the same
@@ -484,6 +661,17 @@ void screen_radar_create(lv_obj_t *parent)
      * more than the two lines being adjacent. */
     s_lbl_identity = make_label(s_cont, &plex_mono_13, THEME_TEXT_TERTIARY);
     lv_obj_set_hidden(s_lbl_identity, true);
+
+    /* Stale-data tag, top CENTRE, in the identity line's slot — the identity
+     * gives the slot up while the data is stale (place_identity()). The two
+     * corners are the range read-out and the clock, and a first version put
+     * this in the left one, on top of the range: found by rendering it
+     * (test/sim), which is the only reason it did not ship. Same face, same
+     * colour and the same two words as the detail layer's, so "KEINE DATEN"
+     * means one thing wherever it appears. Before D76 the radar — the default
+     * screen — had no way to say it at all. */
+    s_lbl_stale = make_label(s_cont, &plex_mono_13, THEME_AMBER);
+    lv_obj_set_hidden(s_lbl_stale, true);
 
     /* The clock, balancing the range read-out across the top. */
     s_lbl_clock = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
@@ -525,6 +713,8 @@ void screen_radar_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(s_home_inner, THEME_GREEN, 0);
     lv_obj_set_style_bg_opa(s_home_inner, LV_OPA_COVER, 0);
     lv_obj_set_scrollable(s_home_inner, false);
+    make_scenery(s_home_outer);
+    make_scenery(s_home_inner);
 
     /* --- Aircraft marks: built once, MAX_AIRCRAFT of them, hidden until
      * the first update. Each is an empty bounding box whose only job is to
@@ -549,9 +739,53 @@ void screen_radar_create(lv_obj_t *parent)
         lv_obj_set_clickable(m, true);
         lv_obj_set_ext_click_area(m, RADAR_MARK_TOUCH_PAD);
         lv_obj_add_event_cb(m, mark_clicked_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+        /* Touch-down feedback: the ring jumps to the mark under the finger
+         * the moment it lands, and goes back if the finger slides off into a
+         * swipe. Every list row on this device answers a press with a fill
+         * (THEME_SURFACE_SEL); a 16 px glyph has nothing to fill, so the ring
+         * that is about to move there anyway is the fill. */
+        lv_obj_add_event_cb(m, mark_pressed_cb, LV_EVENT_PRESSED, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(m, mark_released_cb, LV_EVENT_RELEASED, NULL);
+        lv_obj_add_event_cb(m, mark_released_cb, LV_EVENT_PRESS_LOST, NULL);
 
         s_marks[i] = m;
     }
+
+    /* --- Selection ring, created AFTER the marks so it draws over them: a
+     * ring hidden behind a neighbouring mark is not a selection indicator.
+     * THEME_WHITE, which is already one of DESIGN.md §2's six and so costs
+     * the DO-257A ceiling nothing, and an enclosure rather than a seventh
+     * colour precisely because the ceiling is a hard one.
+     *
+     * Explicitly NOT clickable. lv_obj_create() hands out
+     * LV_OBJ_FLAG_CLICKABLE by default and this object sits directly on top
+     * of a mark, so leaving the default would make the selected aircraft the
+     * one aircraft on the scope he can no longer tap. --- */
+    s_sel_ring = lv_obj_create(s_cont);
+    lv_obj_remove_style_all(s_sel_ring);
+    lv_obj_set_size(s_sel_ring, RADAR_SEL_RING_R * 2, RADAR_SEL_RING_R * 2);
+    lv_obj_set_style_radius(s_sel_ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(s_sel_ring, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_sel_ring, RADAR_SEL_RING_W, 0);
+    lv_obj_set_style_border_color(s_sel_ring, THEME_WHITE, 0);
+    lv_obj_set_scrollable(s_sel_ring, false);
+    lv_obj_set_clickable(s_sel_ring, false);
+    lv_obj_set_hidden(s_sel_ring, true);
+
+    /* The caption's pressed state: a pill behind the whole caption, shown
+     * only while a finger is on it. THEME_SURFACE_SEL with a THEME_BORDER_IDLE
+     * edge, which is the device's existing pressed/selected card and not a
+     * new look. Created BEFORE the caption labels so it draws under them. */
+    s_cap_pill = lv_obj_create(s_cont);
+    lv_obj_remove_style_all(s_cap_pill);
+    lv_obj_set_style_radius(s_cap_pill, 10, 0);
+    lv_obj_set_style_bg_color(s_cap_pill, THEME_SURFACE_SEL, 0);
+    lv_obj_set_style_bg_opa(s_cap_pill, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_cap_pill, THEME_BORDER_IDLE, 0);
+    lv_obj_set_style_border_width(s_cap_pill, 1, 0);
+    lv_obj_set_scrollable(s_cap_pill, false);
+    make_scenery(s_cap_pill);
+    lv_obj_set_hidden(s_cap_pill, true);
 
     /* --- The two nearest-aircraft labels — see this file's top comment for
      * why exactly two. Built once, hidden until the first update. --- */
@@ -569,10 +803,25 @@ void screen_radar_create(lv_obj_t *parent)
             lv_obj_set_ext_click_area(s_labels[i].dist, RADAR_CAPTION_TOUCH_PAD);
             lv_obj_add_event_cb(s_labels[i].name, caption_clicked_cb, LV_EVENT_CLICKED, NULL);
             lv_obj_add_event_cb(s_labels[i].dist, caption_clicked_cb, LV_EVENT_CLICKED, NULL);
+            wire_caption_press(s_labels[i].name);
+            wire_caption_press(s_labels[i].dist);
         }
         lv_obj_set_hidden(s_labels[i].name, true);
         lv_obj_set_hidden(s_labels[i].dist, true);
     }
+
+    /* The caption's arrow — STR_ROW_ARROW, the same glyph, face and grey the
+     * Einstellungen rows use for "this takes you somewhere". The caption does
+     * take him somewhere (the detail layer) and until D76 said so only by
+     * being the one thing on the screen made of words, which is not a signal
+     * anywhere else on this device. Part of the same button. */
+    s_cap_arrow = make_label(s_cont, &plex_sans_cond_25, THEME_TEXT_LABEL);
+    lv_label_set_text(s_cap_arrow, STR_ROW_ARROW);
+    lv_obj_set_clickable(s_cap_arrow, true);
+    lv_obj_set_ext_click_area(s_cap_arrow, RADAR_CAPTION_TOUCH_PAD);
+    lv_obj_add_event_cb(s_cap_arrow, caption_clicked_cb, LV_EVENT_CLICKED, NULL);
+    wire_caption_press(s_cap_arrow);
+    lv_obj_set_hidden(s_cap_arrow, true);
 }
 
 /* What the caption says for one aircraft: the destination if the route is
@@ -648,7 +897,10 @@ static void place_identity(const char *id)
     if (s_lbl_identity == NULL) {
         return;
     }
-    if (id == NULL || id[0] == '\0') {
+    /* While the data is stale the slot belongs to the amber tag. "Which
+     * aircraft" matters less than "none of this is live", and two lines of
+     * chrome in one slot is one too many. */
+    if (id == NULL || id[0] == '\0' || s_net != NET_OK) {
         lv_obj_set_hidden(s_lbl_identity, true);
         return;
     }
@@ -680,6 +932,15 @@ static void place_identity(const char *id)
     lv_obj_set_hidden(s_lbl_identity, false);
 }
 
+/* Sizes the pressed-state pill to whatever the caption turned out to be.
+ * Positioned on every placement, shown only while pressed. */
+static void place_caption_pill(int32_t x, int32_t y, int32_t w, int32_t h)
+{
+    lv_obj_set_pos(s_cap_pill, x - RADAR_CAPTION_PILL_PAD_H, y - RADAR_CAPTION_PILL_PAD_TOP);
+    lv_obj_set_size(s_cap_pill, w + 2 * RADAR_CAPTION_PILL_PAD_H,
+                    h + RADAR_CAPTION_PILL_PAD_TOP + RADAR_CAPTION_PILL_PAD_BOT);
+}
+
 /* Paints and positions the caption. Split out of screen_radar_update() so a
  * tap on a mark can repaint through exactly this path — a second copy of the
  * fit rule would be a second chance to get it wrong, and this one is already
@@ -691,7 +952,7 @@ static bool place_caption(const char *name, const char *dist)
     lv_label_set_text(s_labels[0].name, name);
     lv_label_set_text(s_labels[0].dist, dist);
 
-    /* ONE line, or no name at all.
+    /* ONE line, and a ladder for what gives way when it will not fit.
      *
      * The caption band is the 44 px between the scope and the page dots, so a
      * name that wraps does not get taller — it gets cut across the distance
@@ -699,29 +960,44 @@ static bool place_caption(const char *name, const char *dist)
      * "Unbekannte / s Flugzeug" over the top of "9,7 km NNO", and D46 made
      * that string common rather than rare.
      *
-     * When the pair will not fit on one line the NAME yields, not the
-     * distance — the same priority D48 applies to the hero screen, and for
-     * the same reason: the magenta mark already says WHICH aircraft this is,
-     * so the caption's remaining job is how far and which way. Measured
-     * unwrapped, because a wrapped label reports the width it was given
-     * rather than the width it wants. */
+     *   1. name  distance  arrow      everything fits
+     *   2. name  distance             the ARROW gives way first
+     *   3.       distance  arrow      then the name (D50)
+     *
+     * The distance never yields — the same priority D48 applies to the hero
+     * screen: the ring already says WHICH aircraft this is, so the caption's
+     * irreducible job is how far and which way. The arrow yields before the
+     * name because the name is information and the arrow is a hint he learns
+     * once (D76). The first cut of D76 had the arrow outrank the name, and the
+     * simulator showed what that cost: "Unbekanntes Flugzeug 11,1 km NO" and
+     * "Cessna 172 Skyhawk 22,2 km SSW" both fit before the arrow existed and
+     * both lost their name to it.
+     *
+     * Measured unwrapped, because a wrapped label reports the width it was
+     * given rather than the width it wants. */
     lv_point_t want;
     lv_text_get_size(&want, name, &plex_sans_cond_25, 0, 0, LV_COORD_MAX,
                      LV_TEXT_FLAG_NONE);
     lv_obj_update_layout(s_labels[0].dist);
-    bool name_fits = (want.x + RADAR_CAPTION_GAP + lv_obj_get_width(s_labels[0].dist))
-                     <= (THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING);
+    lv_obj_update_layout(s_cap_arrow);
+    const int32_t avail = THEME_SCREEN_WIDTH - 2 * THEME_SIDE_PADDING;
+    const int32_t nw = want.x;
+    const int32_t dw = lv_obj_get_width(s_labels[0].dist);
+    const int32_t aw = lv_obj_get_width(s_cap_arrow);
+    const int32_t name_part  = nw + RADAR_CAPTION_GAP;
+    const int32_t arrow_part = RADAR_CAPTION_ARROW_GAP + aw;
 
-    lv_obj_set_hidden(s_labels[0].name, !name_fits);
-    lv_obj_set_hidden(s_labels[0].dist, false);
-
-    if (!name_fits) {
-        lv_obj_update_layout(s_labels[0].dist);
-        int32_t w = lv_obj_get_width(s_labels[0].dist);
-        lv_obj_set_pos(s_labels[0].dist, (THEME_SCREEN_WIDTH - w) / 2,
-                       RADAR_CAPTION_Y);
-        return false;
+    bool show_name, show_arrow;
+    if (name_part + dw + arrow_part <= avail) {
+        show_name = true;  show_arrow = true;
+    } else if (name_part + dw <= avail) {
+        show_name = true;  show_arrow = false;
+    } else {
+        show_name = false; show_arrow = true;
     }
+    lv_obj_set_hidden(s_labels[0].name, !show_name);
+    lv_obj_set_hidden(s_labels[0].dist, false);
+    lv_obj_set_hidden(s_cap_arrow, !show_arrow);
 
     /* Give the label the width the text actually wants. It was created with a
      * fixed 132 px and LV_LABEL_LONG_MODE_WRAP, which is about eleven
@@ -729,27 +1005,167 @@ static bool place_caption(const char *name, const char *dist)
      * check above would have called it a fit. The cap exists to stop a
      * caption running off the panel; now that the fit is measured properly,
      * the cap is the measurement. */
-    lv_obj_set_width(s_labels[0].name, want.x);
+    if (show_name) {
+        lv_obj_set_width(s_labels[0].name, nw);
+        lv_obj_update_layout(s_labels[0].name);
+    }
 
-    /* One line, centred as a pair, so a long name and a short distance stay
-     * visually joined instead of drifting to opposite edges. */
-    lv_obj_update_layout(s_labels[0].name);
-    lv_obj_update_layout(s_labels[0].dist);
-    int32_t nw = lv_obj_get_width(s_labels[0].name);
-    int32_t dw = lv_obj_get_width(s_labels[0].dist);
-    int32_t nh = lv_obj_get_height(s_labels[0].name);
+    /* One line, centred as a group, so a long name and a short distance stay
+     * visually joined instead of drifting to opposite edges; each part is
+     * centred vertically on the tallest. */
+    int32_t nh = show_name ? lv_obj_get_height(s_labels[0].name) : 0;
     int32_t dh = lv_obj_get_height(s_labels[0].dist);
-    int32_t total = nw + RADAR_CAPTION_GAP + dw;
+    int32_t ah = show_arrow ? lv_obj_get_height(s_cap_arrow) : 0;
+    int32_t h  = dh;
+    if (nh > h) h = nh;
+    if (ah > h) h = ah;
+    int32_t total = (show_name ? name_part : 0) + dw + (show_arrow ? arrow_part : 0);
     int32_t x = (THEME_SCREEN_WIDTH - total) / 2;
     if (x < THEME_SIDE_PADDING) x = THEME_SIDE_PADDING;
-    int32_t base = RADAR_CAPTION_Y;
+    const int32_t base = RADAR_CAPTION_Y;
 
-    lv_obj_set_pos(s_labels[0].name, x, base + (dh > nh ? (dh - nh) / 2 : 0));
-    lv_obj_set_pos(s_labels[0].dist, x + nw + RADAR_CAPTION_GAP,
-                   base + (nh > dh ? (nh - dh) / 2 : 0));
-    return true;
+    int32_t cx = x;
+    if (show_name) {
+        lv_obj_set_pos(s_labels[0].name, cx, base + (h - nh) / 2);
+        cx += name_part;
+    }
+    lv_obj_set_pos(s_labels[0].dist, cx, base + (h - dh) / 2);
+    cx += dw;
+    if (show_arrow) {
+        lv_obj_set_pos(s_cap_arrow, cx + RADAR_CAPTION_ARROW_GAP, base + (h - ah) / 2);
+    }
+    place_caption_pill(x, base, total, h);
+    return show_name;
 }
 
+
+/* Puts the ring on mark `idx`, or takes it off the scope for idx < 0.
+ *
+ * Centred from s_calc[] rather than from the object's own coordinates, so it
+ * uses the very same two numbers screen_radar_update() used to place the mark
+ * — a ring computed a second way is a ring that can sit a pixel off the thing
+ * it is circling, and on a glyph this small that reads as a rendering fault.
+ *
+ * s_calc[idx].valid is exactly the condition under which the mark itself was
+ * unhidden, so this cannot ring an aircraft that is not on screen. */
+/* The ring's radius for mark `idx`: the mark's own nose reach at its altitude
+ * band, plus a fixed clearance. So a small cruise-altitude mark gets a tight
+ * ring and a large low one gets a ring it fits inside — a single fixed ring
+ * either swamps the small mark or cuts through the large one. Comes out at
+ * exactly RADAR_SEL_RING_R for the middle band. */
+static int32_t sel_ring_r(int idx)
+{
+    float k = s_mark_state[idx].scale > 0.0f ? s_mark_state[idx].scale : 1.0f;
+    return (int32_t)ceilf((float)RADAR_MARK_NOSE * k) + RADAR_SEL_RING_CLEAR;
+}
+
+/* Draws the ring at `idx` without making it the selection. Used both for the
+ * committed placement below and for the press preview, which must be able to
+ * put it back where it was. */
+static void ring_at(int idx)
+{
+    if (s_sel_ring == NULL) {
+        return;
+    }
+    if (idx < 0 || idx >= s_cap_count || !s_calc[idx].valid) {
+        lv_obj_set_hidden(s_sel_ring, true);
+        return;
+    }
+    int32_t r = sel_ring_r(idx);
+    lv_obj_set_size(s_sel_ring, 2 * r, 2 * r);
+    lv_obj_set_pos(s_sel_ring, (int32_t)(s_calc[idx].x - (float)r),
+                   (int32_t)(s_calc[idx].y - (float)r));
+    lv_obj_set_hidden(s_sel_ring, false);
+}
+
+static void place_sel_ring(int idx)
+{
+    s_sel_idx = idx;
+    ring_at(idx);
+}
+
+/* Any press on this screen counts as him still being here, for
+ * RADAR_SELECTION_TIMEOUT_MS. */
+static void note_touch(void)
+{
+    s_last_touch_ms = lv_tick_get();
+}
+
+/* Finger down on a mark: the ring goes there now, before he lifts. */
+static void mark_pressed_cb(lv_event_t *e)
+{
+    note_touch();
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i >= 0 && i < s_cap_count && s_cap_hex[i][0] != '\0') {
+        ring_at(i);
+    }
+}
+
+/* Finger up, or slid off into a swipe: put the ring back on the committed
+ * selection. If it was a tap, CLICKED arrives right after this (LVGL sends
+ * RELEASED first) and commits the new position before the next frame is
+ * rendered, so there is no visible hop back and forth. */
+static void mark_released_cb(lv_event_t *e)
+{
+    (void)e;
+    ring_at(s_sel_idx);
+}
+
+/* Tap on the empty scope: let go of whatever he had tapped, caption and ring
+ * back to the nearest. The gesture had no meaning before and this is the one
+ * it has everywhere else — tap outside to deselect. */
+static void cont_pressed_cb(lv_event_t *e)
+{
+    (void)e;
+    note_touch();
+}
+
+static void clear_to_nearest(void)
+{
+    s_caption_hex[0] = '\0';
+    int n = s_nearest_idx;
+    if (n < 0 || n >= s_cap_count || !s_calc[n].valid) {
+        return;          /* nothing on the scope; the next update settles it */
+    }
+    place_identity_for(n, place_caption(s_cap_name[n], s_cap_dist[n]));
+    place_sel_ring(n);
+}
+
+static void cont_clicked_cb(lv_event_t *e)
+{
+    /* Only a click that landed on the container itself. Children that own
+     * their taps do not bubble, so this is belt and braces — but a bubbled
+     * click from some future child would otherwise undo the very selection
+     * that child just made. */
+    if (lv_event_get_target_obj(e) != s_cont) {
+        return;
+    }
+    if (s_caption_hex[0] != '\0') {
+        clear_to_nearest();
+    }
+}
+
+static void caption_pressed_cb(lv_event_t *e)
+{
+    (void)e;
+    note_touch();
+    lv_obj_set_hidden(s_cap_pill, false);
+}
+
+static void caption_released_cb(lv_event_t *e)
+{
+    (void)e;
+    lv_obj_set_hidden(s_cap_pill, true);
+}
+
+/* Name, distance and arrow are three labels and one button: a press on any of
+ * them lights the pill behind all three. */
+static void wire_caption_press(lv_obj_t *o)
+{
+    lv_obj_add_event_cb(o, caption_pressed_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(o, caption_released_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(o, caption_released_cb, LV_EVENT_PRESS_LOST, NULL);
+}
 
 /* A tap on a mark re-points the caption. It does NOT leave the screen: he is
  * looking at the scope, and answering "which one is that" by throwing him onto
@@ -762,8 +1178,13 @@ static void mark_clicked_cb(lv_event_t *e)
     if (i < 0 || i >= s_cap_count || s_cap_hex[i][0] == '\0') {
         return;
     }
+    note_touch();
     memcpy(s_caption_hex, s_cap_hex[i], sizeof s_caption_hex);
     place_identity_for(i, place_caption(s_cap_name[i], s_cap_dist[i]));
+    /* Same tick as the caption, for the same reason the caption does not wait
+     * for the next poll: feedback that arrives up to twelve seconds after the
+     * finger lifts is feedback he has already given up on. */
+    place_sel_ring(i);
 }
 
 /* A tap on the caption commits: it asks for the full view of whatever the
@@ -777,10 +1198,13 @@ static void caption_clicked_cb(lv_event_t *e)
         return;
     }
     /* Whatever the caption is showing: the tapped aircraft if there is one,
-     * otherwise the nearest, which is what index 0 is after the caller's
-     * distance sort. */
+     * otherwise the nearest. NOT index 0: that is the caller's nearest, and
+     * since D76 the radar's nearest is sticky and can be a different
+     * aircraft for a poll or two — the caption names s_nearest_idx, so the
+     * tap must open s_nearest_idx, or he reads one name and gets another. */
     const char *hex = (s_caption_hex[0] != '\0') ? s_caption_hex
-                    : (s_cap_count > 0 ? s_cap_hex[0] : NULL);
+                    : ((s_nearest_idx >= 0 && s_nearest_idx < s_cap_count)
+                           ? s_cap_hex[s_nearest_idx] : NULL);
     if (hex != NULL && hex[0] != '\0') {
         s_select_cb(hex);
     }
@@ -796,6 +1220,43 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         n = MAX_AIRCRAFT; /* defensive re-cap — see screen_radar.h */
     }
     int rng_nm = (radius_nm > 0) ? radius_nm : 1;
+    s_rng_nm   = rng_nm;
+    bool stale = (s_net != NET_OK);
+    uint32_t now_ms = lv_tick_get();
+
+    /* Back on screen after something covered it: time away was not idle time
+     * on this screen (RADAR_OFFSCREEN_GAP_MS). */
+    if (lv_tick_elaps(s_last_update_ms) > RADAR_OFFSCREEN_GAP_MS) {
+        s_last_touch_ms = now_ms;
+    }
+    s_last_update_ms = now_ms;
+
+    /* --- Stale data, said in words: the same two tags, in the same amber,
+     * as the detail layer. --- */
+    if (stale) {
+        lv_label_set_text(s_lbl_stale, (s_net == NET_NO_WIFI) ? STR_NO_NETWORK_TAG
+                                                               : STR_NO_DATA_TAG);
+        lv_obj_update_layout(s_lbl_stale);
+        lv_obj_set_pos(s_lbl_stale, (THEME_SCREEN_WIDTH - lv_obj_get_width(s_lbl_stale)) / 2,
+                       RADAR_CLOCK_Y);
+    }
+    lv_obj_set_hidden(s_lbl_stale, !stale);
+
+    /* --- Trails. Recorded only while the data is live. While stale the
+     * positions are frozen, and a fix taken then is stamped "now" for a
+     * position that is really minutes old — harmless while it sits under the
+     * mark, but when the data comes back and a SLOW aircraft turns out to
+     * have moved a few pixels, that fix is drawn as the newest trail dot at a
+     * spot the aircraft left long ago (a fast one trips radar_logic's jump
+     * guard instead). So while stale the trail is only aged: it fades out,
+     * which is itself a sign the scope has stopped moving, and starts clean
+     * when the data returns. test/sim checks exactly this case. --- */
+    if (stale) {
+        radar_trails_age(&s_trails, now_ms);
+    } else {
+        radar_trails_observe(&s_trails, ac, n, now_ms);
+    }
+    lv_obj_invalidate(s_trail_layer);
 
     /* --- Outer-ring range readout, in km. The panel speaks km everywhere
      * (AGENTS.md §1); fmt_distance_km() owns both the unit conversion and
@@ -803,12 +1264,16 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     char km_buf[24];
     fmt_distance_km((float)radius_nm, km_buf, sizeof km_buf);
     lv_label_set_text(s_lbl_km, km_buf);
-    {
-        float x, y;
-        bearing_to_xy(RADAR_KM_LABEL_BEARING, RADAR_KM_LABEL_R, &x, &y);
-        place_centered_xy(s_lbl_km, (int32_t)x, (int32_t)y);
-        clamp_into_panel(s_lbl_km, THEME_SIDE_PADDING);
-    }
+    /* Top left, level with the clock. Stated outright since D76, because it
+     * used to happen by accident: the code asked for bearing 135 (SO, down by
+     * the scope) and then "clamped it into the panel" with lv_obj_get_x/y —
+     * which read the coordinates of the LAST LAYOUT PASS, not the position
+     * just set. A label never laid out reads (0,0), the clamp pushed that to
+     * (20,20), and there it stayed on every update after. Everything else in
+     * the top row — the clock's "opposite corner", the identity's neighbour
+     * check, nav.c's signal meter — had long since been built around the
+     * accident, so the accident is what is now written down. */
+    lv_obj_set_pos(s_lbl_km, THEME_SIDE_PADDING, RADAR_CLOCK_Y);
 
     /* --- Per-aircraft geometry + route status, computed once up front:
      * both the marks loop and the label loop below need it. --- */
@@ -839,21 +1304,17 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
         s_calc[i].valid = false;
     }
 
-    /* --- Nearest and second-nearest, by real distance (not screen
-     * geometry) — the nearest drives the magenta "thing you're heading
-     * toward" mark, and both drive which two aircraft get a text label. --- */
-    int nearest_idx = -1;
-    int second_idx  = -1;
-    for (int i = 0; i < n; i++) {
-        if (!s_calc[i].valid) {
-            continue;
-        }
-        if (nearest_idx < 0 || ac[i].dst_nm < ac[nearest_idx].dst_nm) {
-            second_idx  = nearest_idx;
-            nearest_idx = i;
-        } else if (second_idx < 0 || ac[i].dst_nm < ac[second_idx].dst_nm) {
-            second_idx = i;
-        }
+    /* --- Nearest, by real distance (not screen geometry), with hysteresis:
+     * last poll's nearest keeps the magenta mark through a near-tie, so two
+     * aircraft at the same range do not swap it back and forth on their own
+     * (radar_logic.h, D76). The same `valid` rule as s_calc above — both are
+     * dst_nm >= 0 — so the index is always one that has a mark. --- */
+    int nearest_idx = radar_pick_nearest(ac, n, s_nearest_hex);
+    s_nearest_idx   = nearest_idx;
+    if (nearest_idx >= 0) {
+        memcpy(s_nearest_hex, ac[nearest_idx].hex, sizeof s_nearest_hex);
+    } else {
+        s_nearest_hex[0] = '\0';
     }
 
     /* --- Marks: colour + shape per aircraft. See this file's top comment
@@ -866,13 +1327,21 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
             continue;
         }
         radar_calc_t *c = &s_calc[i];
-        lv_color_t    color =
-            (i == nearest_idx) ? THEME_MAGENTA : (c->has_route ? THEME_CYAN : THEME_AMBER);
+        /* Magenta for the nearest, cyan for everyone else. Route or no route
+         * is the fill, not the colour — see this file's top comment, D76. */
+        lv_color_t color = (i == nearest_idx) ? THEME_MAGENTA : THEME_CYAN;
 
+        static const float k_band_scale[] = {
+            [RADAR_ALT_LOW]  = RADAR_SCALE_LOW,
+            [RADAR_ALT_MID]  = RADAR_SCALE_MID,
+            [RADAR_ALT_HIGH] = RADAR_SCALE_HIGH,
+        };
         s_mark_state[i].color       = color;
         s_mark_state[i].has_track   = c->has_track;
         s_mark_state[i].heading_deg = c->track_deg;
         s_mark_state[i].filled      = c->has_route;
+        s_mark_state[i].scale       = k_band_scale[radar_alt_band(ac[i].alt_ft)];
+        s_mark_state[i].dim         = stale;
 
         /* Cache what this mark's caption would say, so a tap can answer at
          * once. Only for aircraft actually on screen: an index that is hidden
@@ -923,8 +1392,19 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     if (nearest_idx < 0) {
         lv_obj_set_hidden(s_labels[0].name, true);
         lv_obj_set_hidden(s_labels[0].dist, true);
+        lv_obj_set_hidden(s_cap_arrow, true);
+        lv_obj_set_hidden(s_cap_pill, true);
         place_identity(NULL);          /* nothing captioned, nothing to name */
+        place_sel_ring(-1);            /* ...and nothing to ring */
         return;
+    }
+
+    /* A selection nobody has touched the screen about for 30 s is let go.
+     * Unsigned elapsed time, so the tick wrapping after 49 days is not a
+     * selection that expires instantly or never. */
+    if (s_caption_hex[0] != '\0' &&
+        lv_tick_elaps(s_last_touch_ms) > RADAR_SELECTION_TIMEOUT_MS) {
+        s_caption_hex[0] = '\0';
     }
 
     /* Which aircraft gets the caption: the one he tapped, if it is still up
@@ -953,6 +1433,15 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     build_caption(a, routes, n_routes, name_buf, sizeof name_buf,
                   dist_buf, sizeof dist_buf);
     place_identity_for(cap_idx, place_caption(name_buf, dist_buf));
+    /* The ring follows the caption, including when the caption fell back to
+     * the nearest because the tapped aircraft left the ring. One subject, one
+     * ring, decided in one place. */
+    place_sel_ring(cap_idx);
+}
+
+void screen_radar_set_net(net_state_t net)
+{
+    s_net = net;
 }
 
 void screen_radar_set_clock(const char *hhmm)

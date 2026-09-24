@@ -781,6 +781,10 @@ static void ui_task(void *arg)
         } else if (nav_page() == PAGE_LISTE) {
             screen_list_update(ac, n, rt, n);
         } else {
+            /* Before the update, which reads it: the same `net` the detail
+             * layer's amber tag is built from, so the two screens can never
+             * disagree about whether the data is live (D76). */
+            screen_radar_set_net(net);
             screen_radar_update(ac, n, rt, n, g_settings.radius_nm);
             screen_radar_set_clock(vm.clock_valid ? vm.clock : "");
         }

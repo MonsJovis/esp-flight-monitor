@@ -36,6 +36,7 @@
 #pragma once
 #include "lvgl.h"
 #include "flight_types.h"
+#include "view_model.h"   /* net_state_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,8 +64,10 @@ void screen_radar_create(lv_obj_t *parent);
  * respect it), scaled so `radius_nm` maps to the outer ring; anything
  * farther is clipped to the outer ring rather than drawn outside it.
  * `routes`/`n_routes` are looked up per aircraft via route_find()
- * (main/net/route_parse.h) to decide route-known (cyan, or magenta for the
- * single nearest aircraft) vs no-route (amber) — see screen_radar.c's top
+ * (main/net/route_parse.h) to decide the fill: filled with a route, hollow
+ * without one. Colour is magenta for the single nearest aircraft and cyan
+ * for every other, route or not — no-route is no longer amber (D76). Rings
+ * whichever aircraft the caption names (D75) — see screen_radar.c's top
  * comment for the full colour/shape table. Never creates or destroys a
  * widget, so it is safe to call on every poll (AGENTS.md §5: every 10-15 s)
  * without growing the object tree or touching the heap.
@@ -79,7 +82,9 @@ void screen_radar_update(const aircraft_t *ac, int n,
  *
  * Two taps, deliberately different:
  *
- *   Tapping a MARK re-points the caption at that aircraft. It stays there —
+ *   Tapping a MARK re-points the caption at that aircraft, and moves the white
+ *   selection ring onto it, so the answer at the bottom edge and the mark he
+ *   actually touched are visibly the same aircraft (D75). It stays there —
  *   through polls, and through the aircraft moving — until he taps another
  *   mark, or the aircraft leaves the ring, at which point the caption falls
  *   back to the nearest. Nothing leaves the screen: he is reading the scope,
@@ -102,8 +107,19 @@ void screen_radar_set_select_cb(radar_select_cb cb);
 
 /* Drops any mark selection, so the caption goes back to the nearest aircraft.
  * Call when the deck leaves this page: a selection he made five minutes ago
+ * (safe to call without display_lock() — it writes one string and no LVGL)
  * is not what he means by a glance. */
 void screen_radar_clear_selection(void);
+
+/* Whether what the scope shows is live. Anything but NET_OK dims every mark,
+ * stops the trails, and puts the detail layer's own amber tag (KEIN NETZ /
+ * KEINE DATEN) top centre, in the identity line's slot (the top left is the
+ * range read-out) — the radar is the default screen, and
+ * until D76 it was the one screen that could not say its picture was old.
+ * Takes effect on the next screen_radar_update(); call under display_lock()
+ * like the rest of this API (it only stores a value, but it is read by code
+ * that is not). */
+void screen_radar_set_net(net_state_t net);
 
 /* The time, top right.
  *
