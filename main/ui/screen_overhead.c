@@ -113,7 +113,7 @@ static lv_obj_t *s_lbl_hero;
 /* Supporting band */
 static lv_obj_t *s_lbl_reason;             /* §5.2 only */
 /* §5.1 only, under the destination: vm->route_line — "Landung in etwa 45
- * Minuten", or while climbing out "16 km von Wien entfernt" (D79). */
+ * Min.", or while climbing out "16 km von Wien entfernt" (D79). */
 static lv_obj_t *s_lbl_route_line;
 static lv_obj_t *s_lbl_date;               /* §5.3 only */
 static lv_obj_t *s_lbl_last_seen_caption;  /* §5.3 only, STR_LAST_SEEN */
@@ -280,7 +280,7 @@ void screen_overhead_create(lv_obj_t *parent)
     s_lbl_airline   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     s_lbl_type_full = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
     /* The route line, directly under the destination it belongs to —
-     * "Frankfurt / Landung in etwa 45 Minuten" reads as one statement.
+     * "Frankfurt / Landung in etwa 45 Min." reads as one statement.
      * Same face and colour as the identity line under it: supporting text,
      * not a data value, because it is a sentence and often an estimate. */
     s_lbl_route_line = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
@@ -622,7 +622,7 @@ void screen_overhead_update(const view_model_t *vm)
          *   1 identity   "OE-AHM" / "AUA1Y · Airbus A321": the one line that
          *                says WHICH aircraft; the owner asked for it twice
          *   2 reason     why there is no route (§5.2)
-         *   3 route line "Landung in etwa 45 Minuten" / "16 km von Wien
+         *   3 route line "Landung in etwa 45 Min." / "16 km von Wien
          *                entfernt" (only ever with a route, so it never
          *                competes with the reason)
          *   4 type line  the hero or the identity usually says it already

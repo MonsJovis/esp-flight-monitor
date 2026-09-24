@@ -84,7 +84,7 @@ typedef struct {
      * reads as broken; a sentence reads as informative. */
     char reason[VIEW_REASON_LEN];
 
-    /* §5.1 only: "Landung in etwa 45 Minuten", estimated from distance and
+    /* §5.1 only: "Landung in etwa 45 Min.", estimated from distance and
      * speed (arrival.h, D79). "" whenever the estimate is not worth showing
      * — climbing out, heading away, no coordinates — and then the line is
      * simply absent. */
@@ -98,7 +98,7 @@ typedef struct {
      * has room for exactly two lines between the hero and the data band, and
      * the identity has the other (D79). The arrival when there is one,
      * otherwise the distance from the origin:
-     *   arriving or cruising  -> "Landung in etwa 3 Minuten"
+     *   arriving or cruising  -> "Landung in etwa 3 Min."
      *   climbing out          -> "16 km von Wien entfernt"  (no estimate
      *                            exists then, by design — and how far it
      *                            already is from where it took off is the

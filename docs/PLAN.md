@@ -794,7 +794,7 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
 - [x] **Two-line caption** (D78, the owner's request): flight number and model above
       the distance; the top-row identity line is gone; the scope moved up to make room.
 - [x] **Detail card: speed, arrival, distance from origin** (D79): ground speed beside the
-      altitude; one route line — *Landung in etwa 45 Minuten*, or while climbing out *43 km
+      altitude; one route line — *Landung in etwa 45 Min.*, or while climbing out *43 km
       von Wien entfernt*; departure time deliberately not shown (no source knows it). The
       give-way rule now closes up, so a two-line type name no longer costs the registration.
 - [ ] **Read aloud** the four new strings from D79 (D51, D56, D57).

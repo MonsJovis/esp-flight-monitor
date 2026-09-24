@@ -167,9 +167,8 @@ size_t fmt_arrival_de(int minutes, char *out, size_t n)
             snprintf(full, sizeof full, FMT_ARRIVAL_MIN, r);
         } else {
             int h = r / 60, m = r % 60;
-            const char *hw = (h == 1) ? STR_HOUR : STR_HOURS;
-            if (m == 0) snprintf(full, sizeof full, FMT_ARRIVAL_H, h, hw);
-            else        snprintf(full, sizeof full, FMT_ARRIVAL_HM, h, hw, m);
+            if (m == 0) snprintf(full, sizeof full, FMT_ARRIVAL_H, h);
+            else        snprintf(full, sizeof full, FMT_ARRIVAL_HM, h, m);
         }
     }
     return safe_copy(out, n, full);

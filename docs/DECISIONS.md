@@ -2824,8 +2824,14 @@ order never actually kept the reason visible either, because nothing reflowed.
 
 **Not verified:** on the glass, and against real landings. The estimate matched FR24 on one
 example. Whether it is usually within "etwa" can only be learned by watching it against
-arrivals over Schwechat. Four new German strings (*Landung in etwa …*, *… Stunde(n)*, *…
-km von … entfernt*) still need the read-aloud pass (D51, D56, D57).
+arrivals over Schwechat. The new German strings (*Landung in etwa …*, *… km von …
+entfernt*) still need the read-aloud pass (D51, D56, D57).
+
+**Amended the same day, by the owner: abbreviated units.** *Landung in etwa 45 Min.*, *… 1
+Std. 40 Min.*, *… 2 Std.* (the Duden forms). The singular/plural split goes with them, since
+"Std." has none. *Landung in wenigen Minuten* stays spelled out: no number stands in front of
+it, so it is a phrase, not a unit. The examples above keep the long forms they were written
+with.
 
 **Open, for the owner:** both route facts at once would need ~40 px from somewhere else on
 the card. The candidate is the compass tape, which repeats what "südöstlich" already says.

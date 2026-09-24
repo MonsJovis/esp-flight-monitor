@@ -1,7 +1,7 @@
 /* The arrival estimate (arrival.h, D79).
  *
  * Every rule here exists because the simple version is wrong in a way that
- * looks right on the panel: a clean "Landung in etwa 34 Minuten" for a flight
+ * looks right on the panel: a clean "Landung in etwa 34 Min." for a flight
  * that lands in 45, or a confident time for an aircraft still climbing away
  * from its runway. The Flightradar24 example the owner photographed is the
  * one real cross-check in here.
@@ -59,7 +59,7 @@ int main(void)
         CHECK_INT(m, 41);
         char buf[80];
         fmt_arrival_de(m, buf, sizeof buf);
-        CHECK_STR(buf, "Landung in etwa 40 Minuten");
+        CHECK_STR(buf, "Landung in etwa 40 Min.");
     }
 
     GROUP("on approach: slower than cruise, so the approach speed governs");
@@ -128,20 +128,20 @@ int main(void)
         CHECK_INT(arrival_minutes(&a, &r), -1);
     }
 
-    GROUP("the words: precision falls as the number grows");
+    GROUP("the words: abbreviated units (the owner's call), and precision falls as the number grows");
     {
         char b[80];
         fmt_arrival_de(-1, b, sizeof b);  CHECK_STR(b, "");
         fmt_arrival_de(2, b, sizeof b);   CHECK_STR(b, "Landung in wenigen Minuten");
-        fmt_arrival_de(3, b, sizeof b);   CHECK_STR(b, "Landung in etwa 3 Minuten");
-        fmt_arrival_de(14, b, sizeof b);  CHECK_STR(b, "Landung in etwa 14 Minuten");
-        fmt_arrival_de(17, b, sizeof b);  CHECK_STR(b, "Landung in etwa 15 Minuten");
-        fmt_arrival_de(18, b, sizeof b);  CHECK_STR(b, "Landung in etwa 20 Minuten");
-        fmt_arrival_de(58, b, sizeof b);  CHECK_STR(b, "Landung in etwa 1 Stunde");
-        fmt_arrival_de(62, b, sizeof b);  CHECK_STR(b, "Landung in etwa 1 Stunde");
-        fmt_arrival_de(100, b, sizeof b); CHECK_STR(b, "Landung in etwa 1 Stunde 40 Minuten");
-        fmt_arrival_de(124, b, sizeof b); CHECK_STR(b, "Landung in etwa 2 Stunden 5 Minuten");
-        fmt_arrival_de(180, b, sizeof b); CHECK_STR(b, "Landung in etwa 3 Stunden");
+        fmt_arrival_de(3, b, sizeof b);   CHECK_STR(b, "Landung in etwa 3 Min.");
+        fmt_arrival_de(14, b, sizeof b);  CHECK_STR(b, "Landung in etwa 14 Min.");
+        fmt_arrival_de(17, b, sizeof b);  CHECK_STR(b, "Landung in etwa 15 Min.");
+        fmt_arrival_de(18, b, sizeof b);  CHECK_STR(b, "Landung in etwa 20 Min.");
+        fmt_arrival_de(58, b, sizeof b);  CHECK_STR(b, "Landung in etwa 1 Std.");
+        fmt_arrival_de(62, b, sizeof b);  CHECK_STR(b, "Landung in etwa 1 Std.");
+        fmt_arrival_de(100, b, sizeof b); CHECK_STR(b, "Landung in etwa 1 Std. 40 Min.");
+        fmt_arrival_de(124, b, sizeof b); CHECK_STR(b, "Landung in etwa 2 Std. 5 Min.");
+        fmt_arrival_de(180, b, sizeof b); CHECK_STR(b, "Landung in etwa 3 Std.");
     }
 
     GROUP("distance from the origin: straight line, whole km, and not at the airport");

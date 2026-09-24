@@ -1,4 +1,4 @@
-/* arrival.h — "landet in etwa 45 Minuten", estimated rather than known (D79).
+/* arrival.h — "Landung in etwa 45 Min.", estimated rather than known (D79).
  *
  * Nothing this device can reach knows when an aircraft will land: adsb.lol
  * has positions, adsb.im's routeset has the two airports and where they are,

@@ -381,7 +381,7 @@ one-line destination, and one under a two-line one (D79, measured):
 ```
   Klagenfurt →
   Wien                                  hero, 100 px
-  Landung in etwa 3 Minuten             route line (only with a route)
+  Landung in etwa 3 Min.                route line (only with a route)
   AUA110 · Embraer E195                 identity
   709 m   290 km/h                      altitude and ground speed
   33,0 km südöstlich                    distance and direction

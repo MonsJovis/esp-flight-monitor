@@ -56,9 +56,9 @@ size_t fmt_speed_kmh(int32_t gs_kt, char *out, size_t n);
 /* The arrival estimate from arrival_minutes() (D79):
  *   < 0   ""                              (no estimate — nothing shown)
  *   0-2   "Landung in wenigen Minuten"
- *   3-14  "Landung in etwa 7 Minuten"     (to the minute)
- *   15-59 "Landung in etwa 45 Minuten"    (to 5 minutes)
- *   60+   "Landung in etwa 1 Stunde 40 Minuten", "… 2 Stunden" (to 5 minutes)
+ *   3-14  "Landung in etwa 7 Min."        (to the minute)
+ *   15-59 "Landung in etwa 45 Min."       (to 5 minutes)
+ *   60+   "Landung in etwa 1 Std. 40 Min.", "… 2 Std." (to 5 minutes)
  * The precision drops as the number grows because the estimate's error does. */
 size_t fmt_arrival_de(int minutes, char *out, size_t n);
 
