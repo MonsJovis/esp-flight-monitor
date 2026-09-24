@@ -2349,6 +2349,12 @@ to reach, and none of those is something anyone provokes twice. The console-key 
 it immediately — the key was in `on_cmd()`, the header and the ready line, and missing from
 AGENTS.md §3.
 
-**Not yet seen on the glass.** The panel has not been attached since the 21st, so this
-ships as a commit and not as a release: a full-screen takeover is exactly the kind of
-change that a screenshot, not a clean build, is allowed to sign off.
+**Seen on the glass, 2026-09-24.** It was tagged before that, at the owner's call, and the
+panel took v0.7.0 by itself the following night — skipping v0.6.0 entirely, because it had
+been offline the day that one was published and each release is a whole image, so there is
+nothing to catch up on. The owner then looked at it and confirmed it reads correctly.
+
+What that does NOT settle is the tearing question, and it is worth being precise about why:
+the install that delivered this ran unattended at night, so nobody was in front of the
+panel while 2 MB went into flash. The one measurement this feature was expected to make
+comes the first time somebody taps **Jetzt installieren** and watches.

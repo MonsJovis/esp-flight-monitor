@@ -354,8 +354,8 @@ caused by the sweep:
       that checks now, and — once something is offered — installs now, without waiting for
       the night window. Wording and row state are in `fmt_de.c` and host-tested (401
       checks in that suite); the install raises a full-screen takeover that swallows touch
-      until the reboot. `U` walks all seven states from the console. **Not yet seen on the
-      glass** — the panel has not been attached since the 21st.
+      until the reboot. `U` walks all seven states from the console. **Confirmed on the
+      panel by the owner, 2026-09-24**, after it pulled v0.7.0 down by itself overnight.
 - [x] **Release infrastructure — D72.** The repo is public, `.github/workflows/release.yml`
       publishes a signed image and its manifest on every `v*` tag, and
       `tools/check_release.py` reads the finished binary back to prove its version and
