@@ -48,7 +48,21 @@ typedef enum {
  * can issue the IDENTICAL request — a diagnostic built from its own copy of
  * these numbers is a diagnostic that drifts away from the thing it is meant
  * to be measuring. */
-#define POLL_BUF_SZ            (16 * 1024)
+/* 64 KB, in PSRAM. It was 16 KB, and that was the whole failure the day it
+ * was measured: the device's own request over the Vienna preset at 33 nm
+ * returned 17,784 bytes for 32 aircraft (11 of them on the ground at
+ * Schwechat), so EVERY poll arrived truncated, failed to parse, and the panel
+ * showed nothing — or, before D76, a frozen picture it presented as live.
+ * Per aircraft the capture ran 572 bytes median, 738 max. The number below is
+ * sized for 80 aircraft at 740 bytes (59,200) plus the envelope, which is
+ * well past the "45 at 60 nm" this project had seen; the assert makes that
+ * arithmetic fail the build rather than the sky if anyone shrinks it. The
+ * parser keeps the nearest MAX_AIRCRAFT of however many arrive. */
+#define POLL_BUF_SZ            (64 * 1024)
+#define POLL_BUF_PLAN_AIRCRAFT 80
+#define POLL_BUF_PLAN_BYTES_AC 740
+_Static_assert(POLL_BUF_SZ >= POLL_BUF_PLAN_AIRCRAFT * POLL_BUF_PLAN_BYTES_AC + 1024,
+               "POLL_BUF_SZ no longer holds the planned busiest sky");
 
 /* 25 s, not 10, and the number is measured rather than chosen.
  *

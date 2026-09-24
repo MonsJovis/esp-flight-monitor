@@ -787,13 +787,18 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       20 of 21 breakages caught, the one survivor equivalent. Found three bugs the review
       had not (arrow over name, trail ghosts, pill through the S) and one old one (the range
       read-out's position was an accident of `lv_obj_get_x()`).
-- [ ] **On the glass.** No board was attached for any of this. Flash it, then settle the
-      questions only his eye can: three sizes readable from the chair, trails read as
-      history not clutter, 13 px amber findable. Run `v` before and after opening the WLAN
-      keyboard (the change costs +1.6 KB of internal RAM).
+- [x] **On the glass, what a console can check** (2026-09-24): flashed, `KEINE DATEN`
+      shown during a real outage, then live aircraft with the ring on the nearest, hollow
+      cyan for route-less, trails, sizes, the caption arrow; survives a full UI rebuild;
+      the WLAN keyboard still fits. Testing it found D77 (the feed was dead in busy sky).
+- [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
+      finger lands), tap the caption (the pill lights up, the card opens), tap the empty
+      scope, long-press with an aircraft selected, 30 s idle. Then his eye: three sizes
+      readable from the chair, trails read as history not clutter, 13 px amber findable.
 - [ ] **Open, for the owner:** rotate the scope so up is the direction the wall faces,
       instead of north? A question, not a defect — only he knows whether mapping screen-north
       to room-north is a problem he actually has.
+
 ---
 
 ## Accelerators

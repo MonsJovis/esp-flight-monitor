@@ -124,18 +124,27 @@ int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
         return -1;
     }
 
+    /* Every aircraft in the array is parsed, and the NEAREST `max` are kept.
+     *
+     * This used to stop at the first `max` in array order. adsb.lol does not
+     * sort by distance — over the Vienna preset at 33 nm the array opened
+     * 31.6, 23.5, 31.3 nm — so as soon as the sky held more than MAX_AIRCRAFT
+     * the parser kept aircraft on the rim and dropped ones inside it, and the
+     * aircraft overhead was as likely as any other to be the one thrown
+     * away. Unnoticed because the 16 KB poll buffer truncated every response
+     * that big anyway (see POLL_BUF_SZ). Once full, a newcomer replaces the
+     * farthest kept aircraft if it is nearer; one with no distance never
+     * displaces one with a distance, which is cmp_dst_nm's rule too. */
     int count = 0;
     cJSON *item = NULL;
     cJSON_ArrayForEach(item, arr)
     {
-        if (count >= max) {
-            break;
-        }
         if (!cJSON_IsObject(item)) {
             continue;
         }
 
-        aircraft_t *ac = &out[count];
+        aircraft_t tmp;
+        aircraft_t *ac = &tmp;
         memset(ac, 0, sizeof(*ac));
 
         copy_str(ac->hex, sizeof ac->hex, str_field(item, "hex"));
@@ -199,7 +208,19 @@ int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
         cJSON *lon = cJSON_GetObjectItemCaseSensitive(item, "lon");
         ac->lon = cJSON_IsNumber(lon) ? lon->valuedouble : 0.0;
 
-        count++;
+        if (count < max) {
+            out[count++] = tmp;
+            continue;
+        }
+        int worst = 0;
+        for (int i = 1; i < count; i++) {
+            if (cmp_dst_nm(&out[i], &out[worst]) > 0) {
+                worst = i;
+            }
+        }
+        if (cmp_dst_nm(&tmp, &out[worst]) < 0) {
+            out[worst] = tmp;
+        }
     }
 
     cJSON_Delete(root);

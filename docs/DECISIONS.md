@@ -2627,3 +2627,47 @@ lot. It does not settle these, which need his eye and his finger:
   AGENTS.md §8 already asks about the 13 px identity line;
 - and, once the board is attached, whether the internal-heap headroom is still comfortable:
   `v` on the console, before and after a WLAN keyboard open (D58's failure).
+
+## D77 — Busy sky, empty panel: a 16 KB buffer and a parser that kept the wrong 24
+
+**Found by testing D76 on the device, not by looking for it.** With the new firmware flashed,
+the radar said **KEINE DATEN** and drew nothing. The log said why, every 12 s:
+`response truncated: buffer holds 16383 of the real body` → `malformed JSON`. The release it
+replaced (v0.7.0) was failing identically — `failures=5` before anything was flashed — but
+showed a frozen picture as though it were live, which is D76's item 4 caught in the wild.
+
+**1. The poll buffer was smaller than the sky.** The device's own request (the Vienna
+preset, 33 nm) returned **17,784 bytes for 32 aircraft**, 11 of them on the ground at
+Schwechat — 1.4 KB over a 16 KB buffer. Measured once from the host with the identical URL:
+572 bytes per aircraft median, 738 max. `POLL_BUF_SZ` is now **64 KB**, in PSRAM (4.4 MB
+free), sized for 80 aircraft at 740 bytes. A `_Static_assert` in `flight_source.h` now carries
+that arithmetic, so shrinking the buffer fails the build instead of the sky.
+
+**2. Past `MAX_AIRCRAFT`, the parser kept the first 24, not the nearest 24.** It stopped at
+`count >= max`, in array order, and adsb.lol does not sort by distance: the same capture
+opened 31.6, 23.5, 31.3 nm, and the first-24 rule dropped aircraft at 12–22 nm while keeping
+ones at 31. The aircraft overhead is as likely as any other to be at the end of the array.
+Hidden until now because the truncation killed every response big enough to reach it. Every
+aircraft is now parsed; once full, a newcomer replaces the farthest kept one if it is nearer,
+and one with no distance never displaces one that has one (`cmp_dst_nm`'s own rule).
+`test_parse.c` builds a sky with the nearest last. It failed before the fix, keeping 9–32 nm
+and dropping 1–8.
+
+**Checked on the device after the fix,** because a bigger parse is a bigger transient
+allocation on a board whose internal heap has crashed things before (D58):
+- polls succeed from the first one: `stale=0 failures=0`;
+- internal free at steady state is 43,039 B, and the largest block 21,504 B (31,744 B before
+  the first successful parse — fragmentation from real parses, where before there were none);
+- **the WLAN keyboard still opens**, by the real path (tapping an unsaved row). With it up,
+  internal free is 21,687 B and the largest block is still 21,504 B. It closes cleanly, and
+  memory returns to 42,715 B;
+- the flight task's stack headroom is 6,860 B of 16 KB, down from ~12 KB — because polls now
+  succeed and the route lookup runs, which it never did while every parse failed. That is
+  the first measurement of this task on a working feed, not a regression against one.
+- TLS for the nightly update is unaffected: its record buffers are in PSRAM (D52).
+
+**One thing this surfaced and did not decide.** With the whole sky now arriving, the eleven
+aircraft on the ground at Schwechat sit together as a clutter of marks near the right-hand
+edge of the inner ring. Real approach radars filter ground traffic, and "that plane up there"
+is never one of them — but hiding them is a product decision about what the panel is for, so
+it is a question for the owner, not a fix.

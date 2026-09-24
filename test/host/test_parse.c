@@ -4,6 +4,7 @@
  */
 #include "test_util.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "adsb_parse.h"
@@ -396,6 +397,52 @@ int main(void)
         CHECK_STR(ac[1].flight, "NODST1");
         CHECK(ac[1].dst_nm == DST_UNKNOWN);
         free(json);
+    }
+
+    /* ---- More aircraft than slots: keep the NEAREST, not the first ------ */
+    {
+        GROUP("more aircraft than MAX_AIRCRAFT: the nearest are kept, whatever the API order");
+        /* adsb.lol does not sort by distance. Captured over the Vienna preset
+         * at 33 nm (32 aircraft), the array opened 31.6, 23.5, 31.3 nm... and
+         * the parser used to keep the first MAX_AIRCRAFT in that order and
+         * drop the rest — here aircraft at 12-22 nm, while keeping ones at
+         * 31. The aircraft overhead is exactly as likely as any other to sit
+         * at the end of the array. Built here with the nearest LAST. */
+        const int extra = 8, total = MAX_AIRCRAFT + extra;
+        size_t cap = (size_t)total * 128 + 64;
+        char *json = malloc(cap);
+        size_t n = (size_t)snprintf(json, cap, "{\"ac\":[");
+        for (int i = 0; i < total; i++) {
+            /* distances total, total-1, ..., 1: the nearest come last */
+            n += (size_t)snprintf(json + n, cap - n,
+                                  "%s{\"hex\":\"a%05d\",\"dst\":%d.0,\"dir\":90.0}",
+                                  i ? "," : "", i, total - i);
+        }
+        n += (size_t)snprintf(json + n, cap - n, "]}");
+
+        aircraft_t acs[MAX_AIRCRAFT];
+        int got = adsb_parse(json, n, acs, MAX_AIRCRAFT);
+        CHECK_INT(got, MAX_AIRCRAFT);
+        CHECK_NEAR(acs[0].dst_nm, 1.0f, 1e-6);                     /* the nearest */
+        CHECK_NEAR(acs[MAX_AIRCRAFT - 1].dst_nm, (float)MAX_AIRCRAFT, 1e-6);
+        bool sorted = true;
+        for (int i = 1; i < got; i++) sorted &= acs[i - 1].dst_nm <= acs[i].dst_nm;
+        CHECK(sorted);
+        free(json);
+    }
+    {
+        GROUP("...and an aircraft we cannot place never displaces one we can");
+        char json[4096];
+        size_t n = (size_t)snprintf(json, sizeof json, "{\"ac\":[");
+        for (int i = 0; i < MAX_AIRCRAFT; i++)
+            n += (size_t)snprintf(json + n, sizeof json - n,
+                                  "%s{\"hex\":\"b%05d\",\"dst\":%d.0}", i ? "," : "", i, 20 + i);
+        n += (size_t)snprintf(json + n, sizeof json - n, ",{\"hex\":\"nodist\"}]}");
+        aircraft_t acs[MAX_AIRCRAFT];
+        CHECK_INT(adsb_parse(json, n, acs, MAX_AIRCRAFT), MAX_AIRCRAFT);
+        bool kept_unknown = false;
+        for (int i = 0; i < MAX_AIRCRAFT; i++) kept_unknown |= strcmp(acs[i].hex, "nodist") == 0;
+        CHECK(!kept_unknown);
     }
 
     return test_summary();
