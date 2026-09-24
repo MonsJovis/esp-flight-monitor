@@ -48,6 +48,24 @@ size_t fmt_distance_km(float nm, char *out, size_t n);
  * as "am Boden", ALT_UNKNOWN as "—" (U+2014 EM DASH). */
 size_t fmt_altitude_m(int32_t alt_ft, char *out, size_t n);
 
+/* Ground speed, kt -> km/h, rounded to 10: "780 km/h", "1.020 km/h".
+ * gs_kt < 0 (absent) renders as "" — an empty slot disappears, a dash beside
+ * a real altitude would look like a fault. */
+size_t fmt_speed_kmh(int32_t gs_kt, char *out, size_t n);
+
+/* The arrival estimate from arrival_minutes() (D79):
+ *   < 0   ""                              (no estimate — nothing shown)
+ *   0-2   "Landung in wenigen Minuten"
+ *   3-14  "Landung in etwa 7 Minuten"     (to the minute)
+ *   15-59 "Landung in etwa 45 Minuten"    (to 5 minutes)
+ *   60+   "Landung in etwa 1 Stunde 40 Minuten", "… 2 Stunden" (to 5 minutes)
+ * The precision drops as the number grows because the estimate's error does. */
+size_t fmt_arrival_de(int minutes, char *out, size_t n);
+
+/* "1.938 km von Ordu entfernt", from departed_km() and the German origin
+ * name. km < 0, or no origin name, renders as "". */
+size_t fmt_from_origin_de(int km, const char *origin, char *out, size_t n);
+
 /* ---- 4. German compass bearing --------------------------------------- */
 
 /* 16-point abbreviation ("N", "NNO", ... "NNW"). Normalises deg first, so

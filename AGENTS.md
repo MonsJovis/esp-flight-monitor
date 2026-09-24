@@ -116,12 +116,13 @@ seconds from a clean tree:
 
 ```bash
 make -C test/host        # the whole suite, plus the font, string and console-key gates
-make -C test/sim         # the radar screen itself: real LVGL, a scripted finger, ASan/UBSan
+make -C test/sim         # the radar and the detail card: real LVGL, a scripted finger, ASan/UBSan
 ```
 
 `test/sim` needs `managed_components/` (one `idf.py build` fills it) and compiles LVGL once
 (about 20 s). It renders the real `screen_radar.c` in the device's DIRECT mode into a
-framebuffer and checks it from pixels. Screenshots of every step land in `test/sim/out/`.
+framebuffer and checks it from pixels; `sim_detail.c` does the same for the detail card
+(D79). Screenshots of every step land in `test/sim/out/`.
 It is how the radar's taps got verified with no board attached (D76). Extend it rather than
 trust a comment about what the screen does.
 

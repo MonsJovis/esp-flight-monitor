@@ -373,6 +373,26 @@ Plex subset has no entry for any of them — a Plex keyboard renders four blank 
 nothing. It is built at 24 px rather than LVGL's 14, because §3's near floor applies to
 something he has to hit with a fingertip.
 
+### §5.1's supporting lines: two fit, and they close up
+
+Between the destination and the data band there is room for exactly **two** lines under a
+one-line destination, and one under a two-line one (D79, measured):
+
+```
+  Klagenfurt →
+  Wien                                  hero, 100 px
+  Landung in etwa 3 Minuten             route line (only with a route)
+  AUA110 · Embraer E195                 identity
+  709 m   290 km/h                      altitude and ground speed
+  33,0 km südöstlich                    distance and direction
+```
+
+The route line says the arrival while there is an estimate worth showing, and the distance
+from the origin while climbing out, when there is none ("43 km von Wien entfernt"). When
+lines do not fit, the least important goes and the rest **close up**. Keep order: identity,
+then the no-route reason, then the route line, then the type line. The departure time is not
+shown: nothing this device can reach knows it.
+
 ### The no-route case is not an edge case
 
 Measured on real traffic over Gloggnitz: **airline flights resolve a route 92% of the

@@ -2738,3 +2738,95 @@ card then shows ~70 px of nothing and no registration anywhere. Positions are co
 and not reflowed after a drop. A fix is small, but the card is not what was asked about, so
 it is recorded here rather than made.
 
+## D79 — The detail card gains speed, an arrival estimate and the distance from the origin — and stops losing lines
+
+**The request, from the owner, with a Flightradar24 screenshot as inspiration and not as a
+spec:** departure time ("x h ago"), arrival time ("in x"), and ground speed on the detail
+card.
+
+**What the data allows, checked before anything was built.**
+- **Ground speed** comes in every poll (`gs_kt`). Shown in km/h, rounded to 10, because a
+  last digit that changes every twelve seconds is noise.
+- **Arrival: no schedule anywhere this device can reach.** adsb.lol has positions and
+  adsb.im's routeset has the two airports — it does return their coordinates, which the
+  parser now keeps. So the estimate is arithmetic on what is known: the great-circle
+  distance still to fly, over the ground speed. It is always worded as an estimate: *Landung
+  in etwa 45 Minuten*.
+- **Departure time: not knowable, so not shown.** Only airline schedule feeds know when an
+  aircraft took off, and a guess would miss by half an hour. The owner chose the honest half
+  instead: **how far it is from where it took off**, *43 km von Wien entfernt*. That is the
+  straight-line distance, and the wording says exactly that. "zurückgelegt" would claim the
+  distance flown, which is always longer and which nothing here measures.
+
+**The arrival rules (`main/data/arrival.c`), each there because the simple version looks
+right and is wrong:**
+- **The last 40 nm count at no more than 200 kt.** Distance over cruise speed alone ran 25 %
+  early against the owner's own FR24 example: 483 km out, 34 min against FR24's 45. With the
+  approach allowance it is 41.
+- **Nothing while climbing out** — below 20 000 ft and still nearer the origin than the
+  destination. A departure's ground speed is far below cruise, and the estimate runs 30 % or
+  more late, which "etwa" cannot cover. The Vienna preset sees a great many departures.
+- **Nothing when flying away** from the destination more than 60 nm out, which means the
+  route match is probably wrong. Closer in it is allowed: a downwind leg points away from the
+  runway by design.
+- **Nothing** without a resolved, plausible route with coordinates, an airborne altitude, a
+  position and 60 kt, or when the answer would exceed 18 hours.
+- **Precision falls as the number grows:** to the minute under 15, then to 5 minutes, then
+  in hours and minutes.
+
+`test_arrival.c` has 48 checks, including the FR24 cross-check. A mutation run broke every
+rule in turn and the tests caught each one — except one: a special case for the last 2 nm,
+which changed nothing (the arithmetic already rounds to 0–2 minutes) and was deleted.
+
+**Only one route line fits, and that shaped the design.** The first build had the
+distance-from-origin and the arrival as two lines. The simulator showed neither of them ever
+appearing. Under a one-line destination the card has room for exactly **two** supporting
+lines. Measured, the combined sentence is 506–584 px against 440, and only abbreviations
+like "in 45 Min." fit, which cost the plain language this screen exists for. So one line,
+chosen by `view_build` (the screen chooses no text), and the data splits it cleanly:
+- **arriving or cruising:** *Landung in etwa 3 Minuten*;
+- **climbing out** (no estimate, by design): *43 km von Wien entfernt* — the moment when
+  "how long ago did it leave" is the natural question.
+
+Getting even two lines needed 8 px. The gap under the hero went from 16 to 8 px (its 100 px
+line box already carries ~20 px of descender space). The margin above the data band went from
+8 to 4 px (a wrapped 25 px label measured 35 px tall, not the nominal 31, and route line +
+identity came to 363 px against a 362 px limit).
+
+**Speed sits beside the altitude** — the ALT/GS pair every traffic display uses — not on a
+row of its own, which the card has no room for. It is never shown for the empty sky's
+"last seen" aircraft: a speed from minutes ago beside a live-looking altitude would be a
+stale number dressed as a current one.
+
+**The bug the owner's screenshot request surfaced, fixed here.** The rule that gives way
+when supporting lines do not fit (D48) HID every line whose already-computed position crossed
+the limit, and nothing moved up into the space. A private DV20 whose type name wraps the hero
+to two lines lost its reason sentence (correctly) and its registration too — which would have
+fitted exactly where the sentence had been. The card showed ~70 px of nothing and no
+identifier at all. Now the least important line goes and the rest **close up**. Keep order,
+most important first: identity, then reason, then route line, then type line. The identity
+comes first because it is the only line that says *which* aircraft, and the owner has asked
+for it twice. That puts it above the reason, the reverse of the old drop order; the old
+order never actually kept the reason visible either, because nothing reflowed.
+
+**Verified:**
+- host suites: `test_arrival` (48 checks), `test_view` (+ route-line choice), `test_parse`
+  (airport coordinates);
+- **`test/sim/sim_detail.c`**, new: the detail layer rendered by its own code from real
+  aircraft — the 15:14 capture over the Vienna preset and real routes — plus two constructed
+  positions, which say so. It checks from pixels: the number of lines between hero and band,
+  no supporting text inside the band, no hole between lines, and speed beside the altitude
+  but not on the empty sky. 23 checks. All seven mutants tried were caught: the old
+  no-close-up behaviour, the identity ranked last, both gaps restored, a stale speed on the
+  empty sky, no speed at all, and the departed distance preferred over the arrival;
+- shared harness: `test/sim/sim_common.h` now carries what both simulators need;
+- the exact CI image (Linux, gcc): all green, no warnings; the firmware builds.
+
+**Not verified:** on the glass, and against real landings. The estimate matched FR24 on one
+example. Whether it is usually within "etwa" can only be learned by watching it against
+arrivals over Schwechat. Four new German strings (*Landung in etwa …*, *… Stunde(n)*, *…
+km von … entfernt*) still need the read-aloud pass (D51, D56, D57).
+
+**Open, for the owner:** both route facts at once would need ~40 px from somewhere else on
+the card. The candidate is the compass tape, which repeats what "südöstlich" already says.
+That is a design trade only he can make.

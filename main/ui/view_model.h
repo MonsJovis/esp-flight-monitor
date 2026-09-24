@@ -63,6 +63,7 @@ typedef struct {
 
     /* Data band — values already carry their units */
     char altitude[24];            /* "9.100 m", "am Boden", "—"                   */
+    char speed[24];               /* "780 km/h"; "" when the feed has no speed   */
     char distance[24];            /* "12,4 km"                                    */
     /* The ADVERB, not the noun: "nordöstlich", so the data band reads
      * "16,8 km nordöstlich" rather than the stranded "16,8 km Nordosten"
@@ -82,6 +83,28 @@ typedef struct {
     /* §5.2 only: the sentence that explains the missing route. A blank slot
      * reads as broken; a sentence reads as informative. */
     char reason[VIEW_REASON_LEN];
+
+    /* §5.1 only: "Landung in etwa 45 Minuten", estimated from distance and
+     * speed (arrival.h, D79). "" whenever the estimate is not worth showing
+     * — climbing out, heading away, no coordinates — and then the line is
+     * simply absent. */
+    char arrival[VIEW_LINE_LEN];
+    /* §5.1 only, above the arrival: "1.938 km von Ordu entfernt" — straight
+     * line from the origin airport, the honest half of "departed x ago"
+     * (D79). "" when unknown or under 10 km. */
+    char departed[VIEW_LINE_LEN];
+
+    /* What the ONE route line under the destination says — the detail layer
+     * has room for exactly two lines between the hero and the data band, and
+     * the identity has the other (D79). The arrival when there is one,
+     * otherwise the distance from the origin:
+     *   arriving or cruising  -> "Landung in etwa 3 Minuten"
+     *   climbing out          -> "16 km von Wien entfernt"  (no estimate
+     *                            exists then, by design — and how far it
+     *                            already is from where it took off is the
+     *                            question worth answering)
+     * Chosen here, not on the screen, because the UI formats nothing. */
+    char route_line[VIEW_LINE_LEN];
 
     /* Chrome */
     char clock[8];                /* "09:47", or "--:--" when clock_valid is false */

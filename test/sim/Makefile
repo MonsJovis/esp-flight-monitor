@@ -1,4 +1,4 @@
-# Host simulator for the radar screen: the real screen_radar.c, real LVGL 9.6,
+# Host simulators for the radar and the detail layer: the real screen_radar.c, real LVGL 9.6,
 # a 480x480 RGB565 framebuffer in memory, and a scripted touch panel.
 #
 #   make -C test/sim          build and run; screenshots land in test/sim/out/
@@ -49,12 +49,27 @@ $(BUILD)/liblvgl.a: $(LVGL_OBJS)
 $(BUILD)/sim_radar: sim_radar.c sim_common.h $(APP_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
 	@$(CC) $(APP_CFLAGS) -o $@ sim_radar.c $(APP_SRCS) $(BUILD)/liblvgl.a -lm
 
+# The detail layer (D79): screen_overhead.c and the two widgets it draws with.
+DETAIL_SRCS := $(ROOT)/main/ui/screen_overhead.c \
+               $(ROOT)/main/ui/widget_compass.c \
+               $(ROOT)/main/ui/widget_busy.c \
+               $(wildcard $(ROOT)/main/ui/fonts/*.c) \
+               $(wildcard $(ROOT)/main/data/*.c) \
+               $(ROOT)/main/net/route_parse.c \
+               $(CJSON_DIR)/cJSON.c
+
+$(BUILD)/sim_detail: sim_detail.c sim_common.h $(DETAIL_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
+	@$(CC) $(APP_CFLAGS) -o $@ sim_detail.c $(DETAIL_SRCS) $(BUILD)/liblvgl.a -lm
+
 # Leak detection off: LVGL's objects live until the process exits and are
 # never freed, which LeakSanitizer (on by default on Linux, e.g. in CI)
 # reports as a failure. Every other sanitizer finding is fatal.
-run: $(BUILD)/sim_radar
+run: $(BUILD)/sim_radar $(BUILD)/sim_detail
 	@mkdir -p $(OUT)
+	@echo "== radar"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_radar $(OUT)
+	@echo "== detail layer"
+	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_detail $(OUT)
 
 clean:
 	rm -rf $(BUILD) $(OUT)

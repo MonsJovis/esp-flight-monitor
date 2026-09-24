@@ -155,6 +155,18 @@ int route_parse(const char *json, size_t len, route_t *out, int max)
                          str_field(first_ap, "location"));
                 copy_str(rt->dest_city, sizeof rt->dest_city,
                          str_field(last_ap, "location"));
+                cJSON *olat = cJSON_GetObjectItemCaseSensitive(first_ap, "lat");
+                cJSON *olon = cJSON_GetObjectItemCaseSensitive(first_ap, "lon");
+                cJSON *dlat = cJSON_GetObjectItemCaseSensitive(last_ap, "lat");
+                cJSON *dlon = cJSON_GetObjectItemCaseSensitive(last_ap, "lon");
+                if (n_airports > 1 && cJSON_IsNumber(olat) && cJSON_IsNumber(olon) &&
+                    cJSON_IsNumber(dlat) && cJSON_IsNumber(dlon)) {
+                    rt->orig_lat   = (float)olat->valuedouble;
+                    rt->orig_lon   = (float)olon->valuedouble;
+                    rt->dest_lat   = (float)dlat->valuedouble;
+                    rt->dest_lon   = (float)dlon->valuedouble;
+                    rt->has_coords = true;
+                }
             }
         }
 

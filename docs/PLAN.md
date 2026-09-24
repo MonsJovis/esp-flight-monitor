@@ -793,6 +793,11 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       the WLAN keyboard still fits. Testing it found D77 (the feed was dead in busy sky).
 - [x] **Two-line caption** (D78, the owner's request): flight number and model above
       the distance; the top-row identity line is gone; the scope moved up to make room.
+- [x] **Detail card: speed, arrival, distance from origin** (D79): ground speed beside the
+      altitude; one route line — *Landung in etwa 45 Minuten*, or while climbing out *43 km
+      von Wien entfernt*; departure time deliberately not shown (no source knows it). The
+      give-way rule now closes up, so a two-line type name no longer costs the registration.
+- [ ] **Read aloud** the four new strings from D79 (D51, D56, D57).
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected, 30 s idle. Then his eye: three sizes

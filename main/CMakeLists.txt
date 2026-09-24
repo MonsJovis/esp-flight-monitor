@@ -27,6 +27,7 @@ set(SRCS
     "data/view_build.c"
     "data/extrapolate.c"
     "data/radar_logic.c"
+    "data/arrival.c"
     "data/identity.c"
     "data/settings.c"
     "data/wifi_bars.c"

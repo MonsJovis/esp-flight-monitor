@@ -52,6 +52,12 @@ typedef struct {
     char    dest_city[CITY_NAME_LEN];    /* German lookup happens downstream */
     bool    plausible;                   /* API's own sanity flag            */
     bool    resolved;                    /* false => "unknown" => §5.2       */
+    /* Where the two airports are, from routeset's `_airports` (first leg's
+     * origin, last leg's destination). Only for the arrival estimate (D79);
+     * has_coords is false unless BOTH came back as numbers. */
+    float   orig_lat, orig_lon;
+    float   dest_lat, dest_lon;
+    bool    has_coords;
 } route_t;
 
 /* Drives §5.2: a Cessna doing circuits has no flight plan and never will, so the

@@ -1238,5 +1238,69 @@ int main(void)
         free(ac_json);
     }
 
+    GROUP("D79: speed on every live aircraft, arrival only with a route worth estimating");
+    {
+        struct tm now = { .tm_year = 126, .tm_mon = 8, .tm_mday = 24, .tm_hour = 15, .tm_min = 14 };
+        aircraft_t a;
+        memset(&a, 0, sizeof a);
+        snprintf(a.flight, sizeof a.flight, "AUA1Y");
+        snprintf(a.type, sizeof a.type, "A321");
+        a.alt_ft = 37000; a.gs_kt = 460; a.dst_nm = 20.0f; a.dir_deg = 270.0f;
+        a.has_track = true; a.track_deg = 270.0f;
+        a.lat = 49.0; a.lon = 12.0;                         /* between VIE and FRA */
+
+        route_t r;
+        memset(&r, 0, sizeof r);
+        snprintf(r.callsign, sizeof r.callsign, "AUA1Y");
+        snprintf(r.orig_icao, sizeof r.orig_icao, "LOWW");
+        snprintf(r.dest_icao, sizeof r.dest_icao, "EDDF");
+        r.resolved = r.plausible = r.has_coords = true;
+        r.orig_lat = 48.110298f; r.orig_lon = 16.5697f;
+        r.dest_lat = 50.026402f; r.dest_lon = 8.54313f;
+
+        view_model_t vm;
+        view_build_ex(&a, &r, false, &now, 1, NET_OK, &vm);
+        CHECK_STR(vm.speed, "850 km/h");
+        CHECK(strncmp(vm.arrival, "Landung in etwa ", 16) == 0);
+        /* 49.0/12.0 is ~370 km from Schwechat in a straight line. */
+        CHECK(strstr(vm.departed, " km von Wien entfernt") != NULL);
+        /* The one route line prefers the arrival. */
+        CHECK_STR(vm.route_line, vm.arrival);
+
+        /* Climbing out (under 20 000 ft, still nearer Vienna than Frankfurt,
+         * ~45 km out): no estimate by design, so the line gives the distance. */
+        {
+            aircraft_t c = a;
+            c.alt_ft = 9000; c.gs_kt = 290; c.lat = 48.2; c.lon = 16.0;
+            view_model_t vc;
+            view_build_ex(&c, &r, false, &now, 1, NET_OK, &vc);
+            CHECK_STR(vc.arrival, "");
+            CHECK(strstr(vc.route_line, " km von Wien entfernt") != NULL);
+        }
+
+        /* No route: speed yes, arrival never — there is nowhere to arrive. */
+        view_build_ex(&a, NULL, false, &now, 1, NET_OK, &vm);
+        CHECK_STR(vm.speed, "850 km/h");
+        CHECK_STR(vm.arrival, "");
+        CHECK_STR(vm.departed, "");
+
+        /* A route without coordinates (an old cache entry, a partial answer). */
+        route_t nc = r; nc.has_coords = false;
+        view_build_ex(&a, &nc, false, &now, 1, NET_OK, &vm);
+        CHECK_STR(vm.arrival, "");
+
+        /* The feed did not send a speed. */
+        a.gs_kt = -1;
+        view_build_ex(&a, &r, false, &now, 1, NET_OK, &vm);
+        CHECK_STR(vm.speed, "");
+        CHECK_STR(vm.arrival, "");
+
+        /* The empty sky carries neither. */
+        view_build_empty(&now, NULL, NET_OK, &vm);
+        CHECK_STR(vm.speed, "");
+        CHECK_STR(vm.arrival, "");
+        CHECK_STR(vm.departed, "");
+    }
+
     return test_summary();
 }

@@ -112,6 +112,9 @@ static lv_obj_t *s_lbl_hero;
 
 /* Supporting band */
 static lv_obj_t *s_lbl_reason;             /* §5.2 only */
+/* §5.1 only, under the destination: vm->route_line — "Landung in etwa 45
+ * Minuten", or while climbing out "16 km von Wien entfernt" (D79). */
+static lv_obj_t *s_lbl_route_line;
 static lv_obj_t *s_lbl_date;               /* §5.3 only */
 static lv_obj_t *s_lbl_last_seen_caption;  /* §5.3 only, STR_LAST_SEEN */
 static lv_obj_t *s_lbl_airline;            /* §5.1/§5.2, reused as "last seen" airline in §5.3 */
@@ -119,6 +122,7 @@ static lv_obj_t *s_lbl_type_full;          /* §5.1/§5.2, reused as "last seen"
 
 /* Data band — §5.1/§5.2 only */
 static lv_obj_t *s_lbl_altitude;
+static lv_obj_t *s_lbl_speed;              /* beside the altitude: "780 km/h" (D79) */
 static lv_obj_t *s_lbl_distance;
 static lv_obj_t *s_lbl_direction_word;
 
@@ -216,9 +220,8 @@ void screen_overhead_create(lv_obj_t *parent)
      * and in the same place on every aircraft.
      *
      * Carries the AIRLINE since the swap; the identity it used to hold is now
-     * in the body, where he asked for it. Note the Radar still puts the
-     * identity in this slot — the two screens differ because the detail layer
-     * has a body to give it and the Radar does not. */
+     * in the body, where he asked for it. (The Radar's identity left its top
+     * row too, for the caption's first line — D78.) */
     s_lbl_identity = make_label(s_cont, &plex_mono_13, THEME_TEXT_TERTIARY);
     lv_obj_set_hidden(s_lbl_identity, true);
 
@@ -276,6 +279,12 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_label_set_text(s_lbl_last_seen_caption, STR_LAST_SEEN);
     s_lbl_airline   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
     s_lbl_type_full = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
+    /* The route line, directly under the destination it belongs to —
+     * "Frankfurt / Landung in etwa 45 Minuten" reads as one statement.
+     * Same face and colour as the identity line under it: supporting text,
+     * not a data value, because it is a sentence and often an estimate. */
+    s_lbl_route_line = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
+    lv_obj_set_hidden(s_lbl_route_line, true);
     lv_obj_set_hidden(s_lbl_reason, true);
     lv_obj_set_hidden(s_lbl_date, true);
     lv_obj_set_hidden(s_lbl_last_seen_caption, true);
@@ -284,6 +293,12 @@ void screen_overhead_create(lv_obj_t *parent)
 
     /* --- Data band -- cyan values, tertiary word beside distance --- */
     s_lbl_altitude = make_label(s_cont, &plex_mono_32, THEME_CYAN);
+    /* Ground speed shares the altitude's row: height and speed are the two
+     * numbers that say what the aircraft is doing, the way an ALT/GS pair
+     * does on any traffic display. Its own row would have cost the body
+     * another 41 px it does not have. */
+    s_lbl_speed    = make_label(s_cont, &plex_mono_32, THEME_CYAN);
+    lv_obj_set_hidden(s_lbl_speed, true);
     s_lbl_distance = make_label(s_cont, &plex_mono_32, THEME_CYAN);
     s_lbl_direction_word = make_label(s_cont, &plex_sans_cond_22, THEME_TEXT_TERTIARY);
     lv_obj_set_hidden(s_lbl_altitude, true);
@@ -447,7 +462,13 @@ void screen_overhead_update(const view_model_t *vm)
     lv_label_set_text(s_lbl_hero, hero_text);
     lv_obj_set_pos(s_lbl_hero, PAD, y_hero);
     lv_obj_update_layout(s_lbl_hero);
-    int32_t y_next = y_hero + lv_obj_get_height(s_lbl_hero) + GAP_MD;
+    /* GAP_SM under the hero, not GAP_MD (D79). The hero's line box already
+     * carries ~20 px of descender space below its baseline, so the visible
+     * gap stays generous — and the 8 px it gives back are exactly what makes
+     * room for a SECOND supporting line (the route line under a one-line
+     * destination, with the identity under that). Measured, not guessed:
+     * with GAP_MD the two lines needed 370 px against a 362 px limit. */
+    int32_t y_next = y_hero + lv_obj_get_height(s_lbl_hero) + GAP_SM;
 
     /* --- Supporting + data bands -- content differs by state ---
      *
@@ -504,6 +525,15 @@ void screen_overhead_update(const view_model_t *vm)
      * deliberately opened one aircraft, and the operator is the part he can
      * usually infer from the callsign anyway. §5.3 is unchanged; there the
      * slot still carries the hero, because there is no aircraft to identify. */
+    bool show_route_line = !no_route && !empty_sky && vm->route_line[0] != '\0';
+    set_hidden(s_lbl_route_line, !show_route_line);
+    if (show_route_line) {
+        lv_label_set_text(s_lbl_route_line, vm->route_line);
+        lv_obj_set_pos(s_lbl_route_line, PAD, y_next);
+        lv_obj_update_layout(s_lbl_route_line);
+        y_next += lv_obj_get_height(s_lbl_route_line) + GAP_SM;
+    }
+
     const char *airline_slot_text =
         empty_sky ? (vm->clock_valid ? vm->hero : "") : vm->identity;
     bool show_airline_slot = airline_slot_text[0] != '\0';
@@ -569,21 +599,85 @@ void screen_overhead_update(const view_model_t *vm)
          * the second question he asks, and the type line is the first thing
          * he can do without — especially here, where the hero is already
          * saying everything that is known about the aircraft. */
-        int32_t y_limit = y_band - GAP_SM;
-        lv_obj_t *const droppable[] = {
-            s_lbl_type_full, s_lbl_airline, s_lbl_reason,
+        /* Half a GAP_SM between the last supporting line's BOX and the band's
+         * BOX. Both boxes carry their own air — ~6 px under the 25 px sans
+         * baseline, ~8 px above the 32 px mono digits — so the ink stays
+         * ~18 px apart. A full GAP_SM cost exactly the route line (D79):
+         * route line + identity measured 363 px against a 362 px limit,
+         * because a wrapped 25 px label is 35 px tall here, not the font's
+         * nominal 31. */
+        int32_t y_limit = y_band - GAP_SM / 2;
+
+        /* REFLOW, not just drop (D79). The lines between the hero and the
+         * band are laid out top-down above; when they do not all fit, the
+         * least important goes, and the rest CLOSE UP. This used to hide
+         * every line whose already-computed position crossed the limit, and
+         * nothing moved into the space a hidden line had freed. A private
+         * aircraft with a two-line type name — "Diamond DV20 Katana" — lost
+         * its reason sentence (right) and then its registration as well,
+         * which would have fitted exactly where the sentence had been; the
+         * card showed ~70 px of nothing and no identifier at all.
+         *
+         * `keep` is the order of importance, 1 kept longest:
+         *   1 identity   "OE-AHM" / "AUA1Y · Airbus A321": the one line that
+         *                says WHICH aircraft; the owner asked for it twice
+         *   2 reason     why there is no route (§5.2)
+         *   3 route line "Landung in etwa 45 Minuten" / "16 km von Wien
+         *                entfernt" (only ever with a route, so it never
+         *                competes with the reason)
+         *   4 type line  the hero or the identity usually says it already
+         * In the empty sky the identity slot carries the last-seen aircraft,
+         * which is that screen's own headline, so it keeps rank 1 there too.
+         * The lines above them (date, "last seen") are not in the reflow and
+         * never move. */
+        struct { lv_obj_t *obj; int32_t gap; int keep; } sup[] = {
+            { s_lbl_reason,     GAP_SM, 2 },
+            { s_lbl_route_line, GAP_SM, 3 },
+            { s_lbl_airline,    GAP_SM, 1 },
+            { s_lbl_type_full,  GAP_MD, 4 },
         };
-        for (size_t i = 0; i < sizeof droppable / sizeof droppable[0]; i++) {
-            lv_obj_t *l = droppable[i];
-            if (l == NULL || lv_obj_is_hidden(l)) {
-                continue;
+        const int n_sup = (int)(sizeof sup / sizeof sup[0]);
+        int32_t y0 = -1;
+        for (int i = 0; i < n_sup; i++) {
+            if (!lv_obj_is_hidden(sup[i].obj) &&
+                (y0 < 0 || lv_obj_get_y(sup[i].obj) < y0)) {
+                y0 = lv_obj_get_y(sup[i].obj);
             }
-            if (lv_obj_get_y(l) + lv_obj_get_height(l) > y_limit) {
-                lv_obj_set_hidden(l, true);
+        }
+        if (y0 >= 0) {
+            for (;;) {
+                int32_t need = 0, last_gap = 0;
+                int worst = -1;
+                for (int i = 0; i < n_sup; i++) {
+                    if (lv_obj_is_hidden(sup[i].obj)) continue;
+                    need += lv_obj_get_height(sup[i].obj) + sup[i].gap;
+                    last_gap = sup[i].gap;
+                    if (worst < 0 || sup[i].keep > sup[worst].keep) worst = i;
+                }
+                if (worst < 0 || y0 + need - last_gap <= y_limit) break;
+                lv_obj_set_hidden(sup[worst].obj, true);
+            }
+            int32_t y = y0;
+            for (int i = 0; i < n_sup; i++) {
+                if (lv_obj_is_hidden(sup[i].obj)) continue;
+                lv_obj_set_pos(sup[i].obj, PAD, y);
+                y += lv_obj_get_height(sup[i].obj) + sup[i].gap;
             }
         }
 
         lv_obj_set_pos(s_lbl_altitude, PAD, y_band);
+
+        /* Speed only for an aircraft that is up there now. The empty sky's
+         * "last seen" block has an altitude too, but a speed from minutes ago
+         * presented beside it would be a stale number dressed as a live one. */
+        bool show_speed = !empty_sky && vm->speed[0] != '\0';
+        set_hidden(s_lbl_speed, !show_speed);
+        if (show_speed) {
+            lv_label_set_text(s_lbl_speed, vm->speed);
+            lv_obj_update_layout(s_lbl_speed);
+            lv_obj_set_pos(s_lbl_speed, PAD + lv_obj_get_width(s_lbl_altitude) + GAP_MD * 2,
+                           y_band);
+        }
         y_next = y_band + alt_h + GAP_SM;
 
         lv_obj_set_pos(s_lbl_distance, PAD, y_next);
@@ -605,6 +699,7 @@ void screen_overhead_update(const view_model_t *vm)
         }
     } else {
         set_hidden(s_lbl_direction_word, true);
+        set_hidden(s_lbl_speed, true);
     }
 }
 

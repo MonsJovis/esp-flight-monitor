@@ -296,6 +296,27 @@
  * itself is language, so only the unit is here. */
 #define FMT_KM                 "%s km"
 #define FMT_METRES             "%s m"
+/* Ground speed, rounded to 10 km/h: the value moves every poll, and a figure
+ * that changes in its last digit every twelve seconds reads as noise. */
+#define FMT_KMH                "%s km/h"
+
+/* The arrival estimate on the detail layer (D79), under the destination:
+ * "Frankfurt / Landung in etwa 45 Minuten". A noun, not "landet": under a
+ * city name the verb makes the CITY the thing that lands. "etwa" is not
+ * decoration — it is an estimate from distance and speed, never a schedule
+ * (nothing this device can reach has one), and it says so. New in D79, so
+ * not yet through the read-aloud pass (D51, D56, D57). */
+#define STR_ARRIVAL_SOON       "Landung in wenigen Minuten"
+#define FMT_ARRIVAL_MIN        "Landung in etwa %d Minuten"
+#define FMT_ARRIVAL_H          "Landung in etwa %d %s"
+#define FMT_ARRIVAL_HM         "Landung in etwa %d %s %d Minuten"
+#define STR_HOUR               "Stunde"
+/* Above the arrival line: "1.938 km von Ordu entfernt". STRAIGHT-LINE
+ * distance, and the words say exactly that — "zurückgelegt" would claim the
+ * distance flown, which is always longer and which nothing here measures.
+ * The honest half of "departed x hours ago" (D79). Not yet read aloud. */
+#define FMT_FROM_ORIGIN        "%s km von %s entfernt"
+#define STR_HOURS              "Stunden"
 
 /* An aircraft on the ground has no altitude worth printing in metres. */
 #define STR_ON_GROUND          "am Boden"

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "fmt_de.h"
+#include "arrival.h"
 #include "tables.h"
 #include "strings_de.h"
 #include "identity.h"
@@ -201,6 +202,7 @@ static void fill_aircraft_common(const aircraft_t *ac, const ac_type_t *t, view_
                (t != NULL && t->size_class != NULL) ? t->size_class : "");
 
     fmt_altitude_m(ac->alt_ft, out->altitude, sizeof out->altitude);
+    fmt_speed_kmh(ac->gs_kt, out->speed, sizeof out->speed);
 
     if (ac->dst_nm == DST_UNKNOWN) {
         /* Never feed the sentinel to fmt_distance_km() — it would render as
@@ -266,6 +268,11 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
         resolve_city(route->orig_icao, route->orig_city, out->origin, sizeof out->origin);
         out->has_origin = true;
         out->reason[0] = '\0';
+        fmt_arrival_de(arrival_minutes(ac, route), out->arrival, sizeof out->arrival);
+        fmt_from_origin_de(departed_km(ac, route), out->origin,
+                           out->departed, sizeof out->departed);
+        copy_trunc(out->route_line, sizeof out->route_line,
+                   out->arrival[0] != '\0' ? out->arrival : out->departed);
     } else {
         out->state = VIEW_NO_ROUTE;
         hero_from_type(t, ac->type, ac->category, out->hero, sizeof out->hero);

@@ -140,6 +140,51 @@ size_t fmt_altitude_m(int32_t alt_ft, char *out, size_t n)
     return safe_copy(out, n, full);
 }
 
+size_t fmt_speed_kmh(int32_t gs_kt, char *out, size_t n)
+{
+    if (gs_kt < 0) return safe_copy(out, n, "");
+    int32_t kmh = (int32_t)lroundf((float)gs_kt * 1.852f / 10.0f) * 10;
+
+    char num[32];
+    fmt_int_de(kmh, num, sizeof num);
+    char full[48];
+    snprintf(full, sizeof full, FMT_KMH, num);
+    return safe_copy(out, n, full);
+}
+
+size_t fmt_arrival_de(int minutes, char *out, size_t n)
+{
+    char full[80];
+    if (minutes < 0) {
+        full[0] = '\0';
+    } else if (minutes < 3) {
+        snprintf(full, sizeof full, "%s", STR_ARRIVAL_SOON);
+    } else if (minutes < 15) {
+        snprintf(full, sizeof full, FMT_ARRIVAL_MIN, minutes);
+    } else {
+        int r = (minutes + 2) / 5 * 5;          /* nearest 5 */
+        if (r < 60) {
+            snprintf(full, sizeof full, FMT_ARRIVAL_MIN, r);
+        } else {
+            int h = r / 60, m = r % 60;
+            const char *hw = (h == 1) ? STR_HOUR : STR_HOURS;
+            if (m == 0) snprintf(full, sizeof full, FMT_ARRIVAL_H, h, hw);
+            else        snprintf(full, sizeof full, FMT_ARRIVAL_HM, h, hw, m);
+        }
+    }
+    return safe_copy(out, n, full);
+}
+
+size_t fmt_from_origin_de(int km, const char *origin, char *out, size_t n)
+{
+    if (km < 0 || origin == NULL || origin[0] == '\0') return safe_copy(out, n, "");
+    char num[32];
+    fmt_int_de(km, num, sizeof num);
+    char full[96];
+    snprintf(full, sizeof full, FMT_FROM_ORIGIN, num, origin);
+    return safe_copy(out, n, full);
+}
+
 /* ---- 4. German compass bearing ------------------------------------------ */
 
 /* German, not English: O for Ost, not E for East. */

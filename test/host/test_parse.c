@@ -246,6 +246,20 @@ static void test_route_real_fixture(void)
         CHECK_STR(dlh->dest_icao, "EDDM");
         CHECK_STR(dlh->orig_city, "Cluj-Napoca");
         CHECK_STR(dlh->dest_city, "Munich");
+        /* The airports' positions, for the arrival estimate (D79): the
+         * fixture's own numbers for LRCL and EDDM. */
+        CHECK(dlh->has_coords);
+        CHECK_NEAR(dlh->orig_lat, 46.785198, 1e-4);
+        CHECK_NEAR(dlh->orig_lon, 23.686199, 1e-4);
+        CHECK_NEAR(dlh->dest_lat, 48.353802, 1e-4);
+        CHECK_NEAR(dlh->dest_lon, 11.7861, 1e-4);
+    }
+    {
+        /* An unresolved entry has no airports and must not claim a position. */
+        bool any_unresolved_with_coords = false;
+        for (int i = 0; i < n; i++)
+            any_unresolved_with_coords |= (!routes[i].resolved && routes[i].has_coords);
+        CHECK(!any_unresolved_with_coords);
     }
 
     /* An unresolved entry: no flight plan is a NORMAL outcome, not an error. */
