@@ -2846,8 +2846,12 @@ on a weak link (−70 dBm).** The test build was `main` at `f430e2a`, plus the f
 inside its night window, and within a minute and a half it downloaded v0.8.0 from the
 GitHub release, wrote it and rebooted into it — replacing the test build. That was the real
 end-to-end OTA of a real release, and it worked. To keep testing, updates were switched
-off from the console (`u`, then `-`) and the test build flashed again. They were turned back
-on afterwards — see the end of this entry.
+off from the console (`u`, then `-`) and the test build flashed again. **At the time of
+writing they are still off**, so that the test build is not replaced before the last touch
+check. They must go back to exactly
+`https://github.com/MonsJovis/esp-flight-monitor/releases/latest/download/manifest.json`
+(PLAN.md M13). Restored while v0.8.0 is still the latest release, the device would reinstall
+v0.8.0 that same night; restored after a v0.9.0 release, it installs that.
 
 **Confirmed on the panel:**
 - **Radar (D75, D76, D78):** the two-line caption on real flights
