@@ -699,12 +699,25 @@ static void ui_task(void *arg)
         /* Leaving the radar drops whatever mark he had tapped there. A
          * selection made five minutes ago is not what he means by a glance,
          * and the caption going back to the nearest aircraft is the same rule
-         * the deck already follows when it auto-returns from an empty sky. */
+         * the deck already follows when it auto-returns from an empty sky.
+         *
+         * PAGE_RADAR, not the literal 2 it said until D75. The deck had three
+         * pages when this was written and the radar was the third of them;
+         * D60 collapsed it to two and this line was not one of the places that
+         * got updated. nav_page() has returned 0 or 1 ever since, so the test
+         * was unreachable and the selection was in fact never cleared — the
+         * comment above described behaviour the code had stopped having, which
+         * is AGENTS.md §11's first failure pattern, exactly.
+         *
+         * Note this does NOT fire for the detail layer: that is an overlay and
+         * leaves nav_page() alone, so tapping the caption, reading the card and
+         * coming back finds the same aircraft still ringed — which is the whole
+         * point of having tapped it. */
         {
             static int prev_page = -1;
             int page_now = nav_page();
             if (page_now != prev_page) {
-                if (prev_page == 2) {
+                if (prev_page == PAGE_RADAR) {
                     screen_radar_clear_selection();
                 }
                 prev_page = page_now;
