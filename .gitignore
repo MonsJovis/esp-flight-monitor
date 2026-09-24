@@ -41,3 +41,7 @@ secure_boot_signing_key.pem
 
 # macOS
 .DS_Store
+
+# Radar simulator (test/sim): LVGL objects, the binary, and its screenshots
+test/sim/out/
+test/sim/*.dSYM/

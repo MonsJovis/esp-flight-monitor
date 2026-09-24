@@ -23,10 +23,10 @@ jobs:
       - name: Trust the workspace
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # 32,668 checks across twelve suites, plus the font, string and
-      # console-key gates. Needs no board and no network; IDF_PATH is already
-      # exported in this image, which is what test/host/Makefile wants for
-      # cJSON.
+      # Every host suite, plus the font, string and console-key gates. (How
+      # many checks: whatever it prints — a count written here rots.) Needs no
+      # board and no network; IDF_PATH is already exported in this image,
+      # which is what test/host/Makefile wants for cJSON.
       - name: Host suite
         shell: bash
         run: |
@@ -49,6 +49,16 @@ jobs:
         run: |
           . "$IDF_PATH/export.sh"
           idf.py build
+
+      # The radar screen itself, on the host: real LVGL, the real
+      # screen_radar.c, a scripted finger, under ASan and UBSan (D76). AFTER
+      # the build on purpose — LVGL's source is in managed_components/, which
+      # the component manager only fills in during the build.
+      - name: Radar simulator
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          make -C test/sim
 
       - name: Release gate
         shell: bash
