@@ -1,16 +1,19 @@
 # CLAUDE.md
 
-All project instructions for this repo live in **[AGENTS.md](./AGENTS.md)**.
+**[AGENTS.md](./AGENTS.md) first, always.** It is the router: product intent, the loop you
+work in, the console keys, the settled decisions, the conventions you must obey, and the
+three ways this repo has actually failed. It is short on purpose.
 
-Read it before making any change. It covers the product intent, the verified hardware
-profile, the chosen stack, the data-source architecture with measured rate limits, the
-hardware gotchas, and the licence rules for reusing third-party code.
+Everything it points at:
 
-The visual system — colour semantics, type scale, screen inventory — is in
-**[docs/DESIGN.md](./docs/DESIGN.md)**. Read it before building any screen.
-
-The milestone plan and current state of the build is in
-**[docs/PLAN.md](./docs/PLAN.md)** — start there to find the next task.
-
-Background research and the survey of existing open-source flight-radar projects is in
-**[docs/RESEARCH.md](./docs/RESEARCH.md)**.
+| | |
+|---|---|
+| [docs/DESIGN.md](./docs/DESIGN.md) | Colour semantics, type scale, size floors, the screens. **Before building any screen.** |
+| [docs/PLAN.md](./docs/PLAN.md) | Milestones and what is actually done. **Start here for the next task.** |
+| [docs/DECISIONS.md](./docs/DECISIONS.md) | Why anything is the way it is, including the mistakes. |
+| [docs/HARDWARE.md](./docs/HARDWARE.md) | The verified board profile — pins, I²C addresses, what is *not* on it. |
+| [docs/DATA.md](./docs/DATA.md) | The flight/route/geocoding APIs and their measured rate limits. |
+| [docs/GOTCHAS.md](./docs/GOTCHAS.md) | The things that cost a day each. **Before your first build.** |
+| [docs/PLACES.md](./docs/PLACES.md) | Where the device stands, and what follows for the clock and the poll. |
+| [docs/RESEARCH.md](./docs/RESEARCH.md) | The survey of existing open-source flight radars, and what was reused. |
+| [THIRD-PARTY.md](./THIRD-PARTY.md) | Whose code, fonts and data are in here, under which licence. |

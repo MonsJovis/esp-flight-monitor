@@ -7,11 +7,12 @@ Operating manual for AI agents working in this repo. Read this before touching c
 > [docs/DECISIONS.md](./docs/DECISIONS.md). How big the suite is → whatever
 > `make -C test/host` prints. Numbers do not live here; they rot here.
 >
-> Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
-> measured facts** about the hardware, the APIs and the places — still current, do not
-> re-derive them. **Sections 1, 7, 8 and 10 are rules**, and the build amended several of
-> them; where it did, it says so inline. Do not "restore" an amended rule to what it used
-> to say.
+> **This file is a router.** The measured facts live in `docs/` and each section below
+> points at its own — hardware, data and rate limits, places, gotchas. What stays here is
+> what you must obey: the product intent (§1), the loop and the console (§3), the settled
+> decisions (§8), the licence policy (§9), the conventions (§10) and the three ways this
+> repo has actually failed (§11). Several rules were amended by the build; where they
+> were, they say so inline. Do not "restore" an amended rule to what it used to say.
 >
 > **Two things are still unexercised:** the printed desk stand, and the battery — the PMIC
 > driver is written and every register reads back correct on the unit, but no cell has been
@@ -78,71 +79,18 @@ order is in **[docs/PLAN.md](./docs/PLAN.md)**.
 
 ## 2. Hardware — verified, do not re-derive
 
-**Board: Waveshare ESP32-S3-Touch-LCD-4B** ("Smart 86 Box"). Confirmed via the official
-BSP and repo; the non-"B" `ESP32-S3-Touch-LCD-4` is a *different, industrial* board whose
-wiki pin table is **wrong for this one**. Do not follow it.
+**Board: Waveshare ESP32-S3-Touch-LCD-4B** ("Smart 86 Box"), ESP32-S3-WROOM-1-N16R8:
+16 MB flash, 8 MB octal PSRAM, 480×480 ST7701 panel on a 16-bit RGB565 bus, GT911 touch
+polled over I²C, AXP2101 PMIC. Powered over USB-C.
 
-Read live from the attached board with `esptool`:
+**The full profile — pin tables, I²C addresses, framebuffer budget, the battery header, what
+is NOT on this board — is [docs/HARDWARE.md](./docs/HARDWARE.md).** Read it before you touch
+a peripheral. Two things to carry in your head until you do:
 
-```
-Chip type:  ESP32-S3 (QFN56) revision v0.2
-Features:   WiFi, BT 5 (LE), Dual Core + LP Core, 240MHz, Embedded PSRAM 8MB (AP_3v3)
-Flash:      16MB, quad (4 data lines), 3.3V
-MAC:        44:1b:f6:89:95:dc
-USB mode:   USB-Serial/JTAG
-```
-
-Module is `ESP32-S3-WROOM-1-N16R8`. PSRAM is **8 MB octal**; flash is 16 MB quad.
-
-| Part | Detail |
-|---|---|
-| Display | 4" IPS 480×480, **ST7701** controller, **16-bit parallel RGB565** |
-| LCD init bus | 3-wire SPI **through the TCA9554 IO expander** — costs no ESP32 GPIO |
-| Pixel clock | 16 MHz (BSP) → ~60 Hz panel refresh |
-| Framebuffer | 480×480×2 = **450 KiB**, in PSRAM |
-| Touch | **GT911**, 5-point, I²C `0x5D`, **polled — INT is behind the expander** |
-| I²C bus | single shared bus, **GPIO47 SDA / GPIO48 SCL**, 400 kHz |
-| I²C devices | TCA9554 `0x20`, ES8311 `0x18`, AXP2101 `0x34`, ES7210 `0x40`, PCF85063 `0x51`, GT911 `0x5D`, QMI8658 `0x6B` |
-| Audio | ES8311 codec + ES7210 ADC + NS4150B amp (2 W), 2× MEMS mics |
-| Other | AXP2101 PMIC, PCF85063 RTC, QMI8658 6-axis IMU |
-| Backlight | GPIO4, LEDC PWM |
-| Enclosure | 86.5 × 86.5 × 14 mm, standard 86-type wall plate, case included |
-
-**Not on this board** (reseller listings get this wrong): no relays, no mains input, no
-PoE, **no microSD**, no buzzer, no RGB LED, no CAN/RS485/Ethernet.
-
-**Power:** 2× USB-C, or PH2.0 Li-ion, or `5V_IN` on the rear header. **USB-C is the supply**
-— the side-edge port placement is fine for a desk unit and the rear header is not needed.
-(It would only matter for a flush wall install, where the side ports become unreachable.)
-
-**A PH2.0 cell is supported as a UPS** since D61, and these are schematic facts, not
-assumptions:
-
-- **AXP2101 DCDC1 (pins 23/22/21) is `VCC_3V3`**, which feeds the ESP32-S3, the panel, the
-  GT911 *and the AP3032 backlight boost*. VSYS switches between VBUS and BAT by itself, so
-  unplugging USB interrupts nothing and the backlight stays lit. It is a power path, not a
-  changeover switch.
-- **J1 is the battery header: pin 1 GND, pin 2 VBAT1**, silkscreened `+`/`-`. Cell vendors
-  are not consistent about which pin gets the red wire. **Meter it.** Reversed is a dead
-  PMIC.
-- **The back cover has a cutout over that socket**, so a cell plugs in without opening the
-  case — which is just as well, because at 14 mm total depth nothing fits inside it. **The
-  cell is stuck to the back of the case** (owner's call, D61 amendment): double-sided foam
-  tape, never cyanoacrylate on the pouch, no clamping or folding, and leave slack in the
-  lead so the plug is not what holds the cell on. Low on the back rather than centred — a
-  10 mm block at the bottom edge leans the panel back a few degrees instead of making it
-  rock.
-- **The PMIC's IRQ pin does not reach an ESP32 GPIO** (pull-up, no second occurrence in the
-  schematic), so the battery is polled, like the GT911.
-- **A cold start on battery alone needs a PWRKEY press** — datasheet §6.5.2, the BATFET is
-  off until the key is pressed or an adapter appears. Unplugging a *running* device is
-  seamless.
-- Draw is **1.2–1.9 W calculated** (39 mA through the backlight string: 200 mV over R30's
-  5.1 Ω into the AP3032), so roughly four hours from 2000 mAh. **Calculated, not measured**
-  — the firmware logs the discharge once a minute so the first unplugging settles it.
-
-**GPIO budget is effectively zero.** The RGB bus consumes nearly everything. Expansion
-goes over I²C, or by repurposing TCA9554 EXIO pins after init.
+- The non-"B" `ESP32-S3-Touch-LCD-4` is a **different, industrial board** and its wiki pin
+  table is wrong for this one. Do not follow it.
+- Reseller listings for this board are wrong about what it has. There is no microSD, no
+  buzzer, no relays, no Ethernet.
 
 ## 3. Stack
 
@@ -244,317 +192,42 @@ Reference sources:
 
 ## 4. Data architecture
 
-The ESP32 **cannot receive ADS-B** — 1090 MHz needs an SDR. All aircraft data comes from
-free community HTTP APIs. Every endpoint below was live-tested on 2026-09-18.
+Positions from **adsb.lol**, routes from **adsb.im/routeset** (batched), place names from
+**Open-Meteo geocoding**. All three over **plain HTTP**, which is the single biggest heap
+win on this platform and is why `main/net/http_get.h` carries no TLS.
 
-```
-Positions  →  GET  http://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}
-Routes     →  POST http://adsb.im/api/0/routeset            (batched!)
-Type names →  const table in flash: ICAO code → "Airbus A320neo"
-Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&language=de
-```
-
-### Why this combination
-
-- **Both work over plain HTTP with no redirect.** No TLS *on the data path* means no
-  handshake and roughly 40 KB more free heap per connection — the single biggest win
-  available on this platform. (OTA does carry TLS and the Mozilla bundle, D72. The data
-  path stays plain on purpose; do not "upgrade" it.) tar1090's own source notes
-  adsb.im *prefers* HTTP here.
-- **`adsb.lol` pre-computes `dst` (distance, nm) and `dir` (bearing)** from the query point.
-  No haversine needed on-device; sort by `dst` for free to find "the plane overhead".
-- **`adsb.im/routeset` is batched** — one POST resolves every callsign on screen, instead
-  of N TLS handshakes. It also returns city names and a `plausible` flag that filters
-  nonsense matches. Verified: `AUA453` → `LOWW-EGLL` / Vienna → London.
-- **Open-Meteo is the only free geocoder that answers over plain HTTP.** Measured
-  2026-09-20 with this project's own User-Agent: Open-Meteo `200`, no redirect;
-  `nominatim.openstreetmap.org` `301` → https; `photon.komoot.io` `301` → https. Since the
-  whole memory argument below rests on never opening a TLS connection on the data path,
-  that settles it. It pays a second time: each hit carries its IANA **timezone**, which is
-  what lets §6's "the clock follows the location" hold for a place that is not a preset.
-  The cost is that it finds PLACES and not street addresses — which does not matter here,
-  because the default radius is 30 nm (55 km) and moving the query point by the 600 m
-  between a town centre and a house on its edge changes nothing about which aircraft come
-  back. Only ever requested when somebody taps Suchen in §5.8; nothing polls it.
-- **Type names belong in flash, not on the network.** `adsb.lol` gives `t` = `A20N`; a
-  ~200-entry table costs a few KB and removes a whole API dependency. Built:
-  `main/data/tbl_actype.c`, `tbl_airline.c`, `tbl_airport.c` — all three were resized
-  against real traffic rather than guessed at (D43, D51).
-
-### Fallbacks
-
-| Layer | Primary | Fallback 1 | Fallback 2 |
-|---|---|---|---|
-| Positions | `adsb.lol` /v2/point (HTTP) | `adsb.fi` v3 (HTTPS, adds `desc` inline) | local tar1090 `aircraft.json` |
-| Routes | `adsb.im` routeset (batch) | `hexdb.io/callsign-route-iata` (**7 bytes**) | `adsbdb.com/v0/callsign` (adds airline + airport names) |
-| Airline | `airline_code` from routeset | `hexdb.io/hex-airline` | `adsbdb /v0/airline` |
-| Photo | `planespotters.net` (**custom UA required**) | `hexdb.io/hex-image` | — |
-
-`adsb.fi` and `adsb.lol` share the tar1090 JSON shape, so **one parser handles both** —
-only the wrapper key differs (`ac` vs `aircraft`; adsb.fi v3 uses `ac`, v2 uses `aircraft`).
-
-### Do not use
-
-- **airplanes.live** — now returns `403`, requires emailing for approval. Repo archived.
-- **OpenSky** — 400 credits/day anonymous (≈ one poll per 3.6 min), and returns **no
-  aircraft type, no registration, no route**. Wrong tool for this job.
-- **Flightradar24** — no free tier; scraping breaches ToS and they actively block.
-- **`api.adsb.lol/api/0/routeset`** — returns `201` with an empty body. Broken. Use `adsb.im`.
+**Endpoints, field semantics, the fallback order and why these three and not OpenSky or
+Flightradar24 — [docs/DATA.md](./docs/DATA.md).**
 
 ## 5. Rate limits — measured, respect them
 
-These are not documented numbers; they were hit for real during research.
+Measured against the live endpoints, not read off a documentation page. The short version:
+**one position poll every 12 s and never faster than 10**, because adsb.lol starts throttling
+at roughly the seventh rapid request and then escalates to a multi-minute `503`.
 
-- **`adsb.lol` throttles at roughly the 7th rapid request.** It then returns `429`, and
-  sustained abuse escalates to a `503` cooldown lasting **several minutes**. During
-  throttling it may also emit spurious `308` redirects — treat those as throttling, not
-  as a real redirect.
-- **Poll positions every 10–15 s.** Never faster.
-- **`adsb.fi` is 1 request/second** and returns a bare `400` when annoyed.
-- **`adsbdb.com`**: 512 req/min → `429`; ≥1024 → **5-minute lockout**.
-- **`hexdb.io`** publishes no limit but asks you not to scrape. Cache aggressively.
-
-**Implement exponential backoff and a source-health check from day one.** Two consecutive
-failures on the primary → switch to the fallback for a few minutes. A tight retry loop
-will get the device IP-banned from a free community service.
-
-**Cache routes per callsign for the whole flight** — a route never changes mid-flight.
-In practice that means one `routeset` POST every few minutes, not one per poll.
+**The numbers for every service, and what each one does when annoyed, are in
+[docs/DATA.md](./docs/DATA.md).** They are a courtesy to volunteer-run infrastructure, not a
+suggestion.
 
 ## 6. Locations
 
-Three presets plus a custom entry. Store in NVS.
+The device travels: it spends about half the year in Austria and half in Thailand, and the
+clock, the poll centre and the airport table all follow it. `main/data/settings.c` carries
+the presets.
 
-| Preset | Address | Lat / Lon |
-|---|---|---|
-| Gloggnitz (AT) | Semmeringstraße 11, 2640 Gloggnitz | `47.6691` / `15.9303` |
-| Wien (AT) | Meiselstraße 79, 1140 Wien | `48.1984` / `16.3074` |
-| Pattaya (TH) | 154 Thappraya Rd, Pattaya City, Chon Buri 20150 | `12.9211` / `100.8721` |
-
-**The enum values are written to NVS, so the list is append-only.** `LOC_WIEN` is 3, after
-`LOC_CUSTOM`, even though it belongs next to Gloggnitz on screen — renumbering would move a
-device already in the field to a different city on a firmware update, silently. The order he
-sees comes from `location_display_order()`, which exists for exactly that reason.
-
-Measured traffic on 2026-09-18 (aircraft returned by `adsb.lol`):
-
-| Location | 30 nm | 60 nm | 100 nm |
-|---|---|---|---|
-| Gloggnitz | ~9 | ~45 | ~89 |
-| Pattaya | 7 | 36 | 55 |
-
-Both locations have good coverage. **Default radius: 30 nm** (~55 km) — that is roughly
-what "overhead" means, and it keeps the payload near 4 KB instead of 60 KB at 100 nm.
-
-Coverage is *not* uniform across Thailand — Chiang Mai returned only 2 aircraft at 80 nm.
-If he ever moves, re-measure before assuming the device is broken.
-
-### The desk stand means the device travels
-
-A desk unit will be carried between Austria and Thailand twice a year, by someone who will
-not read a manual. Design for that:
-
-- **Two WiFi networks must both be remembered**, not reconfigured on arrival. Store a list,
-  not a single SSID, and reconnect to whichever is in range.
-- **Provisioning must survive a non-technical user in a foreign country.** Settled in §8:
-  an **on-device** network list that appears by itself when no known network is in range.
-  Not a captive portal — that assumes a phone, a second network join and a browser.
-- **Switching location should be one tap**, not a coordinate entry form. Three named
-  presets (Gloggnitz, Wien, Pattaya) plus an advanced custom option.
-  **Built, 2026-09-20 — and the conclusion was not what this line assumed.** "Eigener Ort"
-  shipped in M6 as a card with no way to set it: `custom_lat`/`custom_lon` were whatever
-  `settings_defaults()` had put there, and a TODO in `screen_settings.c` marked coordinate
-  entry as intentionally unimplemented *because a numeric keypad is the very form this rule
-  forbids*. That reasoning was right and its conclusion was wrong. The way to set a
-  location without a coordinate form is to **search for it by name** — §5.8 "Ort suchen",
-  one row under the cards. He types a town, taps Suchen, taps the right hit out of a list;
-  he never sees a coordinate and never types a decimal point.
-- **Timezone changes with the location** — CEST and ICT are 5–6 h apart depending on the
-  season. Bind the timezone to the location preset; do not make him set a clock.
-  **This was broken for LOC_CUSTOM the whole time and nobody could have noticed**, because
-  nobody could reach that preset with real coordinates in it: its row in `k_presets[]` said
-  `"UTC0"`, so tapping "Eigener Ort" moved the panel clock two hours without moving the
-  device an inch. A searched place now carries its own POSIX rule
-  (`settings_t.custom_tz`, from the geocoder's IANA zone via `main/net/tz_table.h`), and
-  `settings_tz()` is what the clock is set from. **Call `settings_tz(&settings)`, never
-  `location_tz(settings.preset)`** — the second one cannot know about a custom place and
-  answers Gloggnitz for it.
-- Consider auto-detecting the location preset from the WiFi SSID he connects to.
+**The coordinates, timezone rules, radius and which fields matter per place are in
+[docs/PLACES.md](./docs/PLACES.md).**
 
 ## 7. Gotchas that will cost you a day
 
-**Firmware / display**
-- **Flash writes tear the display — MEASURED, and they do not.** espressif/esp-bsp#570 is
-  real on this silicon+panel combo, but it does not reproduce in this configuration.
-  Measured: an NVS commit costs **3 µs** against a 49.7 ms worst-case frame gap, and
-  sustained commits under a high-contrast moving pattern produce **no visible tearing**.
-  Two framebuffers (AGENTS.md §8, PLAN.md M1) are the likely reason.
-  **Do NOT pause LVGL around NVS writes.** Holding the display lock across a commit burst
-  stalls rendering for ~2.85 s to save 3 µs — the mitigation is far worse than the disease.
-  Keep `CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y` and `CONFIG_SPIRAM_RODATA=y` on. Full numbers
-  in docs/DECISIONS.md D29.
-- **A screenshot reads frame buffer 0, which is not necessarily what is on the glass.**
-  `esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &fb)` hands back the FIRST buffer and this
-  build has two, so after a single redraw buffer 0 still holds the frame BEFORE the change.
-  Every grab of a screen that had just been changed and then gone still was one state out
-  of date, and said nothing about it — the image is a valid picture of the wrong moment.
-  It only bites a STATIC screen: anything animating redraws continuously and both buffers
-  converge, which is why the M11 loading states photographed correctly while the no-route
-  fixture beside them came back twice showing the state before it. `dbg_screen.c` now
-  invalidates the whole screen once per buffer before capturing. If you add a third
-  buffer, that loop already follows `CONFIG_BSP_LCD_RGB_BUFFER_NUMS`.
-- **Stay at 80 MHz PSRAM.** 120 MHz is experimental and temperature-sensitive — a real
-  risk for an always-on panel behind glass.
-- **WiFi bursts compete for PSRAM bandwidth** and cause visible drift. This is the #1
-  field failure mode for RGB panels. Keep network work off the render path.
-- **Strapping pins are on the RGB bus**: GPIO3 (VSYNC), GPIO45 (G3), GPIO46 (HSYNC), and
-  GPIO0 is BOOT. Do not back-drive these during reset.
-- Anti-tearing is **off** in the BSP default (`BSP_LCD_RGB_BUFFER_NUMS=1`); **we set 2**,
-  and that is measured, not assumed. Two is both *faster* than one (28.5 vs 21.4 FPS) and
-  tear-free; three buys nothing (D12, PLAN M1).
-- **Large fonts land in PSRAM, not flash.** `CONFIG_SPIRAM_RODATA=y` — mandated at the top of
-  this block as the tearing mitigation — relocates `.rodata`, and LVGL fonts *are* `.rodata`.
-  So the 100 px hero face and its shrink ladder compete with the framebuffer for PSRAM
-  bandwidth: the project's #1 risk and its most distinctive design choice pulling on the
-  same bus. **Measured in M1, and it did not materialise:** at two framebuffers the 100 px
-  face costs **zero** FPS; at one it costs 6%. The full font set is 735 KiB and buys back
-  nothing by shrinking. Do not re-open this without a new measurement.
+Grouped by where they bite: firmware and display, power and the battery, fonts and text,
+data parsing. Every one was found the expensive way on this exact hardware — the panel's
+tearing behaviour, the touch INT behind the IO expander, LVGL's fixed heap, PSRAM
+bandwidth, the task stacks, the APIs that lie about their own behaviour.
 
-- **`lv_keyboard` positions itself, and `lv_obj_set_pos()` then means something else.**
-  Its constructor calls `lv_obj_align(obj, LV_ALIGN_BOTTOM_MID, 0, 0)` on itself
-  (`lv_keyboard.c`), and in LVGL 9 an object's x/y become an OFFSET FROM ITS ALIGNMENT once
-  one is set. So `lv_obj_set_pos(kb, 0, 240)` — which is how every other widget in this
-  codebase is placed, and which reads as obviously correct — asks for a keyboard 240 px
-  **below the bottom edge of the panel**. The screen renders perfectly, with no keyboard on
-  it, and nothing is logged. **The WLAN password step shipped like this from M6 until
-  2026-09-20** and nobody saw it, because that step needs a finger on an unknown network
-  and so was never once reached from the build host. Use `lv_obj_align(kb,
-  LV_ALIGN_TOP_LEFT, 0, y)`. Both keyboards are styled by `main/ui/widget_input.c`, which
-  says the same thing where someone writing the next one will read it.
-- **`lv_keyboard_set_map()` is PROCESS-WIDE, not per keyboard.** It writes into a
-  file-scope table inside `lv_keyboard.c` (`kb_map[mode] = map`) that every keyboard reads
-  at redraw, so two keyboards cannot have two layouts and installing one from either screen
-  changes both. Here that is what we want — the WLAN keyboard and the Ortssuche keyboard
-  must be the same keyboard — so `widget_input.c` leans on it and installs the German
-  QWERTZ layout from the styling function. If you ever DO need two, the only per-instance
-  hook is `LV_KEYBOARD_MODE_USER_1..4`.
-- **The three layer keys are a contract with LVGL, spelled by hand.**
-  `lv_keyboard_def_event_cb()` decides whether a key switches layer by comparing its CAP
-  TEXT against `LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER` / `_UPPER` / `_SPECIAL` — macros
-  `lv_keyboard.c` keeps to itself and does not export, so a custom map has to carry the same
-  three strings (`"abc"`, `"ABC"`, `"1#"`). Get one wrong and nothing warns: the key stops
-  switching layers and starts typing its own cap into the field. `widget_keyboard_debug_layer()`
-  and the `a` console key exist to press all three and photograph the result, because this
-  is the kind of thing that breaks silently on an LVGL bump.
-- **The built-in Montserrat faces have no umlauts.** LVGL generates them with
-  `-r 0x20-0x7F,0xB0,0x2022` plus FontAwesome — read it off the top of
-  `lv_font_montserrat_24.c`, it is in the file. So an `ü` key drawn in Montserrat is a key
-  with nothing on it; and the Plex subset has none of the `LV_SYMBOL_*` private-use
-  codepoints, so a backspace drawn in Plex is a key with nothing on it either. Neither face
-  can draw a German keyboard alone. The way out is a per-state font: `lv_buttonmatrix`
-  re-reads `LV_PART_ITEMS`'s label style per button with that button's own state
-  (`lv_buttonmatrix.c`, `draw_main`), and every control key carries
-  `LV_BUTTONMATRIX_CTRL_CHECKED` — so `LV_PART_ITEMS` gets Plex and
-  `LV_PART_ITEMS | LV_STATE_CHECKED` gets Montserrat.
-- **`LV_LABEL_LONG_MODE_DOTS` needs a fixed HEIGHT, not just a fixed width.** Its
-  implementation only ellipsises when the rendered text is taller than the object
-  (`lv_label.c`: `size.y > lv_area_get_height(&txt_coords)`), so a label given a width but
-  left at `LV_SIZE_CONTENT` height does not truncate — it grows another line, and draws it
-  over whatever was laid out underneath. That is how the WLAN screen ended up with
-  "Verbindung fehlgeschlagen:" on one line, the SSID on a second, and the network list
-  painted on top of the second. **The code reads as though the problem had been fixed**,
-  which is the whole trap: setting the width and asking for dots looks like the complete
-  gesture. Pin both dimensions, and lay the band below out from the font's line height
-  rather than from the label's measured one. **It was in the file twice**: every SSID in
-  the WLAN list had the same missing height, and the network this device is actually on —
-  `Apartamentos_Jose_Cruz` — had been breaking across two lines inside a 64 px row since
-  M6. Both were found by looking at the glass, neither by reading the code.
-- **`lv_button` arrives padded, and both `lv_obj_set_pos()` and `lv_obj_align()` measure
-  from the CONTENT area.** LVGL's default theme gives a button `pad_hor = PAD_DEF` and
-  `pad_ver = PAD_SMALL` — about 13 px and 8 px at this panel's 130 DPI — so a label placed
-  at `(ROW_INSET, ROW_PAD_V)` inside one actually lands 13 px right and 8 px down of that,
-  while any width computed from the row's own `CONTENT_W` overflows the content box by
-  26 px. The visible result is subtle and looks like a different bug: an ellipsis drawn
-  through the badge beside it, or a two-line row sitting too low. `widget_kill_button_chrome()`
-  does NOT cover this — it clears the shadow and the outline, not the padding. Any
-  `lv_button` used as a layout container wants an explicit `lv_obj_set_style_pad_all(b, 0, 0)`
-  so that the insets in the code are the insets on the panel.
-- **An LVGL timer outlives the object it reads, and every debug view frees that object.**
-  `lv_timer_create()` runs until something deletes it; `lv_obj_clean(lv_screen_active())`,
-  which `dbg_fontcard.c` and `dbg_bench.c` both call, deletes widgets and tells nobody. A
-  poller reading a screen's own pointer is then a LoadProhibited a quarter of a second
-  later, from a stack with no application frame in it. Keep the handle, delete it from an
-  `LV_EVENT_DELETE` handler on the object it reads, and guard the callback — the same
-  arrangement `widget_busy.c` uses to tie an animation's life to its object (D58). Note
-  also that a `*_create()` called again on `ui_resume()` creates a SECOND timer: the old
-  one has to go first.
-- **LVGL's default theme draws a shadow under every `lv_button`**, which on this ground is
-  a 2 px band of `#525152` all round — a grey line under every list divider and a grey
-  column down both edges of a list. Nothing in the source asks for it, so nothing in the
-  source looks wrong; it was found by reading the panel's framebuffer back and probing
-  pixels. `widget_kill_button_chrome()`.
-- **In LVGL 9 every `lv_obj_create()` is a touch target, and no event ever bubbles.**
-  The `lv_obj` constructor sets `obj->clickable = 1` (labels are the exception — theirs
-  sets it false), and LVGL passes an event to a parent only if the child carries
-  `LV_OBJ_FLAG_EVENT_BUBBLE`. So a full-screen container a screen creates for layout
-  silently eats every press aimed at anything underneath it, and a decorative
-  `lv_obj_create()` circle eats every press inside its bounding box — which for the radar's
-  range rings is most of the panel. Scrolling is not affected, because scrolling searches
-  UP the parent chain for a scrollable ancestor; clicking does not. This cost the long press
-  into Einstellungen its entire life (D62). `nav.c`'s `bubble_decorative()` is the rule that
-  came out of it: an object with no event callback of its own is scenery and passes touches
-  on.
-
-**Power and the battery**
-- **The BSP does not touch the AXP2101 at all** — `grep -i axp` over the Waveshare component
-  returns nothing. Everything about charging is `main/power/axp2101.c`, and before it existed
-  the charger ran on whatever the chip's eFuse said.
-- **REG50[4] must be set or the cell may never charge.** The TS pin is wired to a plain
-  resistor to ground, not a thermistor, and that bit's reset value comes from the eFuse.
-  Waveshare's own example disables it with the comment "otherwise it will cause abnormal
-  charging". The symptom is a device that looks fine and quietly stays flat — the Akku line
-  in Einstellungen says "wird nicht geladen" for exactly this case.
-- **Never write a rail.** REG80/REG90 and friends turn the panel or the ESP32 off, and the
-  only way back is the PWRKEY on the side edge. The driver touches the charger, the ADC and
-  the gauge, nothing else.
-- **A zeroed `battery_status_t` means a black screen.** Its `brightness_cap_pct` is 0 and the
-  dimmer takes the minimum of the schedule and the cap, so the one in main.c is initialised
-  explicitly. Copy that if you ever add another.
-
-**Fonts and text**
-- **`lv_font_conv` does not apply OpenType features.** A font whose tabular figures exist
-  only behind the `tnum` feature will render digits that visibly jitter on every refresh.
-  Use a font that is tabular *by default* — IBM Plex Mono is; Barlow Condensed, Saira
-  Condensed and Oswald are not.
-- **`lv_font_conv` compresses glyph bitmaps by default, and LVGL 9 will not decode
-  them.** `.bitmap_format = 1` needs `LV_USE_FONT_COMPRESSED`, which is off in this
-  build — so every glyph renders as *nothing at all*, with no error logged anywhere.
-  Generate with `--no-compress`. Uncompressed is the better trade regardless: it costs
-  flash but no per-frame CPU, and this product is render-bound.
-- **`lv_font_conv` predates LVGL 9.3's `.static_bitmap` flag** and cannot emit it, so
-  `tools/build_fonts.sh` patches it in after generating. Without it LVGL copies every
-  glyph instead of using the const data in place.
-- **Umlauts are not in the default ASCII range.** Subset Latin-1 supplement explicitly or
-  ä/ö/ü/ß render as blanks. Exact ranges in docs/DESIGN.md §3.
-- **Minimum readable cap height on this panel is ~30 px** (ISO 9241-303 at 70 cm). Chrome
-  may be smaller; anything he needs at a glance may not.
-
-**Data parsing**
-- **`flight` is space-padded to 8 characters** (`"AUA453  "`). Trim before sending to
-  `routeset` or lookups will silently miss.
-- **`alt_baro` is the string `"ground"`**, not a number, when the aircraft is on the
-  ground. Parsing it as an int will break.
-- **`r` (registration) and `t` (type) can be absent** — military, blocked, and TIS-B
-  targets. Always null-check.
-- **Parse with cJSON, not ArduinoJson.** This is ESP-IDF; cJSON already ships with it, and
-  that is what lets the *same* parser link into the host tests (D6, D7). You need ~6 of 50+
-  fields per aircraft: pull those into the fixed-size struct and free the document, rather
-  than keeping it alive.
-- Send a **descriptive User-Agent** on every request — planespotters.net rejects generic
-  ones outright, and it is the courteous thing to do with free services. It identifies the
-  project by **repo URL, not by email**: `HTTP_USER_AGENT` in `main/net/http_get.h`. The
-  address in the git history is for authorship; it does not get handed to a third party.
-  This was deliberate — do not "improve" the UA by putting contact details back in.
+**They are in [docs/GOTCHAS.md](./docs/GOTCHAS.md). Read it before your first build, not
+after your first day lost.** The one that catches everyone: **all LVGL calls happen on the
+display task behind `display_lock()`**, and the network never touches the tree directly.
 
 ## 8. Decisions
 
@@ -658,13 +331,14 @@ because the convention was broken once each.
 - ~~**The repo is private on purpose.**~~ **Amended by the owner, 2026-09-21: the repo is
   PUBLIC.** It was made public so releases could be published to an unauthenticated HTTPS
   URL the device can fetch from (D72). The reason the old rule existed has not gone away,
-  it was accepted: §6 of this file lists three residential addresses with coordinates,
+  it was accepted: [docs/PLACES.md](./docs/PLACES.md) lists three residential addresses
+  with coordinates,
   §1 and the README say who lives at them and that he splits the year between them,
   `main/data/settings.c` carries the same three as presets, and `docs/screens/` shows
   one set of coordinates and one real SSID. All of it is in the history of every
   commit, including some commit subject lines, so none of it can be taken back by editing
   a file. The owner was shown that list and chose to publish anyway. **Do not "restore"
-  this rule, and do not quietly redact §6 either** — half a redaction on a public history
+  this rule, and do not quietly redact those places either** — half a redaction on a public history
   is worse than none, because it reads as a mistake rather than a decision.
 
   What is still not negotiable, and now matters more rather than less:
