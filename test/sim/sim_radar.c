@@ -584,6 +584,32 @@ int main(int argc, char **argv)
     }
 
     /* ------------------------------------------------------------------ */
+    GROUP("the nearest is drawn on top: a later aircraft in the feed does not hide it");
+    {
+        /* Seen on the device, 2026-09-24 23:31: the magenta nearest half
+         * hidden under a filled cyan dot. Marks drew in feed order, so any
+         * neighbour later in the array covered it. Here E (index 4, filled,
+         * no track = a big dot) is put right on top of A (index 0), a hair
+         * farther away so A stays the nearest. */
+        sky();
+        s_n = N_AC;
+        update();
+        int alone = magenta().n;
+        s_ac[E].dst_nm = s_ac[A].dst_nm + 0.05f;
+        s_ac[E].dir_deg = s_ac[A].dir_deg;
+        s_ac[E].has_track = false;
+        s_ac[E].alt_ft = 2000;                 /* large band: the biggest dot */
+        update();
+        png_write("14_overlap");
+        int covered = magenta().n;
+        CHECK(alone > 20, "precondition: A has magenta pixels alone (%d)", alone);
+        CHECK(covered >= alone * 8 / 10, "the nearest is hidden: %d magenta px, %d alone", covered, alone);
+        sky();
+        s_n = N_AC;
+        update();
+    }
+
+    /* ------------------------------------------------------------------ */
     GROUP("nearest is sticky through a near-tie, and yields to a clear winner");
     {
         s_ac[E].dst_nm = 5.8f; s_ac[E].dir_deg = 250;   /* 3 % closer than A */

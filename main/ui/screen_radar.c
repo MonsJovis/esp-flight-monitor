@@ -1012,6 +1012,16 @@ static void ring_at(int idx)
         lv_obj_set_hidden(s_sel_ring, true);
         return;
     }
+    /* Draw order: the aircraft he is looking at goes above every other mark,
+     * and the ring above it. Seen on the device — a neighbour later in the
+     * feed drawn over the mark in question — so it is set here, where the
+     * ring is placed, for taps, press previews and updates alike. Nothing
+     * else on this screen overlaps the scope, so bringing these two to the
+     * front changes nothing but the marks. Hit-testing follows, which is
+     * right: the mark on top is the one a finger there should get. */
+    lv_obj_move_foreground(s_marks[idx]);
+    lv_obj_move_foreground(s_sel_ring);
+
     int32_t r = sel_ring_r(idx);
     lv_obj_set_size(s_sel_ring, 2 * r, 2 * r);
     lv_obj_set_pos(s_sel_ring, (int32_t)(s_calc[idx].x - (float)r),
@@ -1305,6 +1315,16 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     }
 
     s_cap_count = (n < MAX_AIRCRAFT) ? n : MAX_AIRCRAFT;
+
+    /* The nearest draws above every other mark. Marks used to draw in feed
+     * order, and on the panel (2026-09-24 23:31) the magenta nearest sat
+     * half-hidden under a filled cyan dot that came later in the array —
+     * the one aircraft this scope singles out, covered by one it does not.
+     * If he has tapped another aircraft, place_sel_ring() below brings that
+     * one (and the ring) in front of this. */
+    if (nearest_idx >= 0) {
+        lv_obj_move_foreground(s_marks[nearest_idx]);
+    }
 
     /* --- The caption, BELOW the scope rather than inside it. ---
      *

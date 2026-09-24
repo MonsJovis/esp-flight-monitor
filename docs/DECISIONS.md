@@ -2836,3 +2836,51 @@ with.
 **Open, for the owner:** both route facts at once would need ~40 px from somewhere else on
 the card. The candidate is the compass tape, which repeats what "südöstlich" already says.
 That is a design trade only he can make.
+
+## D80 — D75–D79 on the glass: what the panel confirmed, one thing it caught
+
+**Tested on the unit on 2026-09-24 between 23:20 and 23:45, over the Vienna preset at 33 nm,
+on a weak link (−70 dBm).** The test build was `main` at `f430e2a`, plus the fix below.
+
+**The update path proved itself first.** Straight after the first flash the device was
+inside its night window, and within a minute and a half it downloaded v0.8.0 from the
+GitHub release, wrote it and rebooted into it — replacing the test build. That was the real
+end-to-end OTA of a real release, and it worked. To keep testing, updates were switched
+off from the console (`u`, then `-`) and the test build flashed again. They were turned back
+on afterwards — see the end of this entry.
+
+**Confirmed on the panel:**
+- **Radar (D75, D76, D78):** the two-line caption on real flights
+  (`TVS2965 · Boeing 737-800` / `Prag 9,9 km O →`, and for a route-less aircraft
+  `ENT4804 · Boeing 737-800` / `9,8 km NO →`), the ring, trails, altitude sizes, and the
+  scope lifted clear of the caption.
+- **Detail card (D79):** AIZ282 Prag → Tel Aviv at cruise, "Landung in etwa 2 Std. 45 Min."
+  and `10.058 m  910 km/h` — plausible against a ~2,290 km straight line to Tel Aviv. And
+  AUA75J Wien → Tirana still climbing at 3,703 m, "30 km von Wien entfernt" with no
+  estimate: the climb-out rule, working on a real departure.
+- **Memory:** 50.9 KB internal free at rest; with the WLAN keyboard open, 32.1 KB free and a
+  26.6 KB largest block. (An earlier reading of 40 KB was taken while the device was
+  downloading v0.8.0.)
+- **Stress (§11's third pattern):** 60 rapid cycles of opening and closing the card, with
+  page switches and 6 full UI rebuilds — no panic, no reset, memory flat (50,679 → 50,503 B).
+- **Touch, by the owner's finger, read back from 118 framebuffer captures and the log:**
+  - tap a mark → the ring moves there and the caption follows;
+  - tap the caption → the card opens (4×); after closing it, the same aircraft is still
+    ringed;
+  - tap empty scope → back to the nearest within 5 s;
+  - 30 s untouched → back to the nearest, to the frame.
+
+  The long press into Einstellungen with an aircraft selected was not done in this
+  session. The device's touch counter confirms zero long presses.
+
+**Caught by the panel and fixed: the nearest could be hidden.** Marks drew in feed order.
+In one frame the magenta nearest sat half under a filled cyan dot that came later in the
+array — the one aircraft the scope singles out, covered by one it does not. The nearest now
+draws above every other mark; a tapped aircraft draws above that, and the ring above it. It
+is set where the ring is placed, so taps, press previews and updates all get it, and
+hit-testing follows the drawing. The simulator reproduced it first: with an aircraft right
+on top of it, 14 of the nearest's 186 magenta pixels were visible. It now checks that at
+least 80 % stay visible. 94 radar checks, 25 stress seeds.
+
+**Not seen on the glass:** the KEINE DATEN screen with the new caption (an outage cannot be
+forced from the console — the simulator covers it), and the long press above.
