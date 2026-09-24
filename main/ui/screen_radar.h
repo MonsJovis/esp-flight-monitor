@@ -38,6 +38,30 @@
 #include "flight_types.h"
 #include "view_model.h"   /* net_state_t */
 
+/* ---- Geometry, px. Public so test/sim measures against these numbers rather
+ * than a copy of them. ----
+ *
+ * The scope sits 22 px above the panel's centre and is a little smaller than
+ * it was (outer ring 140 -> 136) since D78, to make room for the caption's
+ * second line: the "S" cardinal's ink ends at y ~387, the caption runs from
+ * RADAR_CAPTION_Y to ~462, and the page dots start at 464. The "N" still
+ * clears the top chrome row (y 24-41). The last 4 px of that lift are there
+ * so the grey S does not sit on the grey first caption line and read as part
+ * of it — seen in the first render, not predicted. The whole scope stays inside
+ * DESIGN.md §4's ~340 px round-panel circle. */
+#define RADAR_CX          240
+#define RADAR_CY          218
+#define RADAR_R_OUTER     136   /* full radius_nm */
+#define RADAR_CARDINAL_R  160   /* N/O/S/W, just outside the outer ring */
+
+/* Caption: line 1 (who · model) at RADAR_CAPTION_Y, line 2 (destination,
+ * distance, arrow) RADAR_CAPTION_LINE2_DY below it. The two label boxes
+ * overlap by 4 px — Plex Sans' 31 px line box carries 6 px below its
+ * baseline — which still leaves ~11 px of clear space between the ink of
+ * the two lines. */
+#define RADAR_CAPTION_Y        394
+#define RADAR_CAPTION_LINE2_DY 27
+
 #ifdef __cplusplus
 extern "C" {
 #endif

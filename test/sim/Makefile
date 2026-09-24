@@ -46,7 +46,7 @@ $(BUILD)/lvgl/%.o: $(LVGL)/src/%.c lv_conf.h
 $(BUILD)/liblvgl.a: $(LVGL_OBJS)
 	@ar rcs $@ $^
 
-$(BUILD)/sim_radar: sim_radar.c $(APP_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
+$(BUILD)/sim_radar: sim_radar.c sim_common.h $(APP_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
 	@$(CC) $(APP_CFLAGS) -o $@ sim_radar.c $(APP_SRCS) $(BUILD)/liblvgl.a -lm
 
 # Leak detection off: LVGL's objects live until the process exits and are

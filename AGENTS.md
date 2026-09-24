@@ -274,9 +274,10 @@ display task behind `display_lock()`**, and the network never touches the tree d
    stays in the tree as an unprinted, unmeasured sketch; do not treat it as pending work and
    do not spend a milestone on it. If it is ever printed, its dimensions still come from the
    datasheet rather than from calipers, so `part = "fittest"` first.
-4. **Is the 13 px identity line findable from his chair?** It is deliberately dimmed to
-   `THEME_TEXT_TERTIARY` so it cannot crowd out the answer. Only his eye can settle that;
-   the question is with him and unanswered.
+4. **Is the 13 px identity line findable from his chair?** **Answered for the radar
+   (2026-09-24):** the owner asked for the flight number and model in its caption, above the
+   distance, at 25 px, and the radar's top-row line is gone (D78). **Still open** for the
+   two places that keep it at 13 px tertiary: the Liste rows and the detail layer's top line.
 
 Design-side open questions live in DESIGN.md §7 and are mirrored here. One list, not two.
 

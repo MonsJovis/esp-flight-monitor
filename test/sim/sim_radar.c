@@ -41,66 +41,9 @@
 #include "flight_types.h"
 #include "fonts.h"
 #include "fmt_de.h"
+#include "tables.h"
+#include "sim_common.h"
 
-#define W 480
-#define H 480
-
-/* ---- harness ----------------------------------------------------------- */
-
-static int t_run, t_fail;
-#define CHECK(cond, ...) do {                                              \
-    t_run++;                                                               \
-    if (!(cond)) {                                                         \
-        t_fail++;                                                          \
-        printf("    FAIL  %s:%d  %s — ", __FILE__, __LINE__, #cond);       \
-        printf(__VA_ARGS__);                                               \
-        printf("\n");                                                      \
-    }                                                                      \
-} while (0)
-#define GROUP(name) printf("\n  %s\n", (name))
-
-static uint16_t    s_fb[W * H];
-static uint32_t    s_now_ms;
-static int32_t     s_px, s_py;
-static bool        s_down;
-static const char *s_outdir = ".";
-
-static uint32_t tick_cb(void) { return s_now_ms; }
-
-/* DIRECT mode, rendering straight into s_fb — the device's mode
- * (CONFIG_BSP_DISPLAY_LVGL_DIRECT_MODE=y, two framebuffers kept in sync by
- * esp_lvgl_port). Only INVALIDATED areas are redrawn and everything else
- * keeps last frame's pixels, which is the whole point: a first version used
- * FULL mode, repainted every pixel every frame, and so could not see a
- * forgotten lv_obj_invalidate() — a mutant that removed the trail layer's
- * invalidate survived it. Two synced buffers behave as one for this purpose. */
-static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
-{
-    (void)a; (void)px;
-    lv_display_flush_ready(d);
-}
-
-static void read_cb(lv_indev_t *i, lv_indev_data_t *d)
-{
-    (void)i;
-    d->point.x = s_px;
-    d->point.y = s_py;
-    d->state   = s_down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-}
-
-/* Advances the clock in 5 ms steps, running LVGL at each. */
-static void run_ms(uint32_t ms)
-{
-    for (uint32_t t = 0; t < ms; t += 5) {
-        s_now_ms += 5;
-        lv_timer_handler();
-    }
-}
-
-static void touch_down(int32_t x, int32_t y) { s_px = x; s_py = y; s_down = true;  run_ms(60); }
-static void touch_up(void)                    {                      s_down = false; run_ms(60); }
-static void tap(int32_t x, int32_t y)         { touch_down(x, y); run_ms(40); touch_up(); }
-static void render(void)                      { lv_refr_now(NULL); }
 
 /* Deterministic LCG for the stress run. A function, not a macro: two calls
  * in one expression as a macro modify the seed unsequenced, which is
@@ -114,35 +57,8 @@ static int rnd(int n)
 
 /* ---- pixels ------------------------------------------------------------ */
 
-static uint16_t to565(lv_color_t c)
-{
-    return (uint16_t)(((c.red >> 3) << 11) | ((c.green >> 2) << 5) | (c.blue >> 3));
-}
 
-typedef struct { int n; double cx, cy; } blob_t;
-
-/* Every pixel inside the box that is EXACTLY `c`. */
-static blob_t find(lv_color_t c, int x0, int y0, int x1, int y1)
-{
-    uint16_t want = to565(c);
-    blob_t   b    = { 0, 0, 0 };
-    for (int y = y0; y <= y1; y++) {
-        for (int x = x0; x <= x1; x++) {
-            if (s_fb[y * W + x] == want) {
-                b.n++;
-                b.cx += x;
-                b.cy += y;
-            }
-        }
-    }
-    if (b.n > 0) {
-        b.cx /= b.n;
-        b.cy /= b.n;
-    }
-    return b;
-}
-
-#define R_OUTER_PX 140
+#define R_OUTER_PX RADAR_R_OUTER
 #define RADIUS_NM_ 30
 
 /* A point inside the rings that no aircraft's touch target reaches (each
@@ -152,15 +68,23 @@ static blob_t find(lv_color_t c, int x0, int y0, int x1, int y1)
 #define EMPTY_Y 180
 
 /* Everything a ring can reach: an aircraft clamped to the outer ring
- * (r = 140) plus the largest selection ring (r = 20) plus a pixel. The first
+ * (RADAR_R_OUTER) plus the largest selection ring (r = 20) plus a pixel. The first
  * version stopped at 150, cut the outer arc off rings around out-of-range
  * aircraft, and dragged their centroid 3-5 px inward — which the stress run
- * reported as "a ring on no aircraft". Still clear of the caption band (416+)
+ * reported as "a ring on no aircraft". Still clear of the caption band
  * and of anything else drawn in pure white or exact magenta. */
-#define SCOPE_X0 (240 - 162)
-#define SCOPE_Y0 (240 - 162)
-#define SCOPE_X1 (240 + 162)
-#define SCOPE_Y1 (240 + 162)
+#define SCOPE_X0 (RADAR_CX - RADAR_R_OUTER - 22)
+#define SCOPE_Y0 (RADAR_CY - RADAR_R_OUTER - 22)
+#define SCOPE_X1 (RADAR_CX + RADAR_R_OUTER + 22)
+#define SCOPE_Y1 (RADAR_CY + RADAR_R_OUTER + 22)
+
+/* The caption: line 1 (who · model) and line 2 (destination, distance,
+ * arrow), both from the header. CAP_Y1 is the last row above the page dots. */
+#define CAP_Y0   RADAR_CAPTION_Y
+#define CAP2_Y0  (RADAR_CAPTION_Y + RADAR_CAPTION_LINE2_DY)
+#define CAP_Y1   463
+#define TAP_L1_Y (RADAR_CAPTION_Y + 14)
+#define TAP_L2_Y (CAP2_Y0 + 20)
 
 static blob_t ring(void)    { return find(THEME_WHITE,   SCOPE_X0, SCOPE_Y0, SCOPE_X1, SCOPE_Y1); }
 static blob_t magenta(void) { return find(THEME_MAGENTA, SCOPE_X0, SCOPE_Y0, SCOPE_X1, SCOPE_Y1); }
@@ -198,6 +122,10 @@ static int ink_near(double cx, double cy, double r)
 
 /* Pixels in a disc where the colour leans magenta or cyan — used for trail
  * dots, which are blended and so never an exact token. */
+/* A disc tinted_near() ignores, for checks that must not count the aircraft's
+ * own mark. Off (radius 0) except where a check sets it. */
+static double s_excl_x, s_excl_y, s_excl_r;
+
 static int tinted_near(double cx, double cy, double r, bool want_magenta)
 {
     int n = 0;
@@ -205,6 +133,7 @@ static int tinted_near(double cx, double cy, double r, bool want_magenta)
         for (int x = (int)(cx - r); x <= (int)(cx + r); x++) {
             if (x < 0 || y < 0 || x >= W || y >= H) continue;
             if (hypot(x - cx, y - cy) > r) continue;
+            if (s_excl_r > 0 && hypot(x - s_excl_x, y - s_excl_y) < s_excl_r) continue;
             uint16_t p  = s_fb[y * W + x];
             int      R  = ((p >> 11) & 31) << 3, G = ((p >> 5) & 63) << 2, B = (p & 31) << 3;
             /* Strict enough that the range rings' dim blue-grey hairlines
@@ -226,7 +155,7 @@ static int arc_tint(double from_deg, double to_deg, bool magenta_)
     double r = R_OUTER_PX * (20.0 / RADIUS_NM_);
     for (double b = from_deg; b <= to_deg; b += 1.0) {
         double rad = b * M_PI / 180.0;
-        n += tinted_near(240 + r * sin(rad), 240 - r * cos(rad), 3, magenta_);
+        n += tinted_near(RADAR_CX + r * sin(rad), RADAR_CY - r * cos(rad), 3, magenta_);
     }
     return n;
 }
@@ -250,92 +179,11 @@ static int ring_ink(double cx, double cy, double r)
     return n;
 }
 
-/* Rendered width, unwrapped — the same call screen_radar.c's fit uses. */
-static int text_w(const char *txt, const lv_font_t *f)
-{
-    lv_point_t p;
-    lv_text_get_size(&p, txt, f, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-    return (int)p.x;
-}
-
-static void put32(FILE *f, uint32_t v)
-{
-    uint8_t q[4] = { (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v };
-    fwrite(q, 1, 4, f);
-}
-
-static void png_chunk(FILE *f, const uint32_t *crc_tab, const char *type,
-                      const uint8_t *data, size_t len)
-{
-    put32(f, (uint32_t)len);
-    fwrite(type, 1, 4, f);
-    if (len > 0) fwrite(data, 1, len, f);
-    uint32_t c = 0xFFFFFFFFu;
-    for (int k = 0; k < 4; k++) c = crc_tab[(c ^ (uint8_t)type[k]) & 0xFF] ^ (c >> 8);
-    for (size_t k = 0; k < len; k++) c = crc_tab[(c ^ data[k]) & 0xFF] ^ (c >> 8);
-    put32(f, c ^ 0xFFFFFFFFu);
-}
-
-static void png_write(const char *name)
-{
-    char path[512];
-    snprintf(path, sizeof path, "%s/%s.png", s_outdir, name);
-    FILE *f = fopen(path, "wb");
-    if (f == NULL) {
-        printf("    (could not write %s)\n", path);
-        return;
-    }
-    /* Uncompressed PNG: zlib "stored" blocks. Big files, zero dependencies. */
-    static uint32_t crc_tab[256];
-    if (crc_tab[1] == 0) {
-        for (uint32_t n = 0; n < 256; n++) {
-            uint32_t c = n;
-            for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            crc_tab[n] = c;
-        }
-    }
-    size_t   row = 1 + W * 3, raw_len = row * H;
-    uint8_t *raw = malloc(raw_len);
-    for (int y = 0; y < H; y++) {
-        raw[y * row] = 0;
-        for (int x = 0; x < W; x++) {
-            uint16_t p = s_fb[y * W + x];
-            uint8_t *o = &raw[y * row + 1 + x * 3];
-            o[0] = (uint8_t)(((p >> 11) & 31) * 255 / 31);
-            o[1] = (uint8_t)(((p >> 5) & 63) * 255 / 63);
-            o[2] = (uint8_t)((p & 31) * 255 / 31);
-        }
-    }
-    size_t   nblk = (raw_len + 65534) / 65535, z_len = 2 + raw_len + nblk * 5 + 4;
-    uint8_t *z = malloc(z_len), *zp = z;
-    *zp++ = 0x78; *zp++ = 0x01;
-    uint32_t a = 1, b = 0;
-    for (size_t off = 0; off < raw_len; off += 65535) {
-        size_t n = raw_len - off < 65535 ? raw_len - off : 65535;
-        *zp++ = (off + n == raw_len) ? 1 : 0;
-        *zp++ = (uint8_t)n; *zp++ = (uint8_t)(n >> 8);
-        *zp++ = (uint8_t)~n; *zp++ = (uint8_t)(~n >> 8);
-        memcpy(zp, raw + off, n); zp += n;
-    }
-    for (size_t i = 0; i < raw_len; i++) { a = (a + raw[i]) % 65521; b = (b + a) % 65521; }
-    uint32_t ad = (b << 16) | a;
-    *zp++ = (uint8_t)(ad >> 24); *zp++ = (uint8_t)(ad >> 16); *zp++ = (uint8_t)(ad >> 8); *zp++ = (uint8_t)ad;
-
-    static const uint8_t sig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n' };
-    fwrite(sig, 1, 8, f);
-    uint8_t ihdr[13] = { 0, 0, W >> 8, W & 255, 0, 0, H >> 8, H & 255, 8, 2, 0, 0, 0 };
-    png_chunk(f, crc_tab, "IHDR", ihdr, 13);
-    png_chunk(f, crc_tab, "IDAT", z, (size_t)(zp - z));
-    png_chunk(f, crc_tab, "IEND", NULL, 0);
-    fclose(f);
-    free(raw);
-    free(z);
-}
 
 /* ---- the sky ------------------------------------------------------------ */
 
 #define RADIUS_NM 30
-#define R_OUTER   140     /* RADAR_R_OUTER in screen_radar.c */
+#define R_OUTER   RADAR_R_OUTER
 
 enum { A, B, C, D, E, F, N_AC };
 
@@ -389,8 +237,8 @@ static void where(int i, double *x, double *y)
     double r = R_OUTER * (s_ac[i].dst_nm / RADIUS_NM);
     if (r > R_OUTER) r = R_OUTER;
     double b = s_ac[i].dir_deg * M_PI / 180.0;
-    *x = 240 + r * sin(b);
-    *y = 240 - r * cos(b);
+    *x = RADAR_CX + r * sin(b);
+    *y = RADAR_CY - r * cos(b);
 }
 
 static void update(void)
@@ -550,7 +398,7 @@ int main(int argc, char **argv)
     GROUP("the caption answers for the ringed aircraft, not the nearest");
     {
         s_selected[0] = '\0';
-        tap(240, 440);
+        tap(240, TAP_L2_Y);
         CHECK(strcmp(s_selected, "b00002") == 0, "caption tap opened \"%s\", want b00002", s_selected);
     }
 
@@ -568,7 +416,7 @@ int main(int argc, char **argv)
         r = ring();
         CHECK(hypot(r.cx - bx, r.cy - by) < 2, "ring back on B after a swipe: (%.1f,%.1f)", r.cx, r.cy);
         s_selected[0] = '\0';
-        tap(240, 440);
+        tap(240, TAP_L2_Y);
         CHECK(strcmp(s_selected, "b00002") == 0, "caption still B after the swipe: \"%s\"", s_selected);
     }
 
@@ -580,14 +428,14 @@ int main(int argc, char **argv)
         blob_t r = ring();
         CHECK(hypot(r.cx - ax, r.cy - ay) < 2, "ring back on A: (%.1f,%.1f)", r.cx, r.cy);
         s_selected[0] = '\0';
-        tap(240, 440);
+        tap(240, TAP_L2_Y);
         CHECK(strcmp(s_selected, "a00001") == 0, "caption back to A: \"%s\"", s_selected);
     }
 
     GROUP("long press on the empty scope still reaches the deck (Einstellungen)");
     {
         int before = s_tile_longpress;
-        touch_down(240, 330);                   /* ON the middle ring's outline */
+        touch_down(RADAR_CX, RADAR_CY + RADAR_R_OUTER * 2 / 3);   /* ON the middle ring's outline */
         run_ms(1400);
         touch_up();
         CHECK(s_tile_longpress > before, "tile saw %d long presses", s_tile_longpress - before);
@@ -615,14 +463,14 @@ int main(int argc, char **argv)
         uint16_t pill = to565(THEME_SURFACE_SEL);
         (void)pill;
         render();
-        int idle = find(THEME_SURFACE_SEL, 0, 400, W - 1, 463).n;
-        touch_down(240, 440);
+        int idle = find(THEME_SURFACE_SEL, 0, CAP_Y0 - 10, W - 1, CAP_Y1).n;
+        touch_down(240, TAP_L2_Y);
         render();
         png_write("05_caption_pressed");
-        int held = find(THEME_SURFACE_SEL, 0, 400, W - 1, 463).n;
+        int held = find(THEME_SURFACE_SEL, 0, CAP_Y0 - 10, W - 1, CAP_Y1).n;
         touch_up();
         render();
-        int after = find(THEME_SURFACE_SEL, 0, 400, W - 1, 463).n;
+        int after = find(THEME_SURFACE_SEL, 0, CAP_Y0 - 10, W - 1, CAP_Y1).n;
         CHECK(idle == 0, "pill visible at rest: %d px", idle);
         CHECK(held > 500, "pill while pressed: %d px", held);
         CHECK(after == 0, "pill left behind after release: %d px", after);
@@ -632,13 +480,13 @@ int main(int argc, char **argv)
     {
         render();
         uint16_t g = to565(THEME_GROUND); int s_bottom = 0;
-        for (int y = 380; y < 440; y++) for (int x = 225; x <= 255; x++)
-            if (s_fb[y * W + x] != g && y > s_bottom && y < 416) s_bottom = y;
-        touch_down(240, 440);
+        for (int y = CAP_Y0 - 40; y < CAP_Y0; y++) for (int x = 225; x <= 255; x++)
+            if (s_fb[y * W + x] != g && y > s_bottom && y < CAP_Y0) s_bottom = y;
+        touch_down(240, TAP_L2_Y);
         render();
         int pill_top = H;
         uint16_t p1 = to565(THEME_SURFACE_SEL), p2 = to565(THEME_BORDER_IDLE);
-        for (int y = 380; y < 470 && pill_top == H; y++) for (int x = 0; x < W; x++)
+        for (int y = CAP_Y0 - 40; y < 470 && pill_top == H; y++) for (int x = 0; x < W; x++)
             if (s_fb[y * W + x] == p1 || s_fb[y * W + x] == p2) { pill_top = y; break; }
         touch_up();
         CHECK(s_bottom > 0 && pill_top < H, "measurement failed: S bottom %d, pill top %d", s_bottom, pill_top);
@@ -647,7 +495,7 @@ int main(int argc, char **argv)
 
     GROUP("the pill never reaches the page dots (y >= 464)");
     {
-        touch_down(240, 440);
+        touch_down(240, TAP_L2_Y);
         render();
         int below = find(THEME_SURFACE_SEL, 0, 464, W - 1, H - 1).n;
         touch_up();
@@ -659,13 +507,13 @@ int main(int argc, char **argv)
         /* The arrow is THEME_TEXT_LABEL grey, right of the cyan distance. The
          * distance ends somewhere; there must be label-grey ink after it. */
         render();
-        blob_t dist = find(THEME_CYAN, 0, 405, W - 1, 463);
+        blob_t dist = find(THEME_CYAN, 0, CAP2_Y0, W - 1, CAP_Y1);
         int    maxx = 0;
         uint16_t cy565 = to565(THEME_CYAN);
-        for (int y = 405; y <= 463; y++)
+        for (int y = CAP2_Y0; y <= CAP_Y1; y++)
             for (int x = 0; x < W; x++)
                 if (s_fb[y * W + x] == cy565 && x > maxx) maxx = x;
-        blob_t arrow = find(THEME_TEXT_LABEL, maxx + 1, 405, W - 1, 463);
+        blob_t arrow = find(THEME_TEXT_LABEL, maxx + 1, CAP2_Y0 + 4, W - 1, CAP_Y1);
         CHECK(dist.n > 0, "no cyan distance in the caption band");
         CHECK(arrow.n > 5, "label-grey pixels right of the distance: %d", arrow.n);
     }
@@ -753,7 +601,7 @@ int main(int argc, char **argv)
          * caller's array. On the device those differ exactly when the
          * hysteresis above is holding on, so this is not hypothetical. */
         s_selected[0] = '\0';
-        tap(240, 440);
+        tap(240, TAP_L2_Y);
         CHECK(strcmp(s_selected, "e00005") == 0, "caption opened \"%s\" while naming e00005", s_selected);
         s_ac[E].dst_nm = 18.0f;
         update();
@@ -816,7 +664,7 @@ int main(int argc, char **argv)
         CHECK(tag.n > 20, "amber tag pixels top centre: %d", tag.n);
         CHECK(fabs(tag.cx - 240) < 6, "tag not centred: x=%.1f", tag.cx);
         CHECK(all.n == tag.n, "amber outside the tag: %d px", all.n - tag.n);
-        CHECK(find(THEME_TEXT_TERTIARY, 120, 0, 360, 60).n == 0, "identity still shown under the tag");
+        CHECK(find(THEME_TEXT_LABEL, 0, CAP_Y0, W - 1, CAP2_Y0).n > 50, "caption line 1 lost when stale");
         CHECK(find(THEME_TEXT_LABEL, 0, 0, 160, 60).n > 20, "range read-out lost when stale");
         CHECK(magenta().n == 0, "an undimmed magenta mark on a stale screen: %d px", magenta().n);
         CHECK(find(THEME_CYAN, SCOPE_X0, SCOPE_Y0, SCOPE_X1, SCOPE_Y1).n == 0,
@@ -832,8 +680,8 @@ int main(int argc, char **argv)
         int left = 0;
         for (double b = from; b <= to; b += 1.0) {
             double r = R_OUTER * (s_ac[C].dst_nm / RADIUS_NM), rad = b * M_PI / 180.0;
-            left += ink_near(240 + r * sin(rad), 240 - r * cos(rad), 3)
-                  - ring_ink(240 + r * sin(rad), 240 - r * cos(rad), 3);
+            left += ink_near(RADAR_CX + r * sin(rad), RADAR_CY - r * cos(rad), 3)
+                  - ring_ink(RADAR_CX + r * sin(rad), RADAR_CY - r * cos(rad), 3);
         }
         CHECK(left == 0, "trail still drawn after 80 s of stale data: %d px", left);
     }
@@ -854,8 +702,16 @@ int main(int argc, char **argv)
         screen_radar_set_net(NET_OK);
         s_ac[C].dir_deg += 7.2f;
         update();
+        /* Ignore the aircraft's own glyph: after a 7.2 deg move the window's
+         * near edge is ~9 px from the mark, and a cruise-band mark reaches
+         * ~8 px. A ghost dot would sit ~11 px out with a 3 px radius, so
+         * most of it lies beyond the 10 px exclusion and is still caught
+         * (the record-while-stale mutant fails this check). */
+        double cxm, cym; where(C, &cxm, &cym);
+        s_excl_x = cxm; s_excl_y = cym; s_excl_r = 10.0;
         CHECK(arc_tint(frozen - 1.5, frozen + 1.5, false) == 0,
               "a trail dot at the frozen position: %d px", arc_tint(frozen - 1.5, frozen + 1.5, false));
+        s_excl_r = 0.0;
         screen_radar_set_net(NET_NO_DATA);    /* restore for the next group */
         update();
     }
@@ -879,35 +735,46 @@ int main(int argc, char **argv)
         update();
         png_write("08_empty");
         CHECK(ring().n == 0, "a ring on an empty sky: %d px", ring().n);
-        CHECK(find(THEME_TEXT_LABEL, 0, 420, W - 1, 463).n == 0, "caption-band grey on an empty sky");
-        CHECK(find(THEME_CYAN, 0, 405, W - 1, 463).n == 0, "a distance on an empty sky");
+        CHECK(find(THEME_TEXT_LABEL, 0, CAP_Y0, W - 1, CAP_Y1).n == 0, "caption-band grey (line 1 or arrow) on an empty sky");
+        CHECK(find(THEME_CYAN, 0, CAP_Y0, W - 1, CAP_Y1).n == 0, "a distance on an empty sky");
         s_n = N_AC;
         update();
     }
 
     GROUP("caption ladder, step 2: the arrow gives way before the name does");
     {
-        /* "Unbekanntes Flugzeug" beside "11,1 km NO": fits without the arrow,
-         * not with it. Measured here with the real faces, so this test
-         * cannot pass by accident on a pair that would have fitted anyway. */
-        put(A, "a00001", "", "", "", 6.0f, 45, true, 90, 3000, 120);
-        memset(&s_rt[A], 0, sizeof s_rt[A]);
-        update();
-        png_write("09_arrow_yields");
-        const char *nm = "Unbekanntes Flugzeug";
-        int nw = text_w(nm, &plex_sans_cond_25);
-        char dist[32]; size_t u = fmt_distance_km(6.0f, dist, sizeof dist);
-        snprintf(dist + u, sizeof dist - u, " %s", compass_de_abbr(45));
-        int dw = text_w(dist, &plex_mono_32);
+        /* Since D78 only a DESTINATION can be line 2's name, so the case is
+         * found among real destination names rather than assumed: the first
+         * (airport, distance, direction) whose "name + distance" fits the
+         * panel but "name + distance + arrow" does not. Measured with the
+         * real faces, so the test cannot pass on a pair that fits anyway. */
+        static const char *const icao[] = { "WBSB", "VTSF", "VVTS", "SCEL", "LEST", "EGLL", "LKPR", "LOWG" };
+        static const float dsts[] = { 0.4f, 2.2f, 5.5f, 12.0f, 22.2f };
+        static const float dirs[] = { 0, 45, 200, 337.5f };
+        const char *pick = NULL; float pd = 0, pdir = 0;
         int aw = text_w("\xE2\x86\x92", &plex_sans_cond_25);
-        CHECK(nw + 12 + dw <= 440 && nw + 12 + dw + 8 + aw > 440,
-              "precondition: name %d + dist %d + arrow %d is not the step-2 case", nw, dw, aw);
-        CHECK(find(THEME_TEXT_PRIMARY, 0, 405, W - 1, 463).n > 50, "the name was dropped for the arrow");
-        blob_t d = find(THEME_CYAN, 0, 405, W - 1, 463);
-        CHECK(d.n > 0, "distance missing");
-        s_selected[0] = '\0';
-        tap(240, 440);
-        CHECK(s_selected[0] != '\0', "caption not tappable without its arrow");
+        for (size_t a = 0; a < sizeof icao / sizeof *icao && !pick; a++)
+            for (size_t d = 0; d < sizeof dsts / sizeof *dsts && !pick; d++)
+                for (size_t r = 0; r < sizeof dirs / sizeof *dirs && !pick; r++) {
+                    const char *nm = airport_de(icao[a]);
+                    if (!nm) continue;
+                    char dist[32]; size_t u = fmt_distance_km(dsts[d], dist, sizeof dist);
+                    snprintf(dist + u, sizeof dist - u, " %s", compass_de_abbr(dirs[r]));
+                    int nw = text_w(nm, &plex_sans_cond_25), dw = text_w(dist, &plex_mono_32);
+                    if (nw + 12 + dw <= 440 && nw + 12 + dw + 8 + aw > 440) { pick = icao[a]; pd = dsts[d]; pdir = dirs[r]; }
+                }
+        CHECK(pick != NULL, "no real destination hits the step-2 case — widen the candidates");
+        if (pick) {
+            put(A, "a00001", "AUA777", "A320", "OE-LBA", pd, pdir, true, 90, 3000, 250);
+            routed(A, "LOWW", pick);
+            update();
+            png_write("09_arrow_yields");
+            CHECK(find(THEME_TEXT_PRIMARY, 0, CAP2_Y0, W - 1, CAP_Y1).n > 50, "the name was dropped for the arrow (%s)", airport_de(pick));
+            CHECK(find(THEME_CYAN, 0, CAP2_Y0, W - 1, CAP_Y1).n > 0, "distance missing");
+            s_selected[0] = '\0';
+            tap(240, TAP_L2_Y);
+            CHECK(s_selected[0] != '\0', "caption not tappable without its arrow");
+        }
     }
 
     GROUP("caption ladder, step 3: a name too long even alone gives way — distance and arrow stay");
@@ -922,12 +789,62 @@ int main(int argc, char **argv)
         snprintf(dist + u, sizeof dist - u, " %s", compass_de_abbr(200));
         int dw = text_w(dist, &plex_mono_32);
         CHECK(nw + 12 + dw > 440, "precondition: \"%s\" + \"%s\" = %d px fits after all", nm, dist, nw + 12 + dw);
-        CHECK(find(THEME_TEXT_PRIMARY, 0, 405, W - 1, 463).n == 0, "a name that cannot fit is shown");
+        CHECK(find(THEME_TEXT_PRIMARY, 0, CAP2_Y0, W - 1, CAP_Y1).n == 0, "a name that cannot fit is shown");
         uint16_t cy565 = to565(THEME_CYAN); int maxx = 0;
-        for (int y = 405; y <= 463; y++) for (int x = 0; x < W; x++)
+        for (int y = CAP2_Y0; y <= CAP_Y1; y++) for (int x = 0; x < W; x++)
             if (s_fb[y * W + x] == cy565 && x > maxx) maxx = x;
         CHECK(maxx > 0, "distance missing");
-        CHECK(find(THEME_TEXT_LABEL, maxx + 1, 405, W - 1, 463).n > 5, "arrow missing beside the distance");
+        CHECK(find(THEME_TEXT_LABEL, maxx + 1, CAP2_Y0 + 4, W - 1, CAP_Y1).n > 5, "arrow missing beside the distance");
+        CHECK(find(THEME_TEXT_LABEL, 0, CAP_Y0, W - 1, CAP2_Y0).n > 50, "line 1 missing when line 2's name gave way");
+    }
+
+    /* ------------------------------------------------------------------ */
+    GROUP("D78: flight number and model are line 1 of the caption, not the top row");
+    {
+        sky();
+        s_n = N_AC;
+        tap(EMPTY_X, EMPTY_Y);
+        update();
+        png_write("12_two_line_caption");
+        int l1  = find(THEME_TEXT_LABEL, 0, CAP_Y0, W - 1, CAP2_Y0).n;
+        /* y < 45: the top chrome row. The N cardinal starts just below it. */
+        int top = find(THEME_TEXT_LABEL, 120, 0, 360, 44).n + find(THEME_TEXT_TERTIARY, 120, 0, 360, 44).n;
+        CHECK(l1 > 50, "no line 1 in the caption: %d px", l1);
+        CHECK(top == 0, "something still drawn in the top row's centre: %d px", top);
+        CHECK(find(THEME_TEXT_PRIMARY, 0, CAP2_Y0, W - 1, CAP_Y1).n > 50, "routed A has no destination on line 2");
+    }
+
+    GROUP("D78: a route-less aircraft's model is on line 1, and line 2 has no name");
+    {
+        double bx2, by2; where(B, &bx2, &by2);
+        tap((int)bx2, (int)by2);
+        update();
+        png_write("13_no_route_caption");
+        CHECK(find(THEME_TEXT_LABEL, 0, CAP_Y0, W - 1, CAP2_Y0).n > 50, "no line 1 for the route-less Cessna");
+        CHECK(find(THEME_TEXT_PRIMARY, 0, CAP2_Y0, W - 1, CAP_Y1).n == 0, "line 2 carries a name for a route-less aircraft");
+        CHECK(find(THEME_CYAN, 0, CAP2_Y0, W - 1, CAP_Y1).n > 0, "line 2 lost its distance");
+    }
+
+    GROUP("D78: line 1 is part of the caption's button");
+    {
+        s_selected[0] = '\0';
+        tap(240, TAP_L1_Y);
+        CHECK(strcmp(s_selected, "b00002") == 0, "tap on line 1 opened \"%s\", want b00002", s_selected);
+        tap(EMPTY_X, EMPTY_Y);
+        update();
+    }
+
+    GROUP("D78: the scope still clears the top row, and the caption the dots");
+    {
+        render();
+        uint16_t g = to565(THEME_GROUND);
+        int n_top = 480, cap_bottom = 0;
+        for (int y = 42; y < 120; y++) for (int x = 225; x <= 255; x++)
+            if (s_fb[y * W + x] != g && y < n_top) n_top = y;
+        for (int y = CAP_Y0; y < 480; y++) for (int x = 0; x < W; x++)
+            if (s_fb[y * W + x] == to565(THEME_CYAN) && y > cap_bottom) cap_bottom = y;
+        CHECK(n_top > 45, "the N cardinal's ink starts at y=%d, into the top row", n_top);
+        CHECK(cap_bottom > 0 && cap_bottom < 464, "caption ink reaches y=%d, into the page dots", cap_bottom);
     }
 
     /* ------------------------------------------------------------------ */
@@ -951,7 +868,7 @@ int main(int argc, char **argv)
                 double x, y; where(rnd(N_AC), &x, &y);
                 tap((int)x, (int)y); break; }
             case 3: tap(EMPTY_X, EMPTY_Y); break;      /* let go */
-            case 4: tap(240, 440); break;              /* caption */
+            case 4: tap(240, TAP_L2_Y); break;              /* caption */
             case 5: {                                  /* swipe from anywhere */
                 touch_down(60 + rnd(360), 100 + rnd(300));
                 for (int k = 1; k <= 8; k++) { s_px -= 20; run_ms(20); }

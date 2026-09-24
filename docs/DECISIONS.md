@@ -2671,3 +2671,70 @@ aircraft on the ground at Schwechat sit together as a clutter of marks near the 
 edge of the inner ring. Real approach radars filter ground traffic, and "that plane up there"
 is never one of them — but hiding them is a product decision about what the panel is for, so
 it is a question for the owner, not a fix.
+
+## D78 — Flight number and model move into the caption, above the distance
+
+**Decision, by the owner:** the radar's caption box has two lines.
+
+```
+      AUA1Y · Airbus A321            line 1 — who and what
+   Frankfurt  16,0 km SO  →          line 2 — where to, how far, which way
+```
+
+Line 1 follows identity.c's one rule: callsign first, registration where there is no
+flight number, never both, never a raw ICAO designator. The model falls back to
+"Unbekanntes Flugzeug" rather than to nothing (D46). Line 2's name is now **only the
+destination**, and only when the route is known. A route-less aircraft's model moved up to
+line 1, so its line 2 is just `22,2 km SSW →`.
+
+**What that settles.**
+- **The 13 px identity line in the top row is gone.** It said the same thing, and AGENTS.md
+  §8 had it listed as an open question: was 13 px tertiary type findable from the chair?
+  The owner answered by asking for it somewhere else, at 25 px. The top row's centre now
+  holds only the stale tag.
+- **D50's worst case disappears.** "Unbekanntes Flugzeug" and "Cessna 172 Skyhawk" used to
+  compete with the distance for one line and lose it. Only destinations compete now, and
+  the ladder (arrow first, then name, never the distance) still decides.
+
+**Type and colour.** Plex Sans Condensed 25, the smallest face that clears this screen's
+near floor (the type pass at the top of `screen_radar.c`), in `THEME_TEXT_LABEL`. The detail
+layer shows the same identity in `TEXT_PRIMARY`; here it is grey on purpose, so that line 2
+— the answer — is the brighter of the two. Line 1 is part of the caption's button: tapping
+it opens the card, and the pressed pill covers both lines.
+
+**Where the room came from.** Two lines need about 68 px, and the band between the S
+cardinal and the page dots had 50. The scope moved up 22 px (centre 240 → 218) and shrank
+slightly (outer ring 140 → 136, cardinal radius 164 → 160). The N still clears the top
+chrome row, the S's ink ends at y≈387, the caption runs from y=394 to 462, and the dots
+start at 464. The pill hugs that box with 1 px above and below it. The last 4 px of the lift
+came from looking at the first render: at 222 the grey S sat 9 px above the grey first line
+and read as part of it.
+
+**The geometry is public now.** `RADAR_CX/CY`, `RADAR_R_OUTER`, `RADAR_CARDINAL_R` and the
+caption's position live in `screen_radar.h`, so `test/sim` measures against the screen's own
+numbers. Before, it hardcoded a dozen copies of 240, 140 and 405–463, and every one of them
+had to be found by hand for this change.
+
+**Verified** in the simulator (92 checks, 25 stress seeds under ASan/UBSan):
+- line 1 is present and the top row's centre is empty;
+- a route-less aircraft gets its model on line 1 and no name on line 2;
+- a tap on line 1 opens the card;
+- the N clears the top row, and the caption clears the dots;
+- both ladder steps still hold, now with **real destination names**: the step-2 case is
+  found by searching the airport table for a name that fits without the arrow but not with
+  it, rather than assumed.
+
+Two test fixes came from the smaller scope, and neither loosened a check. The top-row check
+had reached down into the N. The frozen-trail window now grazed the aircraft's own glyph, so
+it now ignores a 10 px disc round the mark, and the record-while-stale mutant still fails it
+(68 px). **Not yet on the glass** — the board was unplugged by then.
+
+**Noticed while rendering the detail layer for the owner, and not changed:** D48's
+"supporting text gives way" rule drops more than it has to. Take a private aircraft whose
+long type name wraps the hero onto two lines, OE-AHM's "Diamond DV20 Katana" for example.
+Its reason sentence is correctly dropped for space. But the identity line, placed below that
+sentence, is dropped as well — although it would fit in the space the sentence freed. The
+card then shows ~70 px of nothing and no registration anywhere. Positions are computed once
+and not reflowed after a drop. A fix is small, but the card is not what was asked about, so
+it is recorded here rather than made.
+

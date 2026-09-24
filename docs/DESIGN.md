@@ -320,8 +320,13 @@ empty scope, or look at the radar for 30 s without touching it: back to the near
 spent on the detail card does not count, and a long press is not a tap.) Long press anywhere
 that is not a mark or the caption: Einstellungen, as §6 says — and the selection survives it.
 
-**The caption's ladder**, when a line will not hold everything: first the arrow gives way,
-then the name. The distance never does (D48, D50, D76).
+**The caption is two lines** (D78): line 1 says who and what (`AUA1Y · Airbus A321`, 25 px,
+label grey), and line 2 says where to, how far and which way (`Frankfurt  16,0 km SO  →`).
+A route-less aircraft has its model on line 1 and only the distance on line 2.
+
+**Line 2's ladder**, when it will not hold everything: first the arrow gives way, then the
+destination. The distance never does (D48, D50, D76). Line 1 falls back to the callsign alone
+if "callsign · model" is wider than the panel.
 
 ### §5.8 exists because §5.6's escape hatch had no way in
 
@@ -427,10 +432,11 @@ at ≥ 56 px, and **the §5.4 / §5.5 type pass** was done before those screens 
    neither polarity consistently better and recommends shipping both. **Auto-dim is settled
    and shipped; a full light theme is not.**
 2. **Aircraft photos** — still deferred (AGENTS.md §8).
-3. **Is the 13 px identity line findable from his chair?** The flight number and model sit
-   at `THEME_TEXT_TERTIARY` in every view, deliberately quiet so they cannot crowd out the
-   answer. Whether "quiet" has become "invisible" at 2.5 m is a question only his eye can
-   settle, and it is with him.
+3. **Is the 13 px identity line findable from his chair?** Answered for the **radar**: the
+   owner asked for flight number and model in its caption at 25 px (D78). **Still open** for
+   the Liste rows and the detail layer's top line, which keep them at 13 px
+   `THEME_TEXT_TERTIARY`, deliberately quiet so they cannot crowd out the answer. Whether
+   "quiet" has become "invisible" at 2.5 m is a question only his eye can settle.
 
 ## Sources
 
