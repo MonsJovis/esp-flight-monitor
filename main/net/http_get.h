@@ -1,7 +1,10 @@
-/* Thin wrapper over esp_http_client. PLAIN HTTP ONLY — no TLS anywhere in
- * this project (AGENTS.md §4: no cert bundle, no WiFiClientSecure-equivalent,
- * roughly 40 KB more free heap per connection, a deliberate architectural
- * decision). Do not add https:// support here.
+/* Thin wrapper over esp_http_client. PLAIN HTTP ONLY — no TLS ON THIS PATH
+ * (AGENTS.md §4: no handshake, roughly 40 KB more free heap per connection, a
+ * deliberate architectural decision). Do not add https:// support here.
+ *
+ * It used to say "no TLS anywhere in this project", which stopped being true
+ * the day OTA shipped: the Mozilla bundle is compiled in and main/net/ota.c
+ * uses it (D72). The data path stays plain on purpose — that is the claim.
  *
  * Buffers are caller-supplied and fixed size; nothing in this file grows the
  * heap unboundedly. A 30 nm poll payload is ~4-8 KB (AGENTS.md §6), so a

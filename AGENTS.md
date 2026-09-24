@@ -2,11 +2,10 @@
 
 Operating manual for AI agents working in this repo. Read this before touching code.
 
-> **Status, 2026-09-21.** This is no longer a brief. The device is built, verified against
-> live traffic and running. M0–M8 and the touch work after them are closed
-> ([docs/PLAN.md](./docs/PLAN.md)); seventy-four decisions are written up with their reasoning
-> and their mistakes ([docs/DECISIONS.md](./docs/DECISIONS.md)); the host suite is
-> **35,711 checks across twelve suites, 0 failed**.
+> **Status, 2026-09-24.** Not a brief any more: the device is built, running, and updating
+> itself. What is closed → [docs/PLAN.md](./docs/PLAN.md). Why anything is the way it is →
+> [docs/DECISIONS.md](./docs/DECISIONS.md). How big the suite is → whatever
+> `make -C test/host` prints. Numbers do not live here; they rot here.
 >
 > Read the rest of this file knowing which half is which. **Sections 2, 4, 5 and 6 are
 > measured facts** about the hardware, the APIs and the places — still current, do not
@@ -168,7 +167,7 @@ Almost none of this needs the board. Run this before and after every change — 
 seconds from a clean tree:
 
 ```bash
-make -C test/host        # 35,711 checks, plus the font, string and console-key gates
+make -C test/host        # the whole suite, plus the font, string and console-key gates
 ```
 
 **Before your first `idf.py build`, generate a signing key.** Every build is signed now
@@ -183,6 +182,11 @@ idf.py secure-generate-signing-key --version 2 --scheme rsa3072 secure_boot_sign
 That is a *fresh* key, and that is fine: a device you flash yourself will run it happily.
 It is not the key the published releases are signed with, so it cannot update the one
 device in the field — which is the point of the whole arrangement.
+
+**Shipping is a tag.** `git tag -a v0.x.0 && git push origin v0.x.0` →
+`.github/workflows/release.yml` runs the suite, builds with `PROJECT_VER` from the tag,
+signs, gates the finished binary with `tools/check_release.py`, and publishes it with its
+manifest. `ci.yml` runs the suite on every push. Details: README "Updating it remotely".
 
 For anything visual, the panel reports on itself; you do not have to be in the room:
 
@@ -252,9 +256,11 @@ Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&lang
 
 ### Why this combination
 
-- **Both work over plain HTTP with no redirect.** No TLS means no `WiFiClientSecure`, no
-  cert bundle, and roughly 40 KB more free heap per connection. This is the single biggest
-  win available on this platform. tar1090's own source notes adsb.im *prefers* HTTP here.
+- **Both work over plain HTTP with no redirect.** No TLS *on the data path* means no
+  handshake and roughly 40 KB more free heap per connection — the single biggest win
+  available on this platform. (OTA does carry TLS and the Mozilla bundle, D72. The data
+  path stays plain on purpose; do not "upgrade" it.) tar1090's own source notes
+  adsb.im *prefers* HTTP here.
 - **`adsb.lol` pre-computes `dst` (distance, nm) and `dir` (bearing)** from the query point.
   No haversine needed on-device; sort by `dst` for free to find "the plane overhead".
 - **`adsb.im/routeset` is batched** — one POST resolves every callsign on screen, instead
@@ -574,9 +580,10 @@ not read a manual. Design for that:
   panel (PLAN M1). It has been on screen ever since and nothing has argued against it.
 - **Navigation: radar first, the answer one layer down** — the owner's own call after
   using the device. See §1 and D60.
-- **Over-the-air updates exist and ship off** — no URL stored, so a new device contacts
-  nothing until someone sets one; `https://` only, enforced in code and in sdkconfig;
-  rollback armed. A feature that ships off must cost nothing while it is off (D44, D52).
+- **Updates: signed, nightly, and reachable by hand.** A tag publishes; the device checks
+  daily and installs inside the night window, or immediately from the Software row in
+  Einstellungen. `https://` only, signature verified against the running image, rollback
+  armed, and a fresh device with no URL stored contacts nothing. D44, D52, D72–D74.
 
 **Still open — ask Markus, do not guess:**
 1. **Light theme** — the polarity evidence is genuinely split (DESIGN.md §7). Auto-dim is
@@ -654,8 +661,8 @@ because the convention was broken once each.
   it was accepted: §6 of this file lists three residential addresses with coordinates,
   §1 and the README say who lives at them and that he splits the year between them,
   `main/data/settings.c` carries the same three as presets, and `docs/screens/` shows
-  one set of coordinates and one real SSID. All of it is in the history of all sixty-eight
-  commits, including some commit subject lines, so none of it can be taken back by editing
+  one set of coordinates and one real SSID. All of it is in the history of every
+  commit, including some commit subject lines, so none of it can be taken back by editing
   a file. The owner was shown that list and chose to publish anyway. **Do not "restore"
   this rule, and do not quietly redact §6 either** — half a redaction on a public history
   is worse than none, because it reads as a mistake rather than a decision.
@@ -665,9 +672,9 @@ because the convention was broken once each.
     and lives in the GitHub Actions secret `SIGNING_KEY`, with a backup in Markus's personal
     1Password ("esp-flight-monitor — OTA signing key"). Only `tools/ota_signing_key.pub.pem`,
     the public half, is committed. If the local copy is missing, restore it from 1Password —
-    never generate a new one for a release: the panel would refuse every image signed with it. Never paste the private key into a transcript, an issue
-    or a third-party service — a public repo plus that key is a firmware push to a device
-    in somebody's living room.
+    never generate a new one for a release: the panel would refuse every image it signed.
+    Never paste the private key into a transcript, an issue or a third-party service — a
+    public repo plus that key is a firmware push to a device in somebody's living room.
   - **Nothing else new goes in.** A public repo is not an invitation to add the next
     address, SSID or screenshot. What is published is what was reviewed and accepted; a
     fresh leak is not covered by that decision.
@@ -679,7 +686,7 @@ because the convention was broken once each.
 
 ## 11. How this repo has actually failed
 
-Sixty decisions are a lot to read. These three patterns caused most of the real bugs, and
+The decisions are a lot to read. These three patterns caused most of the real bugs, and
 they will catch you too.
 
 **1. The comment had drifted from the code, and the review believed the comment.**
