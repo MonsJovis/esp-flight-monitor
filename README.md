@@ -78,7 +78,7 @@ flash, 8 MB octal PSRAM, a 480 × 480 ST7701 RGB565 panel and a GT911 touch cont
 a standard 86-type wall-plate form factor (86.5 × 86.5 × 14 mm). Power is USB-C on the
 side edge.
 
-Built with **ESP-IDF 5.4**, the Waveshare BSP and **LVGL 9.6**, in C.
+Built with **ESP-IDF 5.4.4**, the Waveshare BSP and **LVGL 9.6**, in C.
 
 ```
 ls /dev/cu.usbmodem*          # the board re-enumerates; the node is not fixed

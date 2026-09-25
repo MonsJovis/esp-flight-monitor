@@ -16,7 +16,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: espressif/idf:v5.4
+    container: espressif/idf:v5.4.4   # not v5.4: D81
     steps:
       - uses: actions/checkout@v4
 

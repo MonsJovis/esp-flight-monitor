@@ -19,6 +19,7 @@
  *   n  network status and a scan of what is in range
  *   p  probe the link (DNS, then a raw GET by IP)
  *   u  the OTA update console
+ *   R  restart the way an install does, with core 0 kept busy (D81)
  *   y  battery: the judged status and the PMIC registers under it
  *   W  cycle a PRETENDED WLAN signal through the corner meter's five states
  *   x  what the touch layer has seen (presses, long presses, the last hold)
@@ -48,6 +49,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
 #include "bsp/esp-bsp.h"
 #include "lvgl.h"
 #include "ui/display.h"
@@ -1754,6 +1756,52 @@ static void scroll_to_end(void)
     display_unlock();
 }
 
+/* 'R': restart the way an install ends — esp_restart() from a task, with
+ * WiFi up and the panel scanning out — so the path every OTA takes can be
+ * watched on the serial log without publishing a release. D81 is why it
+ * exists: the v0.9.0 install crashed in exactly this call.
+ *
+ * The crash was a race: the restarting core turned the shared caches off
+ * while the OTHER core was still running code out of them — and with
+ * SPIRAM_FETCH_INSTRUCTIONS nearly all of this firmware's code is fetched
+ * from PSRAM through the cache. Ten plain restarts on the broken build were
+ * all clean, because core 0 happened to be idle each time. So, like 'C',
+ * this constructs the losing side of the race instead of gambling on it:
+ * core 1 restarts, and core 0 is kept busy at the lowest priority (it yields
+ * to WiFi's shutdown but is never idle) dirtying a PSRAM buffer four times
+ * the size of the data cache. The dirty lines are what widen the window:
+ * Cache_Disable_DCache() has to write them all back, and that is the time
+ * core 0 needs to fault, re-enable the cache in its panic handler and stall
+ * core 1 — which is why nothing reset it and the panic ran to the end. */
+#define CACHE_BUSY_WORDS (256 * 1024 / 4)   /* 4x the 64 KB data cache */
+
+static void cache_busy_task(void *arg)
+{
+    volatile uint32_t *p = (volatile uint32_t *)arg;
+    for (uint32_t acc = 0;; acc++) {
+        for (int i = 0; i < CACHE_BUSY_WORDS; i += 8) {   /* every 32 bytes: each 64-byte line dirtied */
+            p[i] = acc + (uint32_t)i;
+        }
+    }
+}
+
+static void restart_task(void *arg)
+{
+    ESP_LOGW(TAG, "restart requested from the console, on core %d, core 0 kept busy",
+             xPortGetCoreID());
+    vTaskDelay(pdMS_TO_TICKS(500));   /* let the log drain, as ota.c does */
+    esp_restart();
+}
+
+static void restart_console(void)
+{
+    void *buf = heap_caps_calloc(CACHE_BUSY_WORDS, sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+    if (buf != NULL) {
+        xTaskCreatePinnedToCore(cache_busy_task, "cachebusy", 2048, buf, 1, NULL, 0);
+    }
+    xTaskCreatePinnedToCore(restart_task, "restart", 3072, NULL, 3, NULL, 1);
+}
+
 /* Update source, typed in over serial. Deliberately the same shape as
  * provision_wifi(): a URL that decides what firmware this device will run is
  * not something to leave in a config file in a repository either. */
@@ -1767,10 +1815,10 @@ static void update_console(void)
            "ENTER alone leaves it as it is; \"-\" turns updates off.\n> ");
     fflush(stdout);
 
-    /* dbg_read_line(), not fgets(): stdin is non-blocking on this build (D22 —
-     * the usb_serial_jtag driver's blocking write wedged the device, and "no
-     * host attached" is its normal state), so fgets() returns NULL instantly
-     * and every character typed afterwards arrives at on_cmd() as a COMMAND.
+    /* dbg_read_line(), not fgets(): the console polls the USB-Serial-JTAG
+     * RX FIFO without blocking, never stdin (D22, D81), so fgets()
+     * would return NULL instantly and every character typed afterwards would
+     * arrive at on_cmd() as a COMMAND.
      * Pasting an https:// URL that way runs 't' — the tearing benchmark —
      * among others. Found exactly that way. */
     char line[256];
@@ -1909,6 +1957,7 @@ static void on_cmd(char c)
     else if (c == 'a') { display_lock(0); bool ok = screen_geo_debug_layer(); display_unlock();
                          ESP_LOGW(TAG, "keyboard layer key: %s", ok ? "pressed" : "not found"); }
     else if (c == 'u') update_console();
+    else if (c == 'R') restart_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
     else if (c == 'i') { if (detail_open()) close_detail(); else open_detail(); }
@@ -1999,7 +2048,7 @@ void app_main(void)
      * line and the header block above claiming a console this firmware no
      * longer has. AGENTS.md §11 rule 1 is about exactly that. */
     ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
-                  "u=update U=updatesim y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
+                  "u=update U=updatesim R=restart y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
                   "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a

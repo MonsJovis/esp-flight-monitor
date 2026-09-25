@@ -94,9 +94,9 @@ a peripheral. Two things to carry in your head until you do:
 
 ## 3. Stack
 
-**ESP-IDF 5.4 + official Waveshare BSP + LVGL 9.6.x.** (The BSP's dependency
+**ESP-IDF 5.4.4 + official Waveshare BSP + LVGL 9.6.x.** (The BSP's dependency
 solver resolves LVGL to 9.6, not the 9.2 originally assumed — see docs/DECISIONS.md D2.) Already installed at `~/esp/esp-idf`
-(v5.4) — not on PATH, so `. ~/esp/esp-idf/export.sh` first.
+(v5.4.4 — the patch level matters, D81) — not on PATH, so `. ~/esp/esp-idf/export.sh` first.
 
 ```bash
 idf.py add-dependency "waveshare/esp32_s3_touch_lcd_4b^2.0.0"
@@ -176,7 +176,9 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
   network (the real path) or had to force it open because everything in range is already
   saved — those are not the same check and it does not report them as one.
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
-- `u` update console — `v` LVGL heap report
+- `u` update console — `v` LVGL heap report — `R` restart exactly as an install ends
+  (`esp_restart()` from core 1, WiFi up, panel live), with core 0 held busy on cached code:
+  the losing side of the race that crashed the v0.9.0 install (D81), constructed, not hoped for
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
 - `U` step the **Software** row in Einstellungen through all seven update states —
   idle, checking, available, current, no connection, failed, installing — without

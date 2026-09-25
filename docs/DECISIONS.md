@@ -300,7 +300,8 @@ matter at boot — a config that lies is worse than one that is wrong out loud.
 ## D22 — Nothing may block waiting for a host that is not there
 
 **Decision:** the debug console does **not** install the `usb_serial_jtag` driver. It writes
-through ordinary `stdout` and polls a non-blocking `stdin`. The task watchdog is enabled
+through ordinary `stdout` and polls a non-blocking `stdin`. (Since D81 it polls the USB-Serial-JTAG RX FIFO
+directly instead: on IDF 5.4.4 a driverless `stdin` never delivers a byte.) The task watchdog is enabled
 with `CONFIG_ESP_TASK_WDT_PANIC=y`, a 30 s timeout, and the UI task feeding it every 2 s.
 
 **Why — this one was found the hard way, and it matters more than it looks.**
@@ -2908,7 +2909,8 @@ The panic handler itself faulted. It was entered through a level-4 interrupt, wh
 ESP32-S3 is where cache errors and the interrupt watchdog arrive, and the original trigger
 was lost with the stack. The ELF matched (`ca4f8ba1c`). The likeliest story: the RGB panel
 keeps DMA-reading its framebuffer from PSRAM while the restart path takes caches down. There
-is no shutdown handler in this firmware to stop it first.
+is no shutdown handler in this firmware to stop it first. **Wrong — see D81:** an ESP-IDF
+5.4.0 race in `esp_restart()` itself, reproduced and fixed by moving to 5.4.4.
 
 **Why nothing was lost, and why it still matters.** `esp_https_ota()` writes the whole image,
 checks its hash and switches the boot partition before it returns. The panic came after
@@ -2917,3 +2919,98 @@ dumps are not written to flash (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` is off). B
 crash on what may be every install. Nobody would see it on the panel, which is exactly why
 it needs writing down. Probably not new: nothing in D75–D80 touches the restart path, and
 earlier installs were not watched on the serial log. Open in PLAN.md M13.
+
+## D81 — The restart panic was ESP-IDF's, not ours: moved to IDF 5.4.4
+
+D80's guess — the RGB panel's DMA still reading PSRAM — was wrong. The panic is a race
+inside ESP-IDF 5.4.0's own `esp_restart_noos()` on the ESP32-S3, fixed upstream in March
+2025 (espressif/esp-idf `6de3fde3c2`, "fix possible cache_error by another core accessing
+flash in esp_restart", in every tag from v5.4.1 on).
+
+**The race.** The restarting core turns the shared caches off, and only *then* resets the
+other core. In between, the other core is still running — and with
+`CONFIG_SPIRAM_FETCH_INSTRUCTIONS` nearly all of this firmware's code is fetched from PSRAM
+through those caches. If it is busy at that moment it takes a cache-error interrupt (level
+4: that is the `xt_highint4` in the backtrace). Its panic handler re-enables the cache and
+stalls the restarting core, which is still inside `Cache_Disable_DCache()` writing dirty
+lines back to PSRAM — so nobody resets it, and the handler runs on into
+`esp_panic_handler_reconfigure_wdts()`, reads its `&TIMERG0` literal from a cache that has
+just gone off again, and gets the S3's invalid-access value `0xbad00bad`. The store through
+it is the `StoreProhibited` at `0xbad00c11` that D80 recorded. The fixed IDF resets and
+stalls the other core *first*, so nothing is running when the caches go.
+
+**Why only sometimes, and why the install.** It needs core 0 busy on cached code *and* a
+data cache full of dirty lines at the instant core 1 restarts. An install is exactly that:
+LVGL has been drawing into PSRAM framebuffers, WiFi has just been torn down on core 0.
+
+**Reproduced before it was fixed.** New console key `R` restarts the way an install does
+(`esp_restart()` from core 1, WiFi up, panel live) while a lowest-priority task keeps core 0
+busy dirtying a 256 KB PSRAM buffer. The harness counts a run only if the request, a ROM
+reset banner and a fresh `ready:` line appear after the key, in that order — the first
+version stopped at the *previous* boot's `ready:` still sitting in the USB buffer and
+reported ten clean restarts that never happened.
+
+| build | restarts | panics |
+|---|---|---|
+| IDF 5.4.0, core 0 idle | 10 | 0 (the race needs a busy core 0) |
+| IDF 5.4.0, core 0 busy | 30 | **5** — four with D80's exact registers (PC `0x4004795c`, A2 `0xbad00bad`, EXCVADDR `0xbad00c11`), one un-nested: *Cache disabled but cached memory region accessed* |
+| IDF 5.4.4, core 0 busy | 39 | **0** |
+| IDF 5.4.4, final build (FIFO console below) | 30 | **0** |
+
+At 5 in 30, 69 clean restarts in a row would be chance about once in 300,000. "Rebooted" is
+judged by the uptime counter restarting, not by the ROM banner: on 5.4.4 the host misses
+that banner while USB re-enumerates in about one run in six.
+
+**The fix is the IDF version.** `~/esp/esp-idf` is on v5.4.4, both workflows build in
+`espressif/idf:v5.4.4`, and AGENTS.md/README say so. v5.4.4 also resets the DMA and crypto
+peripherals on the way down (upstream `147ec10b86`, `5cdc53df23`), which the panel's DMA
+guess would have wanted anyway. `sdkconfig` regenerated from the defaults under 5.4.4
+differs from the 5.4.0 one only in its version stamp and `PERIPH_CTRL_FUNC_IN_IRAM`, which
+5.4.4 dropped. Host suite and both simulators unchanged and green.
+
+**The upgrade broke the console, and the first fix for that cost 4.6 KB.** On 5.4.4 the
+device ignored every key — no screenshot, no provisioning, no `R`. The first 40-restart run
+on the new IDF therefore counted nothing at all, which is how it was noticed. Espressif made
+the USB-Serial-JTAG `read()` "POSIX compliant" (`8182f20774`): it now sizes each read by the
+bytes waiting in the *driver's* RX ring, and D22 is why this firmware never installs that
+driver, so the answer was always zero. (`clearerr()` on the sticky EOF was tried first, on
+a guess, and changed nothing.) Installing the driver for input only worked — output stayed
+driverless, as D22 requires — but measured back to back on the same IDF it cost **4.6 KB of
+internal RAM at steady state** (31.4 KB free against 36.0 KB). And leaving the install out
+of a test build to measure that crash-looped the board past esptool's reach until it was
+unplugged: `usb_serial_jtag_read_bytes()` dereferences its NULL context without a driver.
+What shipped instead: `dbg_screen.c` reads the hardware RX FIFO directly
+(`usb_serial_jtag_ll_read_rxfifo()`), the same call 5.4.0's driverless read made — no
+driver, no ring, no interrupt, no RAM. Keys, screenshots (CRC ok) and a 97-character line
+through `dbg_read_line()`, longer than the 64-byte FIFO, all verified on the device.
+
+Seen on the way and left alone: in `dbg_read_line()` a bare ENTER never returns (leading
+newlines are skipped), so the update console's "ENTER alone leaves it as it is" really
+means "wait two minutes for the timeout". Harmless — the timeout stores nothing — but the
+prompt says otherwise.
+
+**What 5.4.4 costs.** The same source built on both, measured back to back on the device:
+
+| | IDF 5.4.0 | IDF 5.4.4 |
+|---|---|---|
+| internal free, steady state | ~40.2 KB | ~36.2 KB |
+| internal free, WLAN keyboard open | 21.8 KB | 21.8 KB |
+| largest block, keyboard open | — | 16.0 KB (was 21.5 KB in D77, on 5.4.0) |
+
+About 4 KB less at rest, which is IDF's own; the keyboard — the worst case this firmware
+knows (D58) — lands on exactly the same free total. After it closes, the largest block stays
+at 16 KB. Polls kept succeeding through all of it (the one failure seen was adsb.lol
+answering HTTP 429), and TLS keeps its record buffers in PSRAM (D52), so nothing is known
+to need more. Written down because the margin is smaller than it was, not because anything
+failed.
+
+**What this does not fix.** The restart code runs from the image being *replaced*. The
+install that brings 0.9.1 onto a device still ends in 0.9.0's `esp_restart()` and can still
+panic, as harmlessly as before (D80: the image is written, verified and selected first).
+Every install after that is clean.
+
+**Found on the way, not changed:** `sdkconfig.defaults` sets
+`CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT`, which no 5.4 release has ever had — every build
+warns *unknown kconfig symbol* — and `DYNAMIC_FREE_CA_CERT` depends on
+`DYNAMIC_FREE_CONFIG_DATA`, which is not set, so neither line does anything. Left for its
+own change: enabling them alters TLS memory behaviour on a board with 40 KB internal free.

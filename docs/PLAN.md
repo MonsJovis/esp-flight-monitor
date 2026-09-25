@@ -801,12 +801,14 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       `FMT_FROM_ORIGIN` and `FMT_KMH` block in `main/strings_de.h` (D51, D56, D57).
 - [x] **OTA updates back on** (2026-09-25), to the exact URL they had. The device installed
       v0.9.0 by itself straight away and confirmed it; a reset afterwards booted the same slot.
-- [ ] **The old image panics on its way down after an OTA** (D80). The update is already
-      committed by then and nothing is lost, but it is a crash on every install. Probable
-      fix: a shutdown handler that stops the RGB panel's DMA before `esp_restart()`.
+- [x] **The old image panicked on its way down after an OTA** (D80, D81). Not the panel's
+      DMA, as guessed: an ESP-IDF 5.4.0 bug in `esp_restart()` that turned the caches off
+      while the other core still ran from them. Reproduced from the console (`R`), fixed by
+      moving to IDF 5.4.4, which carries Espressif's fix. Every image from 0.9.1 on has it;
+      the install INTO 0.9.1 still runs 0.9.0's restart and can still panic, harmlessly.
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
-      scope, long-press with an aircraft selected, 30 s idle. Then his eye: three sizes
+      scope, long-press with an aircraft selected (confirmed by the owner, 2026-09-25), 30 s idle. Then his eye: three sizes
       readable from the chair, trails read as history not clutter, 13 px amber findable.
 - [ ] **Open, for the owner:** rotate the scope so up is the direction the wall faces,
       instead of north? A question, not a defect — only he knows whether mapping screen-north

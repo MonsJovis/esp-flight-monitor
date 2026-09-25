@@ -4,9 +4,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_rom_crc.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "esp_lcd_panel_rgb.h"
-#include <unistd.h>
-#include <fcntl.h>
 #include "ui/display.h"
 #include "bsp/esp-bsp.h"
 
@@ -113,12 +112,34 @@ static void screenshot(void)
     display_unlock();
 }
 
+/* One console byte, or EOF if none is waiting. Never blocks.
+ *
+ * Straight from the USB-Serial-JTAG hardware RX FIFO — the one call IDF
+ * 5.4.0's driverless console read made. Output still goes through the
+ * driverless stdout, as D22 requires.
+ *
+ * Not fgetc(stdin) any more: IDF 5.4.4 made that read "POSIX compliant", and
+ * it now sizes every read by what the usb_serial_jtag DRIVER's RX ring holds.
+ * With no driver installed that is always nothing, so the console went deaf
+ * on the upgrade, every key and the screenshot with it (D81). Installing the
+ * driver for its RX ring cured that, and cost 4.6 KB of internal RAM at
+ * steady state, measured, on the board's scarcest resource. It also wanted a
+ * guard: without it, usb_serial_jtag_read_bytes() dereferences NULL, which
+ * crash-looped a test build badly enough that the board needed unplugging.
+ * Reading the FIFO needs no driver, no ring and no interrupt. This task is
+ * its only reader. */
+static int con_getc(void)
+{
+    uint8_t c;
+    return usb_serial_jtag_ll_read_rxfifo(&c, 1) == 1 ? c : EOF;
+}
+
 int dbg_read_line(char *out, size_t out_sz, int timeout_ms)
 {
     size_t n = 0;
     const TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
     while (n + 1 < out_sz && xTaskGetTickCount() < deadline) {
-        int ci = fgetc(stdin);
+        int ci = con_getc();
         if (ci == EOF) {
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
@@ -136,15 +157,12 @@ int dbg_read_line(char *out, size_t out_sz, int timeout_ms)
 
 static void dbg_task(void *arg)
 {
-    /* Non-blocking stdin: poll for a command byte instead of parking a task on
-     * a read. Nothing here may ever block waiting for a host that is not there. */
-    int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
-
+    /* Poll for a command byte instead of parking a task on a read. Nothing
+     * here may ever block waiting for a host that is not there. */
     ESP_LOGI(TAG, "debug console ready: s=shot f=fontcard b=bench m=metrics w=wifi n=net");
 
     for (;;) {
-        int c = fgetc(stdin);
+        int c = con_getc();
         if (c == EOF) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
