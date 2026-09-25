@@ -139,13 +139,9 @@ static void close_detail(void);
 static aircraft_t s_selected;
 static bool       s_has_selection;
 
-/* The detail card opens on its skeleton and shows it for at least this long
- * (D85, the owner's choice): long enough to read as "loading", short enough
- * not to be a wait. The card is then filled at once — ui_task is woken when
- * it opens and again when this runs out, instead of the next 2 s tick. */
-#define DETAIL_SKELETON_MS 600
+/* Woken by open_detail(), so a new card is filled at once rather than on the
+ * next 2 s tick (D85). D85 also held a skeleton for 600 ms; D86 took that out. */
 static TaskHandle_t s_ui_task;
-static int64_t      s_detail_opened_ms;
 
 static void on_list_select(const aircraft_t *ac)
 {
@@ -615,10 +611,8 @@ static void ui_task(void *arg)
     int  power_ticks  = 0;
 
     /* Woken early by open_detail() (D85); otherwise the 2 s tick. */
-    uint32_t wait_ms = 2000;
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
-        wait_ms = 2000;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2000));
         esp_task_wdt_reset();
 
         /* Start SNTP the first time we actually have a network, whenever that
@@ -840,14 +834,7 @@ static void ui_task(void *arg)
         screen_list_set_source(has_data, net);
         screen_radar_set_has_data(has_data);
         if (detail_open()) {
-            /* Still inside its skeleton's minimum: leave the card alone and
-             * come back the moment it runs out. */
-            int64_t shown_ms = esp_timer_get_time() / 1000 - s_detail_opened_ms;
-            if (shown_ms < DETAIL_SKELETON_MS) {
-                wait_ms = (uint32_t)(DETAIL_SKELETON_MS - shown_ms) + 20;
-            } else {
-                screen_overhead_update(&vm);
-            }
+            screen_overhead_update(&vm);
         } else if (nav_page() == PAGE_LISTE) {
             screen_list_update(ac, n, rt, n_rt);
         } else {
@@ -1286,7 +1273,6 @@ static void open_detail(void)
     display_lock(0);
     nav_open_overlay(build_detail_screen, "detail");
     display_unlock();
-    s_detail_opened_ms = esp_timer_get_time() / 1000;
     if (s_ui_task != NULL) {
         xTaskNotifyGive(s_ui_task);   /* fill the card now, not on the next tick */
     }

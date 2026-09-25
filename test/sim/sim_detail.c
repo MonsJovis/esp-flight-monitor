@@ -162,15 +162,12 @@ int main(int argc, char **argv)
     lv_obj_invalidate(lv_screen_active());
     render();
     png_write("detail_00_just_opened");
-    GROUP("just opened: the whole card as a skeleton, and a way back (D85)");
+    GROUP("just opened: nothing yet but the way back (D86)");
     {
-        CHECK(find(THEME_BORDER_IDLE, 0, 110, W - 1, 150).n > 500, "no ghost where the origin goes");
-        CHECK(find(THEME_BORDER_IDLE, 0, 170, W - 1, 290).n > 5000, "no ghost where the destination goes");
-        CHECK(find(THEME_BORDER_IDLE, 0, 290, W - 1, 370).n > 1000, "no ghost supporting line");
-        CHECK(find(THEME_BORDER_IDLE, 0, 370, W - 1, H - 1).n > 1000, "no ghost data band");
-        CHECK(find(THEME_CYAN, 0, 150, W - 1, 170).n > 0, "no bar");
+        CHECK(find(THEME_BORDER_IDLE, 0, 110, W - 1, H - 1).n == 0, "a skeleton on opening");
+        CHECK(find(THEME_CYAN, 0, 0, W - 1, H - 1).n == 0, "a bar on opening");
         CHECK(find(THEME_MAGENTA, 0, 0, W - 1, H - 1).n == 0, "the compass is up, pointing at nothing");
-        CHECK(find(THEME_TEXT_LABEL, 0, 0, 120, 35).n > 20, "no Zurück while loading");
+        CHECK(find(THEME_TEXT_LABEL, 0, 0, 120, 35).n > 20, "no Zurück");
     }
 
     /* ------------------------------------------------------------------ */

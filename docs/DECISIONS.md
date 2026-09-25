@@ -3209,3 +3209,24 @@ simulator caught it by rendering the two states side by side.
   compass; after the first update, no ghost pixel is left anywhere below the chrome.
 - On the panel via console `i`: the skeleton at 150 ms after opening, and a complete
   card (Pegasus, London → Istanbul) at 1 s.
+
+## D86 — The opening skeleton comes out again
+
+**The owner, on the panel, after a day with v1.0.0:** the loading state in the detail
+view is too much. Remove it.
+
+**What is removed.** D85's whole-card skeleton and its 600 ms minimum. A card no longer
+opens on placeholders that it then has to replace.
+
+**What stays, and why:**
+- **`open_detail()` still wakes `ui_task`.** That was the real fix in D85: without it the
+  card sat blank for up to two seconds after a tap. Now it is filled as soon as the task
+  runs, well under a frame's worth of waiting.
+- **The moment before that fill is quiet.** It shows only "Zurück". Before D85 it showed
+  the compass tape pointing north at nothing (`start_unfilled()` in `screen_overhead.c`).
+- **D84's route-lookup skeleton stays.** It shows only while a route is genuinely still
+  being looked up, which is rare (D85 found how rare), and it stands for a real wait,
+  unlike the one removed here.
+
+`sim_detail.c` now checks the opposite of D85's check: a card that has just opened shows
+no ghost, no bar and no compass, only "Zurück".
