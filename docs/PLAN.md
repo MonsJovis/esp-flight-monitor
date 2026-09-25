@@ -815,6 +815,9 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
 - [x] **Ground traffic** (D83, the owner's rule): an aircraft on the ground is shown only
       if this device saw it land within the last ten minutes. Departure times are not
       knowable from any feed here, so a departure appears once airborne.
+- [x] **The detail card waits in the shape of its answer** (D84, the owner's request):
+      ghosts where the origin and destination will land, the bar, *Die Route wird noch
+      gesucht.*, the model kept in the identity line; no amber while merely looking.
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected (confirmed by the owner, 2026-09-25), 30 s idle. Then his eye: three sizes

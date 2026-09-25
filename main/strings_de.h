@@ -90,11 +90,11 @@
 /* §5.2 amber caution tag, beside the reason sentence. */
 #define STR_NO_FLIGHT_PLAN     "KEIN FLUGPLAN"
 
-/* The route lookup is asked-but-unanswered for a few seconds. Saying
- * "KEIN FLUGPLAN" during those seconds is a lie the device then corrects in
- * front of him, and a panel he has caught lying is worse than no panel
- * (PLAN.md M4, the 2E0LXY lesson). */
-#define STR_ROUTE_SEARCHING    "ROUTE WIRD GESUCHT"
+/* No tag while the route lookup is still out. Saying "KEIN FLUGPLAN" then
+ * is a lie the device corrects in front of him (PLAN.md M4, the 2E0LXY
+ * lesson). Since D84 the card shows a skeleton in the answer's shape, with
+ * STR_REASON_SEARCHING under it, and the amber "ROUTE WIRD GESUCHT" that
+ * stood in the tag's place is gone. */
 
 /* Two cautions, because there are two problems and only one of them is his.
  *

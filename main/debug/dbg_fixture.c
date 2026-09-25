@@ -45,7 +45,10 @@ void dbg_fixture_show(int n)
     const char *what = "";
 
     if (n == 3) {
-        view_build_empty(&now, &ac[0], true, &vm);
+        /* NET_OK, not `true`: this argument was a bool "online" until M8
+         * made it net_state_t, and `true` converts to NET_NO_WIFI — every
+         * replay said KEIN NETZ over a live network until D84 caught it. */
+        view_build_empty(&now, &ac[0], NET_OK, &vm);
         what = "§5.3 Himmel frei";            /* LOG-ONLY */
     } else {
         /* Pick a real aircraft matching the state we want to look at, rather
@@ -74,7 +77,7 @@ void dbg_fixture_show(int n)
          * becomes something else. view_build_ex() is the real path, the same
          * one flight_source.c uses; nothing here fakes the model. */
         view_build_ex(&ac[pick], route_find(rt, nrt, ac[pick].flight), n == 5,
-                      &now, nac, true, &vm);
+                      &now, nac, NET_OK, &vm);
         ESP_LOGW(TAG, "%s — %s (%s)", what, ac[pick].flight,
                  ac[pick].type[0] ? ac[pick].type : "no type");
     }

@@ -294,8 +294,18 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
      * pushed the distance off the bottom of §5.2 and §5.3 entirely. Substring,
      * not equality — "Airbus H135" is not equal to "H135" but tells him nothing
      * new. A city hero never matches an aircraft type, so §5.1 keeps both. */
+    /* While the route is still being looked up the screen draws a skeleton
+     * where the destination will land, not the hero (D84) — so the model name
+     * the hero would have carried goes back into the identity line instead
+     * of being lost. Kept aside before the dedup blanks it. */
+    char type_for_identity[sizeof out->type_full];
+    copy_trunc(type_for_identity, sizeof type_for_identity, out->type_full);
+
     if (out->hero[0] != '\0' && strstr(out->type_full, out->hero) != NULL) {
         out->type_full[0] = '\0';
+    }
+    if (!out->route_searching) {
+        copy_trunc(type_for_identity, sizeof type_for_identity, out->type_full);
     }
 
     /* Which aircraft this is, as opposed to where it is going. Composed LAST,
@@ -306,7 +316,7 @@ void view_build_ex(const aircraft_t *ac, const route_t *route, bool route_search
         const char *who = (out->callsign[0] != '\0') ? out->callsign
                         : (out->registration[0] != '\0') ? out->registration
                         : "";
-        identity_compose(who, out->type_full, out->identity, sizeof out->identity);
+        identity_compose(who, type_for_identity, out->identity, sizeof out->identity);
     }
 }
 

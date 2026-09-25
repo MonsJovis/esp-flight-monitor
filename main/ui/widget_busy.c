@@ -161,7 +161,10 @@ lv_obj_t *widget_busy_ghost(lv_obj_t *parent, int32_t x, int32_t y,
      * render rather than content that has not arrived. */
     lv_obj_set_style_bg_color(g, dim ? THEME_DIVIDER : THEME_BORDER_IDLE, 0);
     lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(g, h / 2, 0);
+    /* Round ends on a line-sized ghost, but capped: at hero size (D84) a
+     * fully round 50 px bar is a pill, and a pill on a touch screen is a
+     * button. Every ghost up to 20 px tall is unchanged by the cap. */
+    lv_obj_set_style_radius(g, LV_MIN(h / 2, 10), 0);
     lv_obj_set_style_pad_all(g, 0, 0);
     lv_obj_set_style_border_width(g, 0, 0);
     lv_obj_set_scrollable(g, false);

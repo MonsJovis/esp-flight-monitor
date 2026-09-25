@@ -280,6 +280,14 @@ same words top centre in label grey, with the bar under them. With the network d
 is no request to wait for: the list says *Noch keine Flugdaten.*, and the radar keeps its
 amber tag.
 
+**The route lookup on the detail card (D84)** takes the answer's shape. There is a ghost
+where "Wien →" goes, the bar under it, and a ghost where the destination goes. *Die Route
+wird noch gesucht.* stands under them, and the identity line keeps the model name. It is
+no longer an amber *ROUTE WIRD GESUCHT* over the model name as headline: amber is a
+caution, and "one moment" is not one. And the headline no longer changes from the model to
+the city when the answer lands. A ghost as tall as the hero caps its corner radius at
+10 px, because a 50 px pill on a touch screen reads as a button.
+
 **It is for a wait with an end, never for a condition.** §5.3's *Kein Netz — Ich suche ein
 bekanntes WLAN* deliberately has no bar. That state can last all night, and a bar that
 sweeps until morning stops meaning "still working" and starts meaning "this device

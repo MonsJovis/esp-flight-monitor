@@ -210,6 +210,32 @@ int main(int argc, char **argv)
     }
 
     /* ------------------------------------------------------------------ */
+    GROUP("route still being looked up (AUA1Y, A321): the searching state");
+    {
+        aircraft_t a = mk("440c8d", "AUA1Y", "OE-LBB", "A321", "A3", 2425, 183, 255.43f,
+                          8.61f, 123.6f, 48.118674, 16.486535);
+        view_build_ex(&a, NULL, true, &k_now, 32, NET_OK, &vm);
+        show(&vm, "detail_06_searching");
+        /* D84: the answer's shape, not a caution. No amber, no white
+         * headline; ghosts in the top row and the hero's place; the bar;
+         * and the model, which the hero no longer carries, in the identity. */
+        CHECK(find(THEME_AMBER, 0, 0, W - 1, H - 1).n == 0, "amber while merely looking up a route");
+        CHECK(find(THEME_WHITE, 0, 100, W - 1, 300).n == 0, "a white headline over the skeleton");
+        CHECK(find(THEME_BORDER_IDLE, 0, 110, W - 1, 150).n > 500, "no ghost where the origin goes");
+        CHECK(find(THEME_BORDER_IDLE, 0, 170, W - 1, 290).n > 5000, "no ghost where the destination goes");
+        CHECK(find(THEME_CYAN, 0, 150, W - 1, 170).n > 0, "no bar under the top row");
+        CHECK(strstr(vm.identity, "Airbus A321") != NULL, "identity = \"%s\" — the model is lost", vm.identity);
+        layout_t L = read_layout();
+        CHECK(L.primary_in_band == 0, "%d supporting-text px inside the band", L.primary_in_band);
+
+        /* And the settled "no plan": the amber tag and the type as headline. */
+        view_build_ex(&a, NULL, false, &k_now, 32, NET_OK, &vm);
+        show(&vm, "detail_07_settled_no_plan");
+        CHECK(find(THEME_AMBER, 0, 100, W - 1, 160).n > 50, "no amber KEIN FLUGPLAN once settled");
+        CHECK(find(THEME_BORDER_IDLE, 0, 170, W - 1, 290).n == 0, "the ghost stayed after the answer");
+        CHECK(find(THEME_WHITE, 0, 150, W - 1, 300).n > 500, "no headline once settled");
+    }
+
     GROUP("no route (OE-AHM, DV20): the registration survives a two-line hero");
     {
         aircraft_t a = mk("4404e3", "OEAHM", "OE-AHM", "DV20", "A1", 1800, 131, 74.48f,

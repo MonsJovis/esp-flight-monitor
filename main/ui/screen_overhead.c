@@ -110,6 +110,14 @@ static lv_obj_t *s_busy_route;
 /* Hero band */
 static lv_obj_t *s_lbl_hero;
 
+/* The route lookup's skeleton (D84): ghosts where the origin and the
+ * destination will land, in the shape the answer will have. */
+static lv_obj_t *s_ghost_origin;
+static lv_obj_t *s_ghost_hero;
+static int32_t   s_ghost_hero_lh;   /* the hero face's line box the ghost stands in */
+#define GHOST_ORIGIN_W  (CONTENT_W * 30 / 100)
+#define GHOST_HERO_W    (CONTENT_W * 62 / 100)
+
 /* Supporting band */
 static lv_obj_t *s_lbl_reason;             /* §5.2 only */
 /* §5.1 only, under the destination: vm->route_line — "Landung in etwa 45
@@ -272,6 +280,34 @@ void screen_overhead_create(lv_obj_t *parent)
     /* --- Hero band -- the single most important thing on the panel --- */
     s_lbl_hero = make_wrapped_label(s_cont, &plex_sans_cond_100, THEME_WHITE);
 
+    /* --- The route lookup's skeleton (D84) ---
+     *
+     * While the route is being looked up this card used to put the model
+     * name in the destination's place under an amber "ROUTE WIRD GESUCHT" —
+     * so the headline changed from "Airbus A321" to "Frankfurt" when the
+     * answer landed, and the one colour that means "caution" was standing in
+     * for "one moment". Now the card takes the ANSWER's shape: a ghost where
+     * "Wien →" goes, a ghost where "Frankfurt" goes, the bar between them,
+     * and the sentence under it saying what is happening (DESIGN.md §4). The
+     * model is not lost: the identity line carries it (view_build.c).
+     *
+     * Ghost heights are an x-height, not the line box: a bar as tall as the
+     * line reads as a redaction. Widths are a short city and a longer one,
+     * uneven so they read as text that has not arrived. The hero ghost's y is
+     * set per update, because the hero's y is. */
+    {
+        int32_t lh34 = lv_font_get_line_height(&plex_sans_cond_34);
+        int32_t gh34 = lh34 / 2;
+        s_ghost_origin = widget_busy_ghost(s_cont, PAD, Y_TOPROW + (lh34 - gh34) / 2,
+                                           GHOST_ORIGIN_W, gh34, false);
+        lv_obj_set_hidden(s_ghost_origin, true);
+
+        s_ghost_hero_lh = lv_font_get_line_height(&plex_sans_cond_100);
+        s_ghost_hero = widget_busy_ghost(s_cont, PAD, 0, GHOST_HERO_W,
+                                         s_ghost_hero_lh * 2 / 5, false);
+        lv_obj_set_hidden(s_ghost_hero, true);
+    }
+
     /* --- Supporting band --- */
     s_lbl_reason = make_wrapped_label(s_cont, &plex_sans_cond_22, THEME_TEXT_PRIMARY);
     s_lbl_date   = make_wrapped_label(s_cont, &plex_sans_cond_25, THEME_TEXT_PRIMARY);
@@ -383,10 +419,13 @@ void screen_overhead_update(const view_model_t *vm)
 
     /* --- Top row --- */
     bool show_origin  = overhead && vm->has_origin;
-    bool show_no_route = no_route;
+    /* Still looking: the skeleton instead of the tag and the hero (D84). */
+    bool searching    = no_route && vm->route_searching;
+    bool show_no_route = no_route && !searching;
     set_hidden(s_lbl_origin, !show_origin);
     set_hidden(s_lbl_arrow, !show_origin);
     set_hidden(s_lbl_no_route_tag, !show_no_route);
+    set_hidden(s_ghost_origin, !searching);
 
     /* The top row's font is fixed (34 px), so its height never changes --
      * the hero always starts at the same Y regardless of which state is
@@ -412,22 +451,20 @@ void screen_overhead_update(const view_model_t *vm)
         lv_obj_set_pos(s_lbl_arrow, arrow_x, Y_TOPROW);
     }
     if (show_no_route) {
-        lv_label_set_text(s_lbl_no_route_tag,
-                          vm->route_searching ? STR_ROUTE_SEARCHING
-                                              : STR_NO_FLIGHT_PLAN);
+        lv_label_set_text(s_lbl_no_route_tag, STR_NO_FLIGHT_PLAN);
         lv_obj_set_pos(s_lbl_no_route_tag, PAD, Y_TOPROW);
-        /* Sized to the tag it belongs to, measured rather than guessed —
-         * "ROUTE WIRD GESUCHT" and "KEIN FLUGPLAN" are different lengths and
-         * only one of them ever has a bar under it. */
-        lv_obj_update_layout(s_lbl_no_route_tag);
-        lv_obj_set_width(s_busy_route, lv_obj_get_width(s_lbl_no_route_tag));
+    }
+    /* Under the origin's ghost and as wide as it: the bar belongs to the
+     * thing that is still coming, not to the whole screen. */
+    if (searching) {
+        lv_obj_set_width(s_busy_route, GHOST_ORIGIN_W);
     }
     /* THE DISTINCTION THIS DRAWS IS THE POINT. Both sentences are amber, both
      * sit in the same place, and until now the only difference between "this
      * aircraft filed no flight plan" and "I am still asking about this one"
      * was eighteen characters he has to read at 70 cm. One of them is final
      * and one of them is not; now one of them moves. */
-    widget_busy_set_active(s_busy_route, show_no_route && vm->route_searching);
+    widget_busy_set_active(s_busy_route, searching);
 
     /* --- Hero --- */
     const char      *hero_text;
@@ -462,6 +499,8 @@ void screen_overhead_update(const view_model_t *vm)
     lv_label_set_text(s_lbl_hero, hero_text);
     lv_obj_set_pos(s_lbl_hero, PAD, y_hero);
     lv_obj_update_layout(s_lbl_hero);
+    set_hidden(s_lbl_hero, searching);
+    set_hidden(s_ghost_hero, !searching);
     /* GAP_SM under the hero, not GAP_MD (D79). The hero's line box already
      * carries ~20 px of descender space below its baseline, so the visible
      * gap stays generous — and the 8 px it gives back are exactly what makes
@@ -469,6 +508,14 @@ void screen_overhead_update(const view_model_t *vm)
      * destination, with the identity under that). Measured, not guessed:
      * with GAP_MD the two lines needed 370 px against a 362 px limit. */
     int32_t y_next = y_hero + lv_obj_get_height(s_lbl_hero) + GAP_SM;
+    if (searching) {
+        /* One line of the full-size face, which is what a city name usually
+         * takes; the ghost sits where its x-height would. */
+        lv_obj_set_pos(s_ghost_hero, PAD,
+                       y_hero + (s_ghost_hero_lh - lv_obj_get_height(s_ghost_hero)) / 2
+                              + s_ghost_hero_lh / 10);
+        y_next = y_hero + s_ghost_hero_lh + GAP_SM;
+    }
 
     /* --- Supporting + data bands -- content differs by state ---
      *

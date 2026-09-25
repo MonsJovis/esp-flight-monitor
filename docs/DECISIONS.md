@@ -3120,3 +3120,52 @@ the rule and the table.
 - Each dropped out of the feed 6 to 9 minutes later, most likely with its transponder
   switched off at the gate. So the ten-minute cut-off itself was not reached live, and
   `test_ground.c` covers it.
+
+## D84 — The detail card waits in the shape of its answer
+
+**The owner's request:** a better loading state for the detail view, perhaps with skeletons.
+
+**What it was.** While a route was being looked up, the card showed:
+- an **amber** *ROUTE WIRD GESUCHT* in the top row, with the bar;
+- the **model name as headline**, in the destination's place ("Airbus A321");
+- *Die Route wird noch gesucht.* under it.
+
+Two things were wrong with it. Amber is this device's caution colour, and a lookup that
+takes a second is not a caution. And the headline changed meaning when the answer landed:
+"Airbus A321" became "Frankfurt" in the same 100 px slot, which is the jump §5.1/§5.2's
+fixed layout exists to avoid.
+
+**What it is now (`screen_overhead.c`).**
+- A ghost where the origin goes (30 % wide), with the bar under it at the same width.
+  The bar is for the thing that is still coming, not for the whole screen.
+- A ghost where the destination goes (62 % wide), an x-height tall, on the hero's line.
+- Then *Die Route wird noch gesucht.*, because a skeleton says where the answer will
+  land but only words say what is happening (DESIGN.md §4).
+- Then the identity line, now with the model: "AUA1Y · Airbus A321". `view_build.c`
+  keeps the type out of the dedup while searching, since the hero no longer shows it.
+- The data band is unchanged. Height, speed and distance are known, so they are shown.
+- The model is untouched otherwise: `vm.hero` is still the type and `route_searching`
+  still marks the state, so test_view's M4 check ("pending and settled share the hero")
+  stands. The skeleton is purely how the screen draws that state.
+
+The settled answers are as before: a route replaces the ghosts with "Wien → Frankfurt",
+and no route brings the amber *KEIN FLUGPLAN* and the model name as headline.
+`STR_ROUTE_SEARCHING` is gone.
+
+**`widget_busy_ghost()` caps its corner radius at 10 px.** A fully round 52 px ghost is a
+pill, and a pill on a touch screen is a button. Every ghost up to 20 px tall, which is all
+of them before this one, draws exactly as before.
+
+**Checked:** `sim_detail.c` renders both states and checks them from pixels:
+- searching: no amber, no white headline, both ghosts, the bar, and the model in the
+  identity;
+- settled: the amber tag, the headline, and no ghost left behind.
+
+On the panel, console key `5` (the replay with the lookup outstanding) matches the
+simulator.
+
+**Found on the way, and fixed:** every fixture replay (keys `1`–`5`) showed an amber
+*KEIN NETZ* over a working network. `dbg_fixture.c` still passed `true` for what was a bool
+"online" until M8 made it `net_state_t`, and `true` converts to `NET_NO_WIFI`. It is
+`NET_OK` now. `test_view.c` passes the same stale `true` in eight places. That affects no
+check there, and it is left for a separate cleanup.
