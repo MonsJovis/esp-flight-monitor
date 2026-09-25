@@ -473,11 +473,6 @@ static void flight_source_task(void *arg)
     bool was_connected = false;
 
     for (;;) {
-        /* A wake-up that arrived while the last poll was running has already
-         * been served by reaching this line: drop it, or the wait at the end
-         * of THIS iteration would return at once and poll twice in a row. */
-        ulTaskNotifyTake(pdTRUE, 0);
-
         /* Failures accumulated while the radio was down are not evidence that
          * the API is unhappy with us, so they must not keep us in a five-minute
          * backoff once the network comes back. Without this, a router reboot —
@@ -515,6 +510,14 @@ static void flight_source_task(void *arg)
         if (any_before && since_ms >= 0 && since_ms < SRC_MOVE_MIN_GAP_MS) {
             vTaskDelay(pdMS_TO_TICKS(SRC_MOVE_MIN_GAP_MS - since_ms));
         }
+
+        /* Any wake-up pending by now — including a second move made during
+         * the gap wait just above — is served by the request about to read
+         * the location. Drop it HERE, after that wait and right before the
+         * read: dropped earlier, a move during the wait stayed pending, the
+         * wait at the end of this iteration returned at once, and the same
+         * place was polled twice in a row. */
+        ulTaskNotifyTake(pdTRUE, 0);
 
         xSemaphoreTake(s.mutex, portMAX_DELAY);
         double lat = s.lat, lon = s.lon;

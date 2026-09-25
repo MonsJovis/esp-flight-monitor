@@ -682,6 +682,10 @@ static void ui_task(void *arg)
         bool has_data = flight_source_has_data();
 
         int n = flight_source_snapshot(ac, MAX_AIRCRAFT, rt, MAX_AIRCRAFT);
+        /* The routes stay in SNAPSHOT order and are only ever searched by
+         * callsign (route_find). `ac` is re-sorted and filtered below, so the
+         * two arrays stop lining up by index — never pair them by index. */
+        const int n_rt = n;
 
         /* Carry every fix forward to NOW before anything draws it.
          *
@@ -714,8 +718,7 @@ static void ui_task(void *arg)
             int kept = 0;
             for (int i = 0; i < n; i++) {
                 if (ac[i].dst_nm <= (float)g_settings.radius_nm) {
-                    ac[kept]   = ac[i];
-                    rt[kept++] = rt[i];
+                    ac[kept++] = ac[i];   /* rt untouched: see n_rt */
                 }
             }
             n = kept;
@@ -807,7 +810,7 @@ static void ui_task(void *arg)
              * and must not share a screen. flight_source knows which it is. */
             bool searching =
                 flight_source_route_status(ac[subject].flight) == ROUTE_STATUS_RESOLVING;
-            view_build_ex(&ac[subject], route_find(rt, n, ac[subject].flight),
+            view_build_ex(&ac[subject], route_find(rt, n_rt, ac[subject].flight),
                           searching, &now, n, net, &vm);
         } else {
             view_build_empty(&now, have_last_seen ? &last_seen : NULL,
@@ -846,13 +849,13 @@ static void ui_task(void *arg)
                 screen_overhead_update(&vm);
             }
         } else if (nav_page() == PAGE_LISTE) {
-            screen_list_update(ac, n, rt, n);
+            screen_list_update(ac, n, rt, n_rt);
         } else {
             /* Before the update, which reads it: the same `net` the detail
              * layer's amber tag is built from, so the two screens can never
              * disagree about whether the data is live (D76). */
             screen_radar_set_net(net);
-            screen_radar_update(ac, n, rt, n, g_settings.radius_nm);
+            screen_radar_update(ac, n, rt, n_rt, g_settings.radius_nm);
             screen_radar_set_clock(vm.clock_valid ? vm.clock : "");
         }
         push_signal();
