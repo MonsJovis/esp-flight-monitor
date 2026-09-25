@@ -97,6 +97,12 @@ void adsb_sort_by_distance(aircraft_t *ac, int n)
 
 int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
 {
+    return adsb_parse_ex(json, len, out, max, NULL, NULL);
+}
+
+int adsb_parse_ex(const char *json, size_t len, aircraft_t *out, int max,
+                  adsb_keep_fn keep, void *ctx)
+{
     if (json == NULL || out == NULL || max <= 0) {
         return -1;
     }
@@ -207,6 +213,10 @@ int adsb_parse(const char *json, size_t len, aircraft_t *out, int max)
 
         cJSON *lon = cJSON_GetObjectItemCaseSensitive(item, "lon");
         ac->lon = cJSON_IsNumber(lon) ? lon->valuedouble : 0.0;
+
+        if (keep != NULL && !keep(&tmp, ctx)) {
+            continue;
+        }
 
         if (count < max) {
             out[count++] = tmp;

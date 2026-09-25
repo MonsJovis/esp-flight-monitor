@@ -3014,3 +3014,109 @@ Every install after that is clean.
 warns *unknown kconfig symbol* — and `DYNAMIC_FREE_CA_CERT` depends on
 `DYNAMIC_FREE_CONFIG_DATA`, which is not set, so neither line does anything. Left for its
 own change: enabling them alters TLS memory behaviour on a board with 40 KB internal free.
+
+## D82 — A move of the device shows the new place's sky, or says it is looking
+
+**The question, from the owner, before 1.0:** when the location is switched, is it clear
+whether the radar and the list are refreshing? **It was not, and it was worse than
+unclear.** Read in the code, then seen on the device:
+
+- `flight_source_set_location()` changed three numbers and nothing else. Its header said
+  so on purpose: *does not clear the published snapshot*.
+- adsb.lol's `dst` and `dir` are measured **from the query point**. So until the next
+  poll, the radar drew the **old place's aircraft around the new place**, at the old
+  distances and bearings, and the list counted them *in Reichweite*. Nothing on either
+  screen said so.
+- "Until the next poll" was up to 12 s at best. After a run of failures it was the
+  backoff, up to **five minutes**, because the old place's failures carried over.
+- A poll already on the wire when he moved finished afterwards and **published the old
+  place again**, over whatever the new one had shown.
+- Nothing separated "no answer yet" from "nothing up there". At boot and after a move,
+  the list said *Der Himmel ist frei.*, the one false sentence on the screen, and the
+  radar was an empty scope, which reads the same way.
+
+**What a move does now (`flight_source.c`):**
+- It clears the snapshot, the last-success time and the failure count.
+- It bumps a location generation. A poll remembers the generation it was built for and
+  **throws its answer away** if the device moved while it was out. That answer counts
+  neither as data nor as a failure.
+- It wakes the poller at once; the old code waited out a fixed delay.
+- `SRC_MOVE_MIN_GAP_MS` (3 s) keeps two quick moves from becoming the burst adsb.lol
+  throttles (AGENTS.md §5). The wait lives in the poller, never on the caller: the
+  caller is the LVGL thread, a tap on a search hit.
+- A radius change alone clears nothing and costs no request. The aircraft are still
+  measured from the right point. `main.c` drops the ones beyond a **smaller** ring
+  until the next poll, instead of the radar pinning them to the edge. A bigger ring
+  fills in at the next poll.
+- Settings changes that are not moves, such as brightness or the night window, go
+  through the same `apply_settings()` and are recognised as not moves.
+
+**What the screens say until the first answer for this place** (`flight_source_has_data()`):
+
+| | network up | network down |
+|---|---|---|
+| **Liste** | *Suche Flugzeuge...* in the header line, the bar under it, three ghost rows where the rows will land | *Noch keine Flugdaten.* — nothing moves (DESIGN.md §4: a condition gets a sentence) |
+| **Radar** | *Suche Flugzeuge...* top centre in label grey, the bar under it | the amber `KEIN NETZ` / `KEINE DATEN` it already had |
+
+This is DESIGN.md §4's busy pattern, the same as the WLAN scan and the place search: one
+moving thing, and skeleton rows only on an empty list. A list he can read is never replaced
+with ghosts.
+
+**What the UI forgets on a move (`main.c`, `screen_radar_forget_place()`):** the tapped
+aircraft, the open detail card, the "last seen" aircraft, the radar's trails and its
+nearest-mark hysteresis. All of them describe a sky he is no longer under.
+
+**Checked:**
+- Host: `test/sim/sim_list.c` is new and covers the list's three empty states and "rows
+  win". `sim_radar.c` gained the wait, the wait under a dead network, the wait ending,
+  and the forget.
+- On the device, via the real path (place search, tap the first hit): the poll for the
+  new place left 36 ms after the hits came back, and its answer was parsed 0.46 s after
+  that. Before, the wait was 12 s at best, with the old sky on screen throughout.
+- Also on the device: a request already hanging when the device moved (the link was
+  slow, and it took 25 s to fail) was discarded, logged as such, and the new place was
+  polled immediately after.
+
+**Found on the way, not changed: a move can start the night update.** The night window is
+local time (D74), and the timezone follows the place. Switching the device to Pattaya at
+17:18 in Austria made it 22:18 there, inside the window, and the pending v0.9.1 installed
+and restarted within a minute. That is the policy working as written: a device that stands
+in Pattaya would update at that hour anyway. It is recorded because, from his chair, it
+looks like "I picked a town and it restarted".
+
+## D83 — Ground traffic: shown only if it has just landed, because departures are not knowable
+
+**The owner's rule:** show an aircraft on the ground only if it departs within ten minutes
+or landed within the last ten, *if we have this data*. This settles what D77 left open: the
+parked aircraft at Schwechat that crowd the inner ring and the top of the list. Over Vienna
+on 2026-09-25 that was 8 of 35 aircraft.
+
+**Half of the rule is knowable, and only half is built.**
+- **No feed this device can reach has a schedule** (D79). adsb.lol has positions and
+  adsb.im has the two airports.
+- **"Landed in the last ten minutes" is knowable by watching.** An aircraft this device
+  saw airborne, and now sees with `alt_baro: "ground"`, has landed within a poll (12 s)
+  of that last airborne sighting. `main/data/ground_filter.c` remembers that time per
+  aircraft: 160 slots in PSRAM, expired slots reused first.
+- **"Departs in the next ten minutes" is not knowable.** A taxiing aircraft may be
+  going out, coming in, or on a tow bar. A guess would be the confident wrong answer
+  this device is built not to give. A departure appears the moment it is airborne,
+  seconds into its take-off roll.
+- **Everything else on the ground stays hidden.** That includes an aircraft that
+  landed before the device was switched on or moved: nobody saw it land.
+- **An unknown altitude is not "on the ground",** and it is kept as before. It is not
+  evidence of flight either, so it cannot become the airborne half of a landing.
+
+**The filter runs inside the parser, before the nearest-24 cut** (`adsb_parse_ex()`).
+Filtered after the cut, the apron would take its places among the 24 nearest and push
+airborne aircraft out. `test_parse.c` builds exactly that sky, and `test_ground.c` covers
+the rule and the table.
+
+**Checked on the device over Vienna, 15 minutes on 2026-09-25:**
+- 3 to 9 aircraft on the ground were hidden per poll. The log line is `on the ground:
+  N hidden, M shown as just landed`.
+- Three landings were caught and shown from the first poll after touchdown: AUA64A,
+  RYR9VJ and RYR525D.
+- Each dropped out of the feed 6 to 9 minutes later, most likely with its transponder
+  switched off at the gate. So the ten-minute cut-off itself was not reached live, and
+  `test_ground.c` covers it.

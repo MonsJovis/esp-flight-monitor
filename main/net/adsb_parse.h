@@ -5,6 +5,7 @@
  * host in milliseconds. The HTTP fetch lives elsewhere.
  */
 #pragma once
+#include <stdbool.h>
 #include <stddef.h>
 #include "flight_types.h"
 
@@ -17,6 +18,13 @@
  * JSON object containing an array under either wrapper key.
  */
 int adsb_parse(const char *json, size_t len, aircraft_t *out, int max);
+
+/* The same, with a say over what is kept (D83). `keep` sees every aircraft
+ * the parser would otherwise consider, BEFORE the nearest-`max` cut — so what
+ * it drops can never push out something it would have kept. NULL keeps all. */
+typedef bool (*adsb_keep_fn)(const aircraft_t *ac, void *ctx);
+int adsb_parse_ex(const char *json, size_t len, aircraft_t *out, int max,
+                  adsb_keep_fn keep, void *ctx);
 
 /* Re-applies that ordering to a list already in hand.
  *

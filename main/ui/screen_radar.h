@@ -145,6 +145,18 @@ void screen_radar_clear_selection(void);
  * that is not). */
 void screen_radar_set_net(net_state_t net);
 
+/* Whether the snapshot is an answer for the place the device stands NOW. False
+ * at boot and after a move until the first poll lands (D82): with the network
+ * up the top row then says "Suche Flugzeuge..." over a bar, because an empty
+ * scope alone reads as an empty sky. Read by the next screen_radar_update(). */
+void screen_radar_set_has_data(bool has_data);
+
+/* The device has been moved: drop the trails, the tapped mark and the
+ * nearest-mark hysteresis, all of which are about the old place's sky.
+ * Writes no LVGL, but call it under display_lock() like the update that reads
+ * what it clears. */
+void screen_radar_forget_place(void);
+
 /* The time, top right.
  *
  * It lives here because the Radar is now the default view, and the clock used

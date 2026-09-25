@@ -85,10 +85,21 @@ _Static_assert(POLL_BUF_SZ >= POLL_BUF_PLAN_AIRCRAFT * POLL_BUF_PLAN_BYTES_AC + 
 
 esp_err_t flight_source_start(double lat, double lon, int radius_nm);
 
-/* Changes where the next poll queries. Takes effect on the poll after next;
- * does not restart the task, clear the published snapshot, or clear the
- * route cache (routes are keyed on callsign, not location, so a relocation
- * does not invalidate them — AGENTS.md §5). */
+/* Changes where the next poll queries.
+ *
+ * A MOVE of the point (lat/lon differ) clears the published snapshot, the
+ * last-success time and the failure count, discards a poll already on the
+ * wire, and polls at once (SRC_MOVE_MIN_GAP_MS permitting). It used to do
+ * none of that: the old place's aircraft stayed up for a poll or more, drawn
+ * around the new place with distances and bearings measured from the old one,
+ * and an answer already in flight could put them back after the next one
+ * (D82). Until the first answer from the new point, flight_source_has_data()
+ * is false and the screens say they are looking.
+ *
+ * A radius change alone keeps the snapshot and the cadence.
+ *
+ * Never clears the route cache: routes are keyed on callsign, not location
+ * (AGENTS.md §5). Never blocks. */
 void flight_source_set_location(double lat, double lon, int radius_nm);
 
 /* Copies the current aircraft snapshot (already sorted ascending by
@@ -105,6 +116,11 @@ void flight_source_set_location(double lat, double lon, int radius_nm);
  * Returns the number of aircraft written (0 if nothing has been fetched
  * yet, or if the last fetch found an empty sky).
  */
+/* Changes whenever the poll point moves. The UI compares it tick to tick to
+ * know the device has been moved, and drops everything it remembered about
+ * the old place's sky: the last aircraft seen, the trails, a selection. */
+uint32_t flight_source_location_gen(void);
+
 int flight_source_snapshot(aircraft_t *out, int max, route_t *routes, int max_routes);
 
 /* The resolution state of `callsign` (trimmed, case-insensitive). A
@@ -131,6 +147,17 @@ const char *flight_source_current_source_name(void);
 /* esp_timer-based ms timestamp of the last successful poll. 0 if no poll
  * has ever succeeded. */
 int64_t flight_source_last_success_ms(void);
+
+/* True once a poll has succeeded for the CURRENT location. False from boot
+ * until the first answer, and again from a move until the first answer from
+ * the new point — the only two times an empty snapshot means "not known yet"
+ * rather than "nothing up there". */
+bool flight_source_has_data(void);
+
+/* The radius the published snapshot was polled at. After the ring is made
+ * smaller it is larger than the setting until the next poll, and the caller
+ * drops what lies beyond the new ring rather than pinning it to the edge. */
+int flight_source_data_radius_nm(void);
 
 /* Milliseconds since the last successful poll. INT64_MAX if no poll has
  * ever succeeded (so simple ">" staleness thresholds behave sensibly). */

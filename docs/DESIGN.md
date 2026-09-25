@@ -273,6 +273,13 @@ the letter and misses the point.
 | **The skeleton** | On a list that is empty because the answer has not arrived, ghost rows in `border-idle` / `divider` stand where the rows will be, the same height as the real ones. Uneven widths, because three bars of equal length read as a finished graphic rather than as text that has not come yet. **Nothing pulses or shimmers** — the bar is the one moving thing, and a skeleton that breathes turns a calm wait into a busy one. |
 | **Not on a refresh** | Skeleton rows are for an empty list only. A rescan over networks he can already read keeps them and shows the bar alone: replacing a list he is reading with grey bars throws away what he has and tells him nothing. |
 
+**The fourth wait (D82): the first answer for this place.** At boot and right after he
+moves the device, an empty list is not an empty sky. The Liste then shows *Suche
+Flugzeuge…* in its header line, with the bar and three ghost rows. The Radar shows the
+same words top centre in label grey, with the bar under them. With the network down there
+is no request to wait for: the list says *Noch keine Flugdaten.*, and the radar keeps its
+amber tag.
+
 **It is for a wait with an end, never for a condition.** §5.3's *Kein Netz — Ich suche ein
 bekanntes WLAN* deliberately has no bar. That state can last all night, and a bar that
 sweeps until morning stops meaning "still working" and starts meaning "this device
@@ -288,7 +295,7 @@ power. One request in flight gets a bar. A standing condition gets a sentence.
 | 5.1 | **Über dir jetzt** | Default. Nearest aircraft, destination as hero. No interaction needed. |
 | 5.2 | **Ohne Route** | Same screen when there is no flight plan — see below. |
 | 5.3 | **Himmel frei** | Empty sky: clock, date, last aircraft seen. Never a blank panel. |
-| 5.4 | **Liste** | Everything nearby, sorted by distance. Tap a row for its card. |
+| 5.4 | **Liste** | Everything nearby, sorted by distance. Tap a row for its card. On the ground: only what was seen landing in the last 10 min (D83). |
 | 5.5 | **Radar** | PPI scope, range rings, heading-rotated glyphs sized by altitude, trails, a ring on whatever the caption names. |
 | 5.6 | **Einstellungen** | Location preset, radius, brightness. |
 | 5.7 | **WLAN** | Provisioning, both networks remembered — the device travels. |

@@ -124,6 +124,15 @@
 
 #define STR_EMPTY_SKY          "Der Himmel ist frei."
 
+/* No answer yet for THIS place: at boot, and right after he moved the device
+ * (D82). Until then an empty list is not an empty sky, and saying so would be
+ * the one false sentence on the screen. Same shape as "Suche Netzwerke...".
+ * The radar's top row carries the same words. */
+#define STR_AIRCRAFT_SEARCHING "Suche Flugzeuge..."
+/* The same wait with the network gone: no bar, because it is a condition, not
+ * a request in flight (DESIGN.md §4). The amber tag says which. */
+#define STR_AIRCRAFT_NO_ANSWER "Noch keine Flugdaten."
+
 /* ---- Einstellungen ---------------------------------------------------- */
 
 #define STR_HEADING_ORT            "Ort"

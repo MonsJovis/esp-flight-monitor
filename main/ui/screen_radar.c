@@ -113,6 +113,7 @@
 #include "strings_de.h"
 #include "identity.h"
 #include "widget_signal.h"
+#include "widget_busy.h"
 #include "radar_logic.h"
 
 /* ============================================================================
@@ -253,6 +254,8 @@ static lv_obj_t *s_home_outer, *s_home_inner;
 static lv_obj_t *s_sel_ring;       /* rings the mark the caption is about */
 static lv_obj_t *s_trail_layer;    /* one object, draws every trail */
 static lv_obj_t *s_lbl_stale;      /* amber KEIN NETZ / KEINE DATEN */
+static lv_obj_t *s_lbl_wait;       /* "Suche Flugzeuge...", no answer here yet */
+static lv_obj_t *s_busy_wait;      /* its bar */
 static lv_obj_t *s_cap_arrow;      /* the caption's "this goes somewhere" */
 static lv_obj_t *s_cap_pill;       /* the caption's pressed state */
 
@@ -261,6 +264,7 @@ static int         s_nearest_idx = -1;
 static char        s_nearest_hex[sizeof ((aircraft_t *)0)->hex];
 static int         s_rng_nm      = 1;
 static net_state_t s_net         = NET_OK;
+static bool        s_has_data    = true;
 static uint32_t    s_last_touch_ms;
 static uint32_t    s_last_update_ms;
 static radar_trails_t s_trails;
@@ -651,6 +655,26 @@ void screen_radar_create(lv_obj_t *parent)
      * screen — had no way to say it at all. */
     s_lbl_stale = make_label(s_cont, &plex_mono_13, THEME_AMBER);
     lv_obj_set_hidden(s_lbl_stale, true);
+
+    /* The same slot, for the one other thing the top row may have to say:
+     * there is no answer for this place yet (D82). An empty scope with no
+     * words reads exactly like an empty sky, and after a move it was one
+     * poll of the OLD place's sky and then that. Label grey, not amber —
+     * nothing is wrong — with the device's one moving thing under it
+     * (widget_busy.h), sized to the words like §5.2's route tag. Never
+     * shown with the amber tag: that one is only up when the network is not
+     * NET_OK, and then there is no request to wait for. */
+    s_lbl_wait = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
+    lv_label_set_text(s_lbl_wait, STR_AIRCRAFT_SEARCHING);
+    lv_obj_update_layout(s_lbl_wait);
+    {
+        int32_t w = lv_obj_get_width(s_lbl_wait);
+        lv_obj_set_pos(s_lbl_wait, (THEME_SCREEN_WIDTH - w) / 2, RADAR_CLOCK_Y);
+        s_busy_wait = widget_busy_create(s_cont, w);
+        lv_obj_set_pos(s_busy_wait, (THEME_SCREEN_WIDTH - w) / 2,
+                       RADAR_CLOCK_Y + lv_font_get_line_height(&plex_mono_13) + 2);
+    }
+    lv_obj_set_hidden(s_lbl_wait, true);
 
     /* The clock, balancing the range read-out across the top. */
     s_lbl_clock = make_label(s_cont, &plex_mono_13, THEME_TEXT_LABEL);
@@ -1193,6 +1217,10 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
     }
     lv_obj_set_hidden(s_lbl_stale, !stale);
 
+    bool waiting = !stale && !s_has_data && n == 0;
+    lv_obj_set_hidden(s_lbl_wait, !waiting);
+    widget_busy_set_active(s_busy_wait, waiting);
+
     /* --- Trails. Recorded only while the data is live. While stale the
      * positions are frozen, and a fix taken then is stamped "now" for a
      * position that is really minutes old — harmless while it sits under the
@@ -1396,6 +1424,18 @@ void screen_radar_update(const aircraft_t *ac, int n, const route_t *routes, int
 void screen_radar_set_net(net_state_t net)
 {
     s_net = net;
+}
+
+void screen_radar_set_has_data(bool has_data)
+{
+    s_has_data = has_data;
+}
+
+void screen_radar_forget_place(void)
+{
+    radar_trails_reset(&s_trails);
+    s_caption_hex[0] = '\0';
+    s_nearest_hex[0] = '\0';
 }
 
 void screen_radar_set_clock(const char *hhmm)

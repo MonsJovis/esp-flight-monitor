@@ -18,6 +18,7 @@ LVGL_SRCS := $(shell find $(LVGL)/src -name '*.c')
 LVGL_OBJS := $(patsubst $(LVGL)/src/%.c,$(BUILD)/lvgl/%.o,$(LVGL_SRCS))
 
 APP_SRCS := $(ROOT)/main/ui/screen_radar.c \
+            $(ROOT)/main/ui/widget_busy.c \
             $(wildcard $(ROOT)/main/ui/fonts/*.c) \
             $(wildcard $(ROOT)/main/data/*.c) \
             $(ROOT)/main/net/route_parse.c \
@@ -64,12 +65,25 @@ $(BUILD)/sim_detail: sim_detail.c sim_common.h $(DETAIL_SRCS) $(BUILD)/liblvgl.a
 # Leak detection off: LVGL's objects live until the process exits and are
 # never freed, which LeakSanitizer (on by default on Linux, e.g. in CI)
 # reports as a failure. Every other sanitizer finding is fatal.
-run: $(BUILD)/sim_radar $(BUILD)/sim_detail
+# The Liste page (D82): its three empty states.
+LIST_SRCS := $(ROOT)/main/ui/screen_list.c \
+             $(ROOT)/main/ui/widget_busy.c \
+             $(wildcard $(ROOT)/main/ui/fonts/*.c) \
+             $(wildcard $(ROOT)/main/data/*.c) \
+             $(ROOT)/main/net/route_parse.c \
+             $(CJSON_DIR)/cJSON.c
+
+$(BUILD)/sim_list: sim_list.c sim_common.h $(LIST_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
+	@$(CC) $(APP_CFLAGS) -o $@ sim_list.c $(LIST_SRCS) $(BUILD)/liblvgl.a -lm
+
+run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list
 	@mkdir -p $(OUT)
 	@echo "== radar"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_radar $(OUT)
 	@echo "== detail layer"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_detail $(OUT)
+	@echo "== list"
+	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_list $(OUT)
 
 clean:
 	rm -rf $(BUILD) $(OUT)

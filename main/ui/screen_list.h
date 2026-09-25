@@ -36,6 +36,7 @@
 #pragma once
 #include "lvgl.h"
 #include "flight_types.h"
+#include "view_model.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,6 +88,14 @@ void screen_list_create(lv_obj_t *parent);
  * function makes LVGL calls directly and takes no lock of its own.
  */
 void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int n_routes);
+
+/* Whether the list has an answer for the current place yet, and if not, why.
+ * Read by the next screen_list_update(). An empty list with no answer is not
+ * an empty sky (D82): with the network up it says "Suche Flugzeuge...", with a
+ * bar and ghost rows where the rows will land; with the network down it says
+ * "Noch keine Flugdaten." and nothing moves. With an answer, `net` is ignored
+ * and the list behaves as it always has. */
+void screen_list_set_source(bool has_data, net_state_t net);
 
 /* Fired when he taps a row. `ac` points at this screen's own internal copy
  * of the tapped aircraft_t — valid for the duration of the callback, and

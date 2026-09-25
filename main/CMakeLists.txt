@@ -28,6 +28,7 @@ set(SRCS
     "data/extrapolate.c"
     "data/radar_logic.c"
     "data/arrival.c"
+    "data/ground_filter.c"
     "data/identity.c"
     "data/settings.c"
     "data/wifi_bars.c"

@@ -19,6 +19,7 @@
 #include "esp_timer.h"
 
 #include "adsb_parse.h"
+#include "ground_filter.h"
 #include "http_get.h"
 #include "route_parse.h"
 #include "source_logic.h"
@@ -77,10 +78,19 @@ static struct {
      * poll -- guarded by mutex either way, it's cheap. */
     double  lat, lon;
     int     radius_nm;
+    /* Bumped whenever the poll point moves (flight_source_set_location). A
+     * poll remembers the generation it was built for and throws its answer
+     * away if the device has moved while it was on the wire: that answer's
+     * dst/dir are measured from the OLD point, and published they would draw
+     * the old place's sky around the new one. */
+    uint32_t loc_gen;
+    int64_t  last_request_ms;  /* start of the last poll request, 0 = none */
+    TaskHandle_t task;         /* woken early when the location moves */
 
     /* Published snapshot -- what flight_source_snapshot() copies out. */
     aircraft_t aircraft[MAX_AIRCRAFT];
     int        aircraft_count;
+    int        aircraft_radius_nm; /* the radius the snapshot was polled at */
 
     /* Route cache: front-packed array, evict-oldest on overflow. */
     route_cache_entry_t routes[ROUTE_CACHE_MAX];
@@ -418,6 +428,25 @@ static void route_cache_save_if_due(int64_t now_ms)
 
 /* ---- Poll loop ----------------------------------------------------------- */
 
+typedef struct {
+    ground_memory_t *mem;
+    uint32_t         now_s;   /* + 1 so it is never 0, which ground_keep rejects */
+    int              hidden;  /* on the ground and not just landed, this poll */
+    int              landed;  /* on the ground and seen landing: shown */
+} ground_ctx_t;
+
+static bool keep_aircraft(const aircraft_t *ac, void *ctx)
+{
+    ground_ctx_t *gc = ctx;
+    bool keep = ground_keep(gc->mem, ac, gc->now_s);
+    if (!keep) {
+        gc->hidden++;
+    } else if (ac->alt_ft == ALT_GROUND) {
+        gc->landed++;
+    }
+    return keep;
+}
+
 static void flight_source_task(void *arg)
 {
     (void)arg;
@@ -432,9 +461,23 @@ static void flight_source_task(void *arg)
         return;
     }
 
+    /* Who has been seen flying lately, so a plane on the ground can be shown
+     * only if it has just landed (D83, ground_filter.h). PSRAM: 1.9 KB this
+     * board's internal heap has better uses for (D81's memory table). If it
+     * cannot be had, the filter is off and ground traffic shows as before. */
+    ground_memory_t *ground = heap_caps_calloc(1, sizeof *ground, MALLOC_CAP_SPIRAM);
+    if (ground == NULL) {
+        ESP_LOGW(TAG, "no memory for the ground filter -- showing all ground traffic");
+    }
+
     bool was_connected = false;
 
     for (;;) {
+        /* A wake-up that arrived while the last poll was running has already
+         * been served by reaching this line: drop it, or the wait at the end
+         * of THIS iteration would return at once and poll twice in a row. */
+        ulTaskNotifyTake(pdTRUE, 0);
+
         /* Failures accumulated while the radio was down are not evidence that
          * the API is unhappy with us, so they must not keep us in a five-minute
          * backoff once the network comes back. Without this, a router reboot —
@@ -461,11 +504,35 @@ static void flight_source_task(void *arg)
             continue;
         }
 
+        /* The one place an early poll is held back. The normal cadence is far
+         * slower than this; only a wake-up (a move) or a discarded answer can
+         * bring two requests this close, and adsb.lol throttles bursts
+         * (AGENTS.md §5) — two quick moves must not become a burst. */
+        xSemaphoreTake(s.mutex, portMAX_DELAY);
+        int64_t since_ms = esp_timer_get_time() / 1000 - s.last_request_ms;
+        bool any_before = s.last_request_ms != 0;
+        xSemaphoreGive(s.mutex);
+        if (any_before && since_ms >= 0 && since_ms < SRC_MOVE_MIN_GAP_MS) {
+            vTaskDelay(pdMS_TO_TICKS(SRC_MOVE_MIN_GAP_MS - since_ms));
+        }
+
         xSemaphoreTake(s.mutex, portMAX_DELAY);
         double lat = s.lat, lon = s.lon;
         int radius = s.radius_nm;
+        uint32_t gen = s.loc_gen;
         source_id_t src = s.active_source;
+        /* Stamped under the lock the early wake-up reads it under. */
+        s.last_request_ms = esp_timer_get_time() / 1000;
         xSemaphoreGive(s.mutex);
+
+        /* Says when the first request for a new place actually leaves, so
+         * "how long did the screen wait after a move" can be read off the log
+         * rather than guessed. */
+        static uint32_t logged_gen;
+        if (gen != logged_gen) {
+            logged_gen = gen;
+            ESP_LOGW(TAG, "moved: polling the new place now (%.4f/%.4f)", lat, lon);
+        }
 
         char url[160];
         if (source_build_url(src, lat, lon, radius, url, sizeof url) < 0) {
@@ -502,7 +569,13 @@ static void flight_source_task(void *arg)
             if (truncated) {
                 ESP_LOGW(TAG, "%s: response truncated at %d bytes", source_name(src), n);
             }
-            ac_n = adsb_parse(poll_buf, (size_t)n, local_ac, MAX_AIRCRAFT);
+            ground_ctx_t gc = { ground, (uint32_t)(esp_timer_get_time() / 1000000) + 1, 0, 0 };
+            ac_n = adsb_parse_ex(poll_buf, (size_t)n, local_ac, MAX_AIRCRAFT,
+                                 keep_aircraft, &gc);
+            if (gc.hidden > 0 || gc.landed > 0) {
+                ESP_LOGI(TAG, "on the ground: %d hidden, %d shown as just landed (D83)",
+                         gc.hidden, gc.landed);
+            }
             if (ac_n < 0) {
                 /* Almost always a body cut short by the link rather than a
                  * genuinely malformed feed, so say how much arrived and how it
@@ -523,10 +596,20 @@ static void flight_source_task(void *arg)
         route_cache_save_if_due(now);
 
         xSemaphoreTake(s.mutex, portMAX_DELAY);
+        if (s.loc_gen != gen) {
+            /* He moved the device while this request was out. Whatever came
+             * back — aircraft or a failure — is about the place he left, so it
+             * is neither published nor counted. set_location() has already
+             * cleared the snapshot and woken us; go straight round. */
+            xSemaphoreGive(s.mutex);
+            ESP_LOGW(TAG, "location changed during the poll, answer discarded");
+            continue;
+        }
         if (success) {
             s.consec_failures = 0;
             s.last_success_ms = now;
             s.aircraft_count = ac_n;
+            s.aircraft_radius_nm = radius;
             memcpy(s.aircraft, local_ac, sizeof(aircraft_t) * (size_t)ac_n);
         } else {
             s.consec_failures++;
@@ -547,7 +630,9 @@ static void flight_source_task(void *arg)
             ESP_LOGW(TAG, "%d consecutive failure(s), published snapshot is stale", failures);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(source_backoff_delay_ms(failures)));
+        /* A notification, not a vTaskDelay, so a location change is answered
+         * now rather than after a twelve-second (or five-minute) wait. */
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(source_backoff_delay_ms(failures)));
     }
 }
 
@@ -582,7 +667,7 @@ esp_err_t flight_source_start(double lat, double lon, int radius_nm)
      * the last power cycle. */
     route_cache_load();
 
-    BaseType_t ok = xTaskCreate(flight_source_task, "flight_source", 16384, NULL, 5, NULL);
+    BaseType_t ok = xTaskCreate(flight_source_task, "flight_source", 16384, NULL, 5, &s.task);
     if (ok != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
@@ -625,10 +710,49 @@ void flight_source_set_location(double lat, double lon, int radius_nm)
         return;
     }
     xSemaphoreTake(s.mutex, portMAX_DELAY);
+    /* apply_settings() calls this for every settings change — brightness,
+     * the night window — so only a real move of the poll point counts. The
+     * geocoder hands back five decimals and the presets are constants, so an
+     * exact compare is not fragile here. */
+    bool moved = (lat != s.lat || lon != s.lon);
     s.lat = lat;
     s.lon = lon;
+    /* A radius change alone keeps the snapshot and the cadence: the aircraft
+     * in it are still measured from the right point, the screens drop the
+     * ones beyond a smaller ring themselves, and a bigger ring fills in at
+     * the next poll. Not worth an extra request per slider release. */
     s.radius_nm = radius_nm;
+    if (moved) {
+        /* Everything published is the old place's sky. Clear it rather than
+         * leave it up: its distances and bearings are from the old point, so
+         * it would be drawn around the new one as if it were there. With no
+         * snapshot and no success the screens say they are looking (D82),
+         * which is true. The failures belonged to the old request too, and a
+         * five-minute backoff must not keep him waiting at the new place. */
+        s.loc_gen++;
+        s.aircraft_count = 0;
+        s.last_success_ms = 0;
+        s.consec_failures = 0;
+    }
+    TaskHandle_t task = s.task;
     xSemaphoreGive(s.mutex);
+
+    /* Poll now. Never blocks: the caller is usually the LVGL thread (a tap
+     * on a search hit), and the poller enforces its own minimum gap. */
+    if (moved && task != NULL) {
+        xTaskNotifyGive(task);
+    }
+}
+
+uint32_t flight_source_location_gen(void)
+{
+    if (!source_ready()) {
+        return 0;
+    }
+    xSemaphoreTake(s.mutex, portMAX_DELAY);
+    uint32_t g = s.loc_gen;
+    xSemaphoreGive(s.mutex);
+    return g;
 }
 
 int flight_source_snapshot(aircraft_t *out, int max, route_t *routes, int max_routes)
@@ -713,6 +837,22 @@ int64_t flight_source_last_success_ms(void)
     int64_t t = s.last_success_ms;
     xSemaphoreGive(s.mutex);
     return t;
+}
+
+int flight_source_data_radius_nm(void)
+{
+    if (!source_ready()) {
+        return 0;
+    }
+    xSemaphoreTake(s.mutex, portMAX_DELAY);
+    int r = s.aircraft_radius_nm;
+    xSemaphoreGive(s.mutex);
+    return r;
+}
+
+bool flight_source_has_data(void)
+{
+    return flight_source_last_success_ms() != 0;
 }
 
 int64_t flight_source_last_success_age_ms(void)

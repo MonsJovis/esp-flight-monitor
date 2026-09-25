@@ -384,6 +384,12 @@ static void test_route_build_request(void)
     CHECK_STR(buf2, "{\"planes\":[]}");
 }
 
+static bool drop_ground(const aircraft_t *ac, void *ctx)
+{
+    (void)ctx;
+    return ac->alt_ft != ALT_GROUND;
+}
+
 int main(void)
 {
     test_adsb_real_fixture();
@@ -457,6 +463,29 @@ int main(void)
         bool kept_unknown = false;
         for (int i = 0; i < MAX_AIRCRAFT; i++) kept_unknown |= strcmp(acs[i].hex, "nodist") == 0;
         CHECK(!kept_unknown);
+    }
+    {
+        GROUP("a parked apron nearer than the sky does not push the sky out (D83)");
+        /* Ten aircraft on the ground, nearest of all, and MAX_AIRCRAFT
+         * airborne behind them. Filtered AFTER the nearest-24 cut, the apron
+         * would take ten of the 24 places and ten airborne aircraft would be
+         * lost; filtered before it, every airborne one is kept. */
+        char json[8192];
+        size_t n = (size_t)snprintf(json, sizeof json, "{\"ac\":[");
+        for (int i = 0; i < 10; i++)
+            n += (size_t)snprintf(json + n, sizeof json - n,
+                                  "%s{\"hex\":\"g%05d\",\"alt_baro\":\"ground\",\"dst\":%d.0}",
+                                  i ? "," : "", i, 1 + i);
+        for (int i = 0; i < MAX_AIRCRAFT; i++)
+            n += (size_t)snprintf(json + n, sizeof json - n,
+                                  ",{\"hex\":\"f%05d\",\"alt_baro\":5000,\"dst\":%d.0}", i, 20 + i);
+        n += (size_t)snprintf(json + n, sizeof json - n, "]}");
+        aircraft_t acs[MAX_AIRCRAFT];
+        CHECK_INT(adsb_parse_ex(json, n, acs, MAX_AIRCRAFT, drop_ground, NULL), MAX_AIRCRAFT);
+        bool any_ground = false;
+        for (int i = 0; i < MAX_AIRCRAFT; i++) any_ground |= acs[i].alt_ft == ALT_GROUND;
+        CHECK(!any_ground);
+        CHECK_NEAR(acs[0].dst_nm, 20.0f, 1e-6);
     }
 
     return test_summary();

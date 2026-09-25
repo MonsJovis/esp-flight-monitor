@@ -601,6 +601,7 @@ static void ui_task(void *arg)
     static route_t    rt[MAX_AIRCRAFT];
     static aircraft_t last_seen;
     static bool       have_last_seen = false;
+    static uint32_t   seen_loc_gen;
 
     bool sntp_started = false;
     int  power_ticks  = 0;
@@ -646,6 +647,29 @@ static void ui_task(void *arg)
             power_tick();
         }
 
+        /* Moved since the last tick? (D82) flight_source has already thrown
+         * the old place's aircraft away; what is left to forget lives here and
+         * in the screens: the aircraft he had picked, the "last seen" the empty
+         * detail layer would name, and the radar's trails. All of them are
+         * about a sky he is no longer under. Read BEFORE the snapshot, so a
+         * move that lands between the two is seen next tick with its empty
+         * snapshot, never as this tick's forgetting plus the old aircraft. */
+        uint32_t loc_gen = flight_source_location_gen();
+        bool moved = (loc_gen != seen_loc_gen);
+        seen_loc_gen = loc_gen;
+        if (moved) {
+            have_last_seen = false;
+            s_has_selection = false;
+            /* Outside the display lock, like the "left the ring" close below:
+             * close_detail() takes it itself. In practice he is on
+             * Einstellungen when he moves it, so this is for the console's
+             * 'o' and for anything that moves it later. */
+            if (detail_open()) {
+                close_detail();
+            }
+        }
+        bool has_data = flight_source_has_data();
+
         int n = flight_source_snapshot(ac, MAX_AIRCRAFT, rt, MAX_AIRCRAFT);
 
         /* Carry every fix forward to NOW before anything draws it.
@@ -668,6 +692,22 @@ static void ui_task(void *arg)
                 aircraft_extrapolate(&ac[i], age_s, &ac[i]);
             }
             adsb_sort_by_distance(ac, n);
+        }
+
+        /* The ring was made smaller since this snapshot was polled (D82):
+         * drop what lies beyond it until the next poll, instead of the radar
+         * pinning it to the outer ring and the list counting it "in
+         * Reichweite". Only then — the normal case filters nothing, so an
+         * aircraft carried a little past the edge between polls stays up. */
+        if (g_settings.radius_nm < flight_source_data_radius_nm()) {
+            int kept = 0;
+            for (int i = 0; i < n; i++) {
+                if (ac[i].dst_nm <= (float)g_settings.radius_nm) {
+                    ac[kept]   = ac[i];
+                    rt[kept++] = rt[i];
+                }
+            }
+            n = kept;
         }
         time_t raw = time(NULL);
         struct tm now;
@@ -778,6 +818,13 @@ static void ui_task(void *arg)
         /* Only what is actually on screen is repainted. The other page is
          * behind the tileview and repainting it costs PSRAM bandwidth for
          * nothing; when the detail layer is up it covers both. */
+        if (moved) {
+            /* Both, whichever is showing: the one behind the tileview is
+             * the next one he swipes to. */
+            screen_radar_forget_place();
+        }
+        screen_list_set_source(has_data, net);
+        screen_radar_set_has_data(has_data);
         if (detail_open()) {
             screen_overhead_update(&vm);
         } else if (nav_page() == PAGE_LISTE) {

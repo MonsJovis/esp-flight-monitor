@@ -806,6 +806,15 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       while the other core still ran from them. Reproduced from the console (`R`), fixed by
       moving to IDF 5.4.4, which carries Espressif's fix. Every image from 0.9.1 on has it;
       the install INTO 0.9.1 still runs 0.9.0's restart and can still panic, harmlessly.
+- [x] **A move shows the new place, or says it is looking** (D82): the old place's
+      aircraft are dropped the moment the device moves; an answer already on the wire for
+      the old place is discarded; the new place is polled at once. Until the first
+      answer, the list and the radar say *Suche Flugzeuge...* over the bar (and at boot,
+      where the list used to claim *Der Himmel ist frei.*). A smaller ring drops what lies
+      beyond it at once. `test/sim/sim_list.c` is new.
+- [x] **Ground traffic** (D83, the owner's rule): an aircraft on the ground is shown only
+      if this device saw it land within the last ten minutes. Departure times are not
+      knowable from any feed here, so a departure appears once airborne.
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected (confirmed by the owner, 2026-09-25), 30 s idle. Then his eye: three sizes

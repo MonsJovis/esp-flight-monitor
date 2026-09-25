@@ -93,6 +93,7 @@
 #include "data/tables.h"
 #include "net/route_parse.h"
 #include "strings_de.h"
+#include "widget_busy.h"
 
 /* Every German literal this file shows lives in main/strings_de.h, together
  * with the reasoning for each one; tools/check_strings.py fails the build if
@@ -213,6 +214,16 @@ static lv_obj_t *s_lbl_header; /* chrome: count only, plex_mono_13, PINNED */
 static lv_obj_t *s_list;       /* the scrolling column */
 static lv_obj_t *s_spacer;     /* see its comment in screen_list_create() */
 static lv_obj_t *s_lbl_empty;  /* STR_EMPTY_SKY, the only content when n == 0 */
+
+/* The wait for the first answer at this place (D82): the bar under the header
+ * line and ghost rows where the first rows will land — DESIGN.md §4, the same
+ * two halves screen_wifi.c and screen_geo.c show, never one without the other.
+ * Only while the list is EMPTY: a list he can read keeps its rows. */
+#define LIST_SKEL_ROWS 3
+static lv_obj_t   *s_busy;
+static lv_obj_t   *s_skel[LIST_SKEL_ROWS];
+static bool        s_has_data = true;  /* until told otherwise: the old behaviour */
+static net_state_t s_src_net  = NET_OK;
 
 /* Slot 0 is the only slot that can ever hold the NEAREST aircraft, and that
  * is a property of the window arithmetic rather than a coincidence: slot k
@@ -868,6 +879,10 @@ static void on_cont_deleted(lv_event_t *e)
     s_spacer          = NULL;
     s_lbl_empty       = NULL;
     s_lbl_nearest_tag = NULL;
+    s_busy            = NULL;
+    for (int i = 0; i < LIST_SKEL_ROWS; i++) {
+        s_skel[i] = NULL;
+    }
 }
 
 void screen_list_create(lv_obj_t *parent)
@@ -975,6 +990,36 @@ void screen_list_create(lv_obj_t *parent)
     }
     s_window_first = -1;
 
+    /* --- The wait (D82). The bar sits in the GAP_MD under the header line,
+     * which is what the header says while it lasts; the ghosts stand exactly
+     * where rows 0..2 will, on the non-scrolling root, so nothing about them
+     * scrolls or can be tapped. Uneven widths, and nothing on them moves:
+     * widget_busy.h. --- */
+    s_busy = widget_busy_create(s_cont, CONTENT_W);
+    lv_obj_set_pos(s_busy, PAD, PAD + header_lh + (GAP_MD - WIDGET_BUSY_H) / 2);
+    {
+        static const int32_t prim_pct[LIST_SKEL_ROWS] = { 54, 40, 47 };
+        static const int32_t sec_pct[LIST_SKEL_ROWS]  = { 24, 30, 21 };
+        int32_t inner = CONTENT_W - 2 * ROW_INSET;
+        int32_t gh    = body_lh / 2;   /* an x-height, not a redaction bar */
+        for (int i = 0; i < LIST_SKEL_ROWS; i++) {
+            lv_obj_t *row = lv_obj_create(s_cont);
+            lv_obj_remove_style_all(row);
+            lv_obj_set_size(row, CONTENT_W, s_row_h);
+            lv_obj_set_pos(row, PAD, list_top + i * s_pitch);
+            lv_obj_set_scrollable(row, false);
+            lv_obj_set_clickable(row, false);
+            style_plain(row);   /* the real rows' hairline: no change of construction */
+            widget_busy_ghost(row, ROW_INSET, ROW_PAD_V + (body_lh - gh) / 2,
+                              inner * prim_pct[i] / 100, gh, false);
+            widget_busy_ghost(row, ROW_INSET,
+                              ROW_PAD_V + body_lh + GAP_INNER + (body_lh - gh) / 2,
+                              inner * sec_pct[i] / 100, gh, true);
+            lv_obj_set_hidden(row, true);
+            s_skel[i] = row;
+        }
+    }
+
     /* --- Empty sky: the only content on screen in that state, and the
      * screen's DEFAULT appearance right after create() — AGENTS.md §1 never
      * a blank panel, even for the one call between screen_list_create() and
@@ -1004,6 +1049,12 @@ void screen_list_create(lv_obj_t *parent)
     /* Last, like every other screen here: until every widget exists there is
      * nothing safe for the timer to read. */
     s_alive = true;
+}
+
+void screen_list_set_source(bool has_data, net_state_t net)
+{
+    s_has_data = has_data;
+    s_src_net  = net;
 }
 
 void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int n_routes)
@@ -1047,12 +1098,31 @@ void screen_list_update(const aircraft_t *ac, int n, const route_t *routes, int 
     }
     s_n = n;
 
-    set_hidden(s_lbl_empty, !empty);
-    set_hidden(s_lbl_header, empty);
+    /* Empty with no answer for this place yet is a wait, not an empty sky
+     * (D82). With the network up: the header line says so, the bar sweeps
+     * under it, the ghosts stand where the rows will. With it down there is
+     * no request to wait for, so one sentence and nothing moving. */
+    bool waiting  = empty && !s_has_data && s_src_net == NET_OK;
+    bool no_answer = empty && !s_has_data && s_src_net != NET_OK;
+
+    widget_busy_set_active(s_busy, waiting);
+    for (int i = 0; i < LIST_SKEL_ROWS; i++) {
+        set_hidden(s_skel[i], !waiting);
+    }
+
+    set_hidden(s_lbl_empty, !empty || waiting);
+    set_hidden(s_lbl_header, empty && !waiting);
     set_hidden(s_list, empty);
     set_hidden(s_spacer, empty);
 
     if (empty) {
+        if (waiting) {
+            lv_label_set_text(s_lbl_header, STR_AIRCRAFT_SEARCHING);
+        } else {
+            /* Set every time, not once at create: the same label says both. */
+            lv_label_set_text(s_lbl_empty, no_answer ? STR_AIRCRAFT_NO_ANSWER : STR_EMPTY_SKY);
+            lv_obj_align(s_lbl_empty, LV_ALIGN_CENTER, 0, 0);
+        }
         refresh_window(true); /* hides every slot */
         scroll_to_top();
         return;

@@ -29,6 +29,10 @@ extern "C" {
 #define SRC_POLL_INTERVAL_MS    12000   /* normal cadence; never < 10000 */
 #define SRC_BACKOFF_BASE_MS     12000   /* first failure: just retry at the normal cadence */
 #define SRC_BACKOFF_CAP_MS      300000  /* 5 min — matches adsb.lol's documented 503 cooldown */
+/* After the device is moved the next poll goes out at once instead of at the
+ * cadence (D82) — but never closer than this to the previous request, so a
+ * couple of quick moves cannot add up to the burst adsb.lol throttles. */
+#define SRC_MOVE_MIN_GAP_MS     3000
 /* Two callsign states, two rate limits.
  *
  * A callsign nobody has ever asked about is why the screen currently says

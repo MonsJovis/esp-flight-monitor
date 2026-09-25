@@ -767,6 +767,43 @@ int main(int argc, char **argv)
         update();
     }
 
+    GROUP("no answer yet for this place: the top row says so, and moves (D82)");
+    {
+        s_n = 0;
+        screen_radar_set_has_data(false);
+        update();
+        run_ms(400);
+        render();
+        png_write("08b_waiting");
+        CHECK(find(THEME_TEXT_LABEL, 120, 0, 360, 40).n > 20,
+              "no \"Suche Flugzeuge\" top centre: %d px", find(THEME_TEXT_LABEL, 120, 0, 360, 40).n);
+        CHECK(find(THEME_CYAN, 120, 40, 360, 60).n > 0, "no bar under it");
+        CHECK(find(THEME_AMBER, 0, 0, W - 1, H - 1).n == 0, "amber while merely waiting");
+
+        /* The network gone as well: the amber tag, and no wait — there is no
+         * request to wait for. */
+        screen_radar_set_net(NET_NO_DATA);
+        update();
+        run_ms(400);
+        CHECK(find(THEME_CYAN, 120, 40, 360, 60).n == 0, "a bar with the network down");
+        CHECK(find(THEME_AMBER, 120, 0, 360, 60).n > 20, "no amber tag with the network down");
+        screen_radar_set_net(NET_OK);
+
+        /* The answer: an empty sky, and the top row goes quiet. */
+        screen_radar_set_has_data(true);
+        update();
+        run_ms(400);
+        CHECK(find(THEME_TEXT_LABEL, 120, 0, 360, 40).n == 0, "the wait stayed after the answer");
+        CHECK(find(THEME_CYAN, 120, 40, 360, 60).n == 0, "the bar stayed after the answer");
+
+        /* A move forgets the old sky's trails and tapped mark. */
+        s_n = N_AC;
+        update();
+        screen_radar_forget_place();
+        update();
+        CHECK(ring().n > 20, "no ring on the nearest after a move");
+    }
+
     GROUP("caption ladder, step 2: the arrow gives way before the name does");
     {
         /* Since D78 only a DESTINATION can be line 2's name, so the case is
