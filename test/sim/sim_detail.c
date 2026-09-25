@@ -156,6 +156,23 @@ int main(int argc, char **argv)
 
     view_model_t vm;
 
+    /* What a card shows between being opened and its first update: ui_task
+     * repaints on a tick, so this is on the glass for a moment every time. */
+    run_ms(100);
+    lv_obj_invalidate(lv_screen_active());
+    render();
+    png_write("detail_00_just_opened");
+    GROUP("just opened: the whole card as a skeleton, and a way back (D85)");
+    {
+        CHECK(find(THEME_BORDER_IDLE, 0, 110, W - 1, 150).n > 500, "no ghost where the origin goes");
+        CHECK(find(THEME_BORDER_IDLE, 0, 170, W - 1, 290).n > 5000, "no ghost where the destination goes");
+        CHECK(find(THEME_BORDER_IDLE, 0, 290, W - 1, 370).n > 1000, "no ghost supporting line");
+        CHECK(find(THEME_BORDER_IDLE, 0, 370, W - 1, H - 1).n > 1000, "no ghost data band");
+        CHECK(find(THEME_CYAN, 0, 150, W - 1, 170).n > 0, "no bar");
+        CHECK(find(THEME_MAGENTA, 0, 0, W - 1, H - 1).n == 0, "the compass is up, pointing at nothing");
+        CHECK(find(THEME_TEXT_LABEL, 0, 0, 120, 35).n > 20, "no Zurück while loading");
+    }
+
     /* ------------------------------------------------------------------ */
     GROUP("arriving (AUA110 Klagenfurt -> Wien, 2,325 ft): the arrival, and the identity");
     {
@@ -166,6 +183,9 @@ int main(int argc, char **argv)
         CHECK(strstr(vm.departed, "km von Klagenfurt entfernt") != NULL, "departed = \"%s\"", vm.departed);
         CHECK(strncmp(vm.arrival, "Landung in", 10) == 0, "arrival = \"%s\"", vm.arrival);
         show(&vm, "detail_01_arriving");
+        CHECK(find(THEME_BORDER_IDLE, 0, 110, W - 1, H - 1).n == 0,
+              "skeleton left behind after the first update: %d px",
+              find(THEME_BORDER_IDLE, 0, 110, W - 1, H - 1).n);
         layout_t L = read_layout();
         CHECK(L.band_top > 0, "no data band found");
         /* Two lines: the route line (the arrival — it wins over the origin

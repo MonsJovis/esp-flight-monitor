@@ -115,8 +115,17 @@ static lv_obj_t *s_lbl_hero;
 static lv_obj_t *s_ghost_origin;
 static lv_obj_t *s_ghost_hero;
 static int32_t   s_ghost_hero_lh;   /* the hero face's line box the ghost stands in */
+
+/* The rest of the card's skeleton, up only between create() and the first
+ * update (D85): the two supporting lines and the data band's two rows. */
+static lv_obj_t *s_ghost_line[2];
+static lv_obj_t *s_ghost_band[2];
+static bool      s_skeleton;
 #define GHOST_ORIGIN_W  (CONTENT_W * 30 / 100)
 #define GHOST_HERO_W    (CONTENT_W * 62 / 100)
+/* An x-height of the hero face. A constant, not lv_obj_get_height(): right
+ * after create() nothing has been laid out and that reads 0. */
+#define GHOST_HERO_H    (s_ghost_hero_lh * 2 / 5)
 
 /* Supporting band */
 static lv_obj_t *s_lbl_reason;             /* §5.2 only */
@@ -188,6 +197,42 @@ static lv_obj_t *make_wrapped_label(lv_obj_t *parent, const lv_font_t *font, lv_
     lv_obj_set_width(l, CONTENT_W);
     lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
     return l;
+}
+
+/* The card as it looks before it knows anything (D85). It used to be the
+ * compass tape pointing north and nothing else — no aircraft, not even the
+ * way back — for up to the two seconds until ui_task's next tick. Now it is
+ * the answer's shape: every line a ghost, the bar under the origin's, and
+ * "Zurück" where it always is, so the card can be left before it has loaded.
+ * The first screen_overhead_update() takes it all down. */
+static void show_skeleton(void)
+{
+    s_skeleton = true;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(s_cont); i++) {
+        lv_obj_set_hidden(lv_obj_get_child(s_cont, (int32_t)i), true);
+    }
+    lv_obj_set_hidden(s_ghost_origin, false);
+    lv_obj_set_hidden(s_ghost_hero, false);
+    lv_obj_set_pos(s_ghost_hero, PAD,
+                   Y_TOPROW + lv_font_get_line_height(&plex_sans_cond_34) + GAP_SM
+                   + (s_ghost_hero_lh - GHOST_HERO_H) / 2
+                   + s_ghost_hero_lh / 10);
+    for (int i = 0; i < 2; i++) {
+        lv_obj_set_hidden(s_ghost_line[i], false);
+        lv_obj_set_hidden(s_ghost_band[i], false);
+    }
+    lv_obj_set_width(s_busy_route, GHOST_ORIGIN_W);
+    lv_obj_set_hidden(s_busy_route, false);
+    widget_busy_set_active(s_busy_route, true);
+}
+
+static void hide_skeleton_extras(void)
+{
+    s_skeleton = false;
+    for (int i = 0; i < 2; i++) {
+        lv_obj_set_hidden(s_ghost_line[i], true);
+        lv_obj_set_hidden(s_ghost_band[i], true);
+    }
 }
 
 static void on_cont_deleted(lv_event_t *e)
@@ -304,8 +349,26 @@ void screen_overhead_create(lv_obj_t *parent)
 
         s_ghost_hero_lh = lv_font_get_line_height(&plex_sans_cond_100);
         s_ghost_hero = widget_busy_ghost(s_cont, PAD, 0, GHOST_HERO_W,
-                                         s_ghost_hero_lh * 2 / 5, false);
+                                         GHOST_HERO_H, false);
         lv_obj_set_hidden(s_ghost_hero, true);
+
+        /* The whole card, for the moment between the tap and the first
+         * update (D85). Where each line of a routed card lands: the route
+         * line and the identity under the hero, the altitude and distance
+         * rows anchored to the bottom edge exactly as the real band is. */
+        int32_t y_hero = Y_TOPROW + lh34 + GAP_SM;
+        int32_t lh25   = lv_font_get_line_height(&plex_sans_cond_25);
+        int32_t y_line = y_hero + s_ghost_hero_lh + GAP_SM;
+        s_ghost_line[0] = widget_busy_ghost(s_cont, PAD, y_line + lh25 / 4,
+                                            CONTENT_W * 56 / 100, lh25 / 2, false);
+        s_ghost_line[1] = widget_busy_ghost(s_cont, PAD, y_line + lh25 + GAP_SM + lh25 / 4,
+                                            CONTENT_W * 42 / 100, lh25 / 2, true);
+        int32_t lh32   = lv_font_get_line_height(&plex_mono_32);
+        int32_t y_band = THEME_SCREEN_HEIGHT - PAD - (2 * lh32 + GAP_SM);
+        s_ghost_band[0] = widget_busy_ghost(s_cont, PAD, y_band + lh32 / 4,
+                                            CONTENT_W * 48 / 100, lh32 / 2, false);
+        s_ghost_band[1] = widget_busy_ghost(s_cont, PAD, y_band + lh32 + GAP_SM + lh32 / 4,
+                                            CONTENT_W * 36 / 100, lh32 / 2, false);
     }
 
     /* --- Supporting band --- */
@@ -341,6 +404,8 @@ void screen_overhead_create(lv_obj_t *parent)
     lv_obj_set_hidden(s_lbl_distance, true);
     lv_obj_set_hidden(s_lbl_direction_word, true);
 
+    show_skeleton();
+
     /* Last, deliberately: until every widget exists there is nothing safe for
      * an update to write into. */
     s_alive = true;
@@ -355,6 +420,13 @@ void screen_overhead_update(const view_model_t *vm)
     bool empty_sky = (vm->state == VIEW_EMPTY_SKY);
     bool no_route  = (vm->state == VIEW_NO_ROUTE);
     bool overhead  = (vm->state == VIEW_OVERHEAD);
+
+    /* The first answer replaces the opening skeleton (D85). Every label
+     * below sets its own visibility, and the two ghosts the route lookup
+     * shares are decided by `searching`, so only the extras go here. */
+    if (s_skeleton) {
+        hide_skeleton_extras();
+    }
 
     /* --- Chrome --- */
     /* In §5.3 the hero IS the clock, so the chrome copy is the same four
@@ -512,7 +584,7 @@ void screen_overhead_update(const view_model_t *vm)
         /* One line of the full-size face, which is what a city name usually
          * takes; the ghost sits where its x-height would. */
         lv_obj_set_pos(s_ghost_hero, PAD,
-                       y_hero + (s_ghost_hero_lh - lv_obj_get_height(s_ghost_hero)) / 2
+                       y_hero + (s_ghost_hero_lh - GHOST_HERO_H) / 2
                               + s_ghost_hero_lh / 10);
         y_next = y_hero + s_ghost_hero_lh + GAP_SM;
     }
@@ -760,6 +832,11 @@ void screen_overhead_set_back_cb(void (*cb)(void))
     s_back_cb = cb;
     if (s_cont == NULL) {
         return;
+    }
+    /* A card still showing its skeleton can already be left (D85). */
+    if (s_skeleton && cb != NULL) {
+        lv_label_set_text(s_lbl_clock, STR_BACK);
+        lv_obj_set_hidden(s_lbl_clock, false);
     }
     /* The container itself is the button. LVGL only delivers clicks to
      * objects that ask for them, and this one has never asked before. */

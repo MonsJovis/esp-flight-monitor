@@ -3169,3 +3169,43 @@ simulator.
 "online" until M8 made it `net_state_t`, and `true` converts to `NET_NO_WIFI`. It is
 `NET_OK` now. `test_view.c` passes the same stale `true` in eight places. That affects no
 check there, and it is left for a separate cleanup.
+
+## D85 — Every detail card opens on its skeleton, and fills in at once
+
+**The owner's choice,** after D84's skeleton turned out to be almost never seen: routes are
+cached (and survive a restart), and a new callsign resolves within ~15 s, so the lookup
+state is over before he can tap the aircraft. Of the two options put to him, (1) leave it
+or (2) show it on every open for a short moment, he chose (2). I had recommended (1),
+because (2) is a wait that has no work behind it.
+
+**What looking for it found: the card had a real loading gap, and it was broken.**
+`ui_task` repaints on a 2 s tick, and opening a card did not wake it. So for 0–2 s after
+every tap the card was a freshly built, never-updated tree. The compass tape showed and
+pointed north at nothing. Every other label was hidden, including **"Zurück"**, so the
+card could not visibly be left. `sim_detail.c` now renders that moment
+(`detail_00_just_opened`).
+
+**Now:**
+- **`screen_overhead_create()` draws the whole card as ghosts.** Origin with the bar
+  under it, destination, two supporting lines, and the altitude and distance rows,
+  anchored to the bottom edge like the real band. "Zurück" sits where it always is.
+- **The first `screen_overhead_update()` takes the skeleton down.** Every label sets its
+  own visibility on every update (checked), so only the extra ghosts need hiding.
+- **`open_detail()` wakes `ui_task`,** and the card holds its skeleton for
+  `DETAIL_SKELETON_MS` = **600 ms**. Then `ui_task` comes back the moment that runs out
+  instead of on the next tick.
+- **A card opens in 0.6 s, every time.** Before, it was blank for anywhere between 0 and
+  2 s.
+- **The route-lookup state from D84 continues seamlessly.** It shares the origin and
+  destination ghosts at the same positions, so a card whose route is still coming keeps
+  those two ghosts and gains its sentence, identity and data.
+
+**A ghost's height is a constant, not `lv_obj_get_height()`.** Right after create nothing
+has been laid out, the height reads 0, and the hero ghost was drawn 26 px low. The
+simulator caught it by rendering the two states side by side.
+
+**Checked:**
+- `sim_detail.c`: just opened, there is a ghost in every band, the bar, "Zurück", and no
+  compass; after the first update, no ghost pixel is left anywhere below the chrome.
+- On the panel via console `i`: the skeleton at 150 ms after opening, and a complete
+  card (Pegasus, London → Istanbul) at 1 s.

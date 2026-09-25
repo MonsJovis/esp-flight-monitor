@@ -818,6 +818,9 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
 - [x] **The detail card waits in the shape of its answer** (D84, the owner's request):
       ghosts where the origin and destination will land, the bar, *Die Route wird noch
       gesucht.*, the model kept in the identity line; no amber while merely looking.
+- [x] **Every card opens on its skeleton** (D85, the owner's choice): 600 ms, then filled
+      at once. Fixes a real gap found on the way: a card was blank, and without "Zurück",
+      for up to 2 s after every tap, until ui_task's next tick.
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected (confirmed by the owner, 2026-09-25), 30 s idle. Then his eye: three sizes
