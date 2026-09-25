@@ -2888,3 +2888,32 @@ least 80 % stay visible. 94 radar checks, 25 stress seeds.
 
 **Not seen on the glass:** the KEINE DATEN screen with the new caption (an outage cannot be
 forced from the console — the simulator covers it), and the long press above.
+
+**Afterwards, 2026-09-25: v0.9.0 released, installed over the air, and one crash found.**
+Updates were turned back on to the exact URL they had. The device checked at once, found
+0.9.0, downloaded it and wrote it. It rebooted into it and confirmed it after its two
+healthy minutes. A deliberate reset afterwards booted the same slot (`0x520000`), which is
+the proof that the confirmation took: an unconfirmed image would have been rolled back.
+
+**But the OLD image crashed on its way down.** Right after `ota: update written; rebooting
+into 0.9.0`, with WiFi already stopped inside `esp_restart()`:
+
+```
+Guru Meditation Error: Core 0 panic'ed (StoreProhibited)
+EXCVADDR 0xbad00c11   (A2 = 0xbad00bad, IDF's poison value)
+backtrace: xt_highint4 -> panicHandler -> esp_panic_handler_reconfigure_wdts -> ROM
+```
+
+The panic handler itself faulted. It was entered through a level-4 interrupt, which on the
+ESP32-S3 is where cache errors and the interrupt watchdog arrive, and the original trigger
+was lost with the stack. The ELF matched (`ca4f8ba1c`). The likeliest story: the RGB panel
+keeps DMA-reading its framebuffer from PSRAM while the restart path takes caches down. There
+is no shutdown handler in this firmware to stop it first.
+
+**Why nothing was lost, and why it still matters.** `esp_https_ota()` writes the whole image,
+checks its hash and switches the boot partition before it returns. The panic came after
+that, so the chip reset into the new image just as a clean restart would have, and core
+dumps are not written to flash (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH` is off). But it is a
+crash on what may be every install. Nobody would see it on the panel, which is exactly why
+it needs writing down. Probably not new: nothing in D75–D80 touches the restart path, and
+earlier installs were not watched on the serial log. Open in PLAN.md M13.

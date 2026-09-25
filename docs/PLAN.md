@@ -799,9 +799,11 @@ PPI) and against UX practice. D75 and D76 have the reasoning.
       give-way rule now closes up, so a two-line type name no longer costs the registration.
 - [ ] **Read aloud** the new strings from D79 — the `FMT_ARRIVAL_*`, `STR_ARRIVAL_SOON`,
       `FMT_FROM_ORIGIN` and `FMT_KMH` block in `main/strings_de.h` (D51, D56, D57).
-- [ ] **Turn OTA updates back on.** Switched off from the console for the D80 test session
-      (the device had pulled v0.8.0 over the test build). `u`, then paste
-      `https://github.com/MonsJovis/esp-flight-monitor/releases/latest/download/manifest.json`.
+- [x] **OTA updates back on** (2026-09-25), to the exact URL they had. The device installed
+      v0.9.0 by itself straight away and confirmed it; a reset afterwards booted the same slot.
+- [ ] **The old image panics on its way down after an OTA** (D80). The update is already
+      committed by then and nothing is lost, but it is a crash on every install. Probable
+      fix: a shutdown handler that stops the RGB panel's DMA before `esp_restart()`.
 - [ ] **On the glass, what needs a finger and an eye:** tap a mark (the ring moves as the
       finger lands), tap the caption (the pill lights up, the card opens), tap the empty
       scope, long-press with an aircraft selected, 30 s idle. Then his eye: three sizes
