@@ -3269,6 +3269,28 @@ WiFi reconnecting, and here WiFi never dropped.
   service that does answer with an error still backs off to 5 minutes.
 - **Net effect:** data is on screen within one poll of the network coming back.
 
-**Not checked on the device:** the outage could not be brought back on demand, so the
-new cadence under failure is covered by `test_source.c` and by reading the loop, not by a
-live run.
+**Checked on the device (v1.0.2):** after a fresh boot the outage came straight back, so
+the new cadence could be watched live. Failed polls followed each other every ~19 s (12 s
+plus the 7 s DNS timeout) for minutes, never growing.
+
+**The cause, found because it comes back on every boot.** The console's `n` now also
+prints which hardware address the device's ARP table holds for the gateway
+(`log_gw_arp()` in `main.c`):
+
+    gw 192.168.0.1 is at 20:e1:5d:9f:42:e7 in the ARP table
+
+**The router is 54:67:51:bb:3b:26**, as the Mac on the same network sees it. Something
+else answers ARP for 192.168.0.1 on the device's side. The device connects through
+another access point (BSSID 90:41:b2:…), and the Mac cannot see that MAC at all. So the
+device sends everything meant for the router to that box:
+- **LAN traffic works:** the Mac pings the device.
+- **Some DNS answers come back,** and stale ones at that: `api.adsb.lol` resolved to
+  89.58.11.153, an old address.
+- **Nothing reaches the internet.**
+- **It clears when that ARP entry is replaced,** which took about 20 minutes on
+  2026-09-26.
+
+This is a **network misconfiguration**: a second device claiming the router's address,
+typically a repeater, a second router, or a box with a static IP of 192.168.0.1. The fix
+is on the network. D87 only makes sure the panel has data within one poll once it is
+fixed.

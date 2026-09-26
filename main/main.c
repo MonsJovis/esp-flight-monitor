@@ -71,6 +71,8 @@
 #include "data/settings.h"
 #include "net/http_get.h"
 #include "esp_netif.h"
+#include "esp_netif_net_stack.h"
+#include "lwip/etharp.h"
 #include "esp_wifi.h"
 #include <netdb.h>
 #include <sys/socket.h>
@@ -521,6 +523,44 @@ static void provision_wifi(void)
     }
 }
 
+/* Which hardware address the device's ARP table holds for the gateway.
+ * Asked for D87's outage: the device reached the Mac on the LAN but nothing
+ * through the router, the router's DNS included, and it came back on every
+ * fresh association. A gateway entry pointing at the wrong box — something
+ * else answering ARP for the router's address, or a repeater rewriting MACs —
+ * is exactly that picture, and only the device's own table can show it. Runs
+ * in the TCP/IP thread, where lwIP's ARP table may be read. */
+typedef struct { ip4_addr_t gw; struct eth_addr mac; bool found; } gw_arp_t;
+
+static esp_err_t read_gw_arp(void *ctx)
+{
+    gw_arp_t *g = ctx;
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    struct netif *nif = sta ? esp_netif_get_netif_impl(sta) : NULL;
+    struct eth_addr *mac = NULL;
+    const ip4_addr_t *ip = NULL;
+    g->found = nif != NULL && etharp_find_addr(nif, &g->gw, &mac, &ip) >= 0 && mac != NULL;
+    if (g->found) g->mac = *mac;
+    return ESP_OK;
+}
+
+static void log_gw_arp(void)
+{
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ipi;
+    if (sta == NULL || esp_netif_get_ip_info(sta, &ipi) != ESP_OK) return;
+    gw_arp_t g = { .found = false };
+    g.gw.addr = ipi.gw.addr;
+    esp_netif_tcpip_exec(read_gw_arp, &g);
+    if (g.found) {
+        ESP_LOGW(TAG, "  gw " IPSTR " is at %02x:%02x:%02x:%02x:%02x:%02x in the ARP table",
+                 IP2STR(&ipi.gw), g.mac.addr[0], g.mac.addr[1], g.mac.addr[2],
+                 g.mac.addr[3], g.mac.addr[4], g.mac.addr[5]);
+    } else {
+        ESP_LOGW(TAG, "  gw " IPSTR " is not in the ARP table", IP2STR(&ipi.gw));
+    }
+}
+
 static void network_status(void)
 {
     char ssids[8][WIFI_SSID_LEN];
@@ -568,6 +608,7 @@ static void network_status(void)
             ESP_LOGW(TAG, "  dns%d: " IPSTR, i, IP2STR(&dns.ip.u_addr.ip4));
         }
     }
+    log_gw_arp();
 
     /* Resolve, then connect by raw IP. If the name fails but the IP works, it
      * is DNS; if both fail it is routing. */
