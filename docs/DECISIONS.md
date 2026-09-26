@@ -3279,6 +3279,13 @@ reply lands first wins. The Mac got the router's reply first and the panel got t
 TP-Link's; that is the whole difference between them. A TP-Link router or extender
 ships with 192.168.0.1 as its own address, the same as this router.
 
+**Resolved on the network, the same evening.** The TP-Link was an Easy Smart **managed
+switch**, whose factory address is 192.168.0.1. Its web UI was reached from the Mac by
+pointing 192.168.0.1 at the switch's MAC for ten minutes; `arp -s … ifscope en0` is
+needed, because macOS ignores an entry that is not bound to the interface. It was then
+moved to **192.168.0.250**. Afterwards only the router answered ARP for 192.168.0.1, and
+the panel had its first aircraft **9.5 s after power-on**.
+
 **Checked on the device (v1.0.2):** after a fresh boot the outage came straight back, so
 the new cadence could be watched live. Failed polls followed each other every ~19 s (12 s
 plus the 7 s DNS timeout) for minutes, never growing.
