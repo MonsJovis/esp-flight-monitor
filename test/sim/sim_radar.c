@@ -303,6 +303,7 @@ int main(int argc, char **argv)
 
     sky();
     screen_radar_set_net(NET_OK);
+    screen_radar_set_has_data(true);   /* a polled sky; the wait has its own group */
     screen_radar_set_clock("10:39");
     update();
     run_ms(100);

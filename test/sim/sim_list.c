@@ -68,6 +68,16 @@ int main(int argc, char **argv)
         mk("440123", "", "C172", 18.0f, 10.0f),
     };
 
+    GROUP("just created, never fed: already the wait, not the empty sky (D88)");
+    {
+        run_ms(400);
+        render();
+        png_write("list_00_created");
+        CHECK(cyan_top() > 0, "no bar before the first update");
+        CHECK(ghosts() > 200, "no ghost rows before the first update: %d px", ghosts());
+        CHECK(sentence() == 0, "a centred sentence (\"Der Himmel ist frei.\") before anyone asked: %d px", sentence());
+    }
+
     GROUP("no answer yet, network up: the wait, with ghosts where the rows go");
     {
         show(NULL, 0, false, NET_OK, "list_01_waiting");

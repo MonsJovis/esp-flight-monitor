@@ -136,6 +136,10 @@ static bool detail_open(void) { return nav_overlay_is(build_detail_screen); }
 static int  s_detail_from = PAGE_RADAR;
 
 static void open_detail(void);   /* defined with the overlays, below */
+
+/* A swipe landed on another page: repaint it now rather than on the next
+ * tick (D88). Runs on the LVGL task; s_ui_task is declared below. */
+static void on_page_change(int page);
 static void close_detail(void);
 
 static aircraft_t s_selected;
@@ -144,6 +148,18 @@ static bool       s_has_selection;
 /* Woken by open_detail(), so a new card is filled at once rather than on the
  * next 2 s tick (D85). D85 also held a skeleton for 600 ms; D86 took that out. */
 static TaskHandle_t s_ui_task;
+
+/* How long after power-on a not-yet-connected WiFi counts as "still
+ * connecting" rather than "no network" (D88). Association takes ~5 s here. */
+#define BOOT_CONNECT_GRACE_MS 30000
+
+static void on_page_change(int page)
+{
+    (void)page;
+    if (s_ui_task != NULL) {
+        xTaskNotifyGive(s_ui_task);
+    }
+}
 
 static void on_list_select(const aircraft_t *ac)
 {
@@ -778,9 +794,16 @@ static void ui_task(void *arg)
          * Split into two labels in M8. They are different problems with
          * different fixes — one he can walk over and solve, one he cannot —
          * and sharing a label sent him to check a router that was working. */
+        /* Except in the first seconds after power-on (D88): the radio is
+         * still associating, which is a wait with an end, not a fault — so
+         * with nothing received yet the screens show the wait ("Suche
+         * Flugzeuge...", the bar) rather than "no network". A WiFi that is
+         * still missing after the grace is reported as before, and a device
+         * that knows no network in range gets the WLAN screen anyway. */
+        bool boot_grace = esp_timer_get_time() / 1000 < BOOT_CONNECT_GRACE_MS;
         net_state_t net;
         if (!wifi_is_connected()) {
-            net = NET_NO_WIFI;
+            net = (boot_grace && !has_data) ? NET_OK : NET_NO_WIFI;
         } else if (flight_source_consecutive_failures() >= 3) {
             net = NET_NO_DATA;
         } else {
@@ -1797,6 +1820,7 @@ static void ui_resume(void)
     lv_obj_clean(lv_screen_active());
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
+    nav_set_page_cb(on_page_change);
     screen_list_set_select_cb(on_list_select);
     screen_radar_set_select_cb(on_radar_select);
     display_unlock();
@@ -2099,6 +2123,7 @@ void app_main(void)
     display_lock(0);
     nav_create(k_pages, (int)(sizeof k_pages / sizeof k_pages[0]));
     nav_set_longpress_cb(open_settings);
+    nav_set_page_cb(on_page_change);
     screen_list_set_select_cb(on_list_select);
     screen_radar_set_select_cb(on_radar_select);
     display_unlock();

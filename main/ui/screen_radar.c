@@ -264,7 +264,7 @@ static int         s_nearest_idx = -1;
 static char        s_nearest_hex[sizeof ((aircraft_t *)0)->hex];
 static int         s_rng_nm      = 1;
 static net_state_t s_net         = NET_OK;
-static bool        s_has_data    = true;
+static bool        s_has_data    = false;  /* nothing polled yet (D88) */
 static uint32_t    s_last_touch_ms;
 static uint32_t    s_last_update_ms;
 static radar_trails_t s_trails;

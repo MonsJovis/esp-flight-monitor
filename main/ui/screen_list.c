@@ -222,7 +222,9 @@ static lv_obj_t *s_lbl_empty;  /* STR_EMPTY_SKY, the only content when n == 0 */
 #define LIST_SKEL_ROWS 3
 static lv_obj_t   *s_busy;
 static lv_obj_t   *s_skel[LIST_SKEL_ROWS];
-static bool        s_has_data = true;  /* until told otherwise: the old behaviour */
+/* Starts as "no answer yet" (D88): a list nobody has fed yet knows nothing,
+ * and saying "Der Himmel ist frei." then was exactly what he saw at every boot. */
+static bool        s_has_data = false;
 static net_state_t s_src_net  = NET_OK;
 
 /* Slot 0 is the only slot that can ever hold the NEAREST aircraft, and that
@@ -1049,6 +1051,15 @@ void screen_list_create(lv_obj_t *parent)
     /* Last, like every other screen here: until every widget exists there is
      * nothing safe for the timer to read. */
     s_alive = true;
+
+    /* Drawn in its waiting state straight away (D88). The list is only fed
+     * while it is the visible page, so until the first update it used to show
+     * whatever create() left — "Der Himmel ist frei." — at every boot, and
+     * for up to a tick after every swipe while the first poll was still out.
+     * The first real update replaces this with whatever is true. */
+    s_has_data = false;
+    s_src_net  = NET_OK;
+    screen_list_update(NULL, 0, NULL, 0);
 }
 
 void screen_list_set_source(bool has_data, net_state_t net)

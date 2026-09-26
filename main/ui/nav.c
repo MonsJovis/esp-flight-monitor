@@ -119,6 +119,8 @@ static void paint_dots(void)
     }
 }
 
+static void (*s_page_cb)(int page);
+
 static void on_tile_change(lv_event_t *e)
 {
     (void)e;
@@ -131,6 +133,9 @@ static void on_tile_change(lv_event_t *e)
     }
     s_last_touch_ms = now_ms();
     paint_dots();
+    if (s_page_cb != NULL) {
+        s_page_cb(s_page_idx);   /* the new page should show current data now */
+    }
 }
 
 static void on_press(lv_event_t *e)
@@ -451,6 +456,7 @@ bool nav_overlay_is(void (*create)(lv_obj_t *parent))
 }
 
 void nav_set_longpress_cb(void (*cb)(void)) { s_longpress_cb = cb; }
+void nav_set_page_cb(void (*cb)(int page)) { s_page_cb = cb; }
 
 void nav_tick(bool empty_sky)
 {

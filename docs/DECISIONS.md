@@ -3312,3 +3312,37 @@ This is a **network misconfiguration**: a second device claiming the router's ad
 typically a repeater, a second router, or a box with a static IP of 192.168.0.1. The fix
 is on the network. D87 only makes sure the panel has data within one poll once it is
 fixed.
+
+## D88 — The list starts out waiting, and a boot is a wait, not "no network"
+
+**The owner:** the list beside the radar always showed *Der Himmel ist frei.* while it
+was loading.
+
+**Why D82's loading state did not reach him.** Three separate reasons:
+- **`screen_list_create()` built the list showing `STR_EMPTY_SKY`,** with `s_has_data`
+  defaulting to true ("the old behaviour"). That was the list's state until its first
+  update.
+- **`ui_task` feeds only the visible page, on a 2 s tick.** So after a swipe, the list
+  showed whatever it last showed for up to a tick. At boot, before anyone had fed it,
+  that meant *Der Himmel ist frei.*
+- **Then WiFi.** In the first seconds after power-on the radio is still associating, so
+  `net` was `NET_NO_WIFI`. The list therefore said *Noch keine Flugdaten.* with nothing
+  moving, and the radar showed an amber *KEIN NETZ*. That is D82's rule for a standing
+  condition, applied to a five-second wait.
+
+**Now:**
+- **The list is created in its waiting state:** *Suche Flugzeuge...*, the bar, and the
+  ghost rows. The radar's own flag starts as "nothing polled yet" too.
+- **A swipe repaints at once.** `nav_set_page_cb()` wakes `ui_task` when a swipe lands,
+  the same way `open_detail()` does since D85.
+- **A 30 s boot grace** (`BOOT_CONNECT_GRACE_MS`). Until 30 s after power-on, a WiFi not
+  yet associated counts as still connecting, as long as nothing has been received. After
+  that, "KEIN NETZ" shows exactly as before. And a device that knows no network in range
+  still gets the WLAN screen.
+
+**Checked:**
+- `sim_list.c`: a list that has just been created and never fed shows the bar and the
+  ghosts, and no sentence.
+- On the panel, swiping to the list 3 s after a reset: *Suche Flugzeuge...* with the bar
+  and ghost rows, while the corner meter still showed no WiFi. At 21 s the list was
+  there with 11 aircraft.

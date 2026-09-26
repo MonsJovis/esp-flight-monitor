@@ -131,6 +131,11 @@ void nav_set_signal(int rssi_dbm, bool linked);
  * taken from LVGL's 400 ms default. */
 void nav_set_longpress_cb(void (*cb)(void));
 
+/* Called (on the LVGL task, under its lock) when a swipe lands on another
+ * page. The UI task only repaints the visible page, on a 2 s tick, so without
+ * a nudge a page he swipes to shows what it last showed for up to a tick (D88). */
+void nav_set_page_cb(void (*cb)(int page));
+
 /* Auto-return to page 0. Called once per UI tick.
  *
  * It fires ONLY from the empty-sky state and only after 30 s untouched: if he is
