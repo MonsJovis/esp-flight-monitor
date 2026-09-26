@@ -3230,3 +3230,45 @@ opens on placeholders that it then has to replace.
 
 `sim_detail.c` now checks the opposite of D85's check: a card that has just opened shows
 no ghost, no bar and no compass, only "Zurück".
+
+## D87 — Backoff only when the service says no, never because the network is down
+
+**The owner, 2026-09-26:** after a start, the radar took forever to show anything.
+
+**What it was, checked from both ends.**
+- **The device's side:** WiFi associated in 5 s and DHCP gave it an address and the
+  router as DNS. After that, every DNS lookup timed out after 7 s: for adsb.lol, and
+  for SNTP (the clock never set). A connection by raw IP failed too.
+- **The Mac's side, same router at the same moment:** it pinged the device with no loss
+  (some replies took 360 ms), got answers from the router's DNS in 6 ms, and fetched
+  the same adsb.lol URL in 0.1 s.
+- **Then it recovered.** About 20 minutes after boot the device's lookups started
+  working again, with no change on the device (adsb.lol also resolved to a different
+  address). So the outage was the local network or access point failing this one
+  client, not the firmware. 1.0.x changed nothing in the network path, and earlier
+  builds on the same network had data 15 s after every boot.
+
+**What the firmware made worse.** Every failed poll doubled the wait before the next,
+from 12 s up to 5 minutes (`source_backoff_delay_ms`). That backoff exists to keep a free
+community service from banning the device for hammering it (AGENTS.md §5). But a lookup
+that times out never reaches the service. So once the network came back, the panel could
+still sit empty for up to five minutes, protecting nobody. The only existing escape was
+WiFi reconnecting, and here WiFi never dropped.
+
+**Now:**
+- **`source_failure_backs_off()`** (`source_logic.c`, pure and host-tested) is true only
+  when the service answered with an error: throttling (429, 503, adsb.lol's spurious
+  308) or any other non-200 status.
+- **No answer at all** (DNS, connect or timeout) retries at the normal 12 s cadence. So
+  does a 200 whose body did not parse, since that is almost always the link cutting it
+  short.
+- **The two counters are separate.** `service_failures` drives the backoff.
+  `consec_failures` still drives the "KEINE DATEN" caution after three misses, exactly
+  as before.
+- **AGENTS.md §5's floor still holds:** nothing polls faster than every 10 s, and a
+  service that does answer with an error still backs off to 5 minutes.
+- **Net effect:** data is on screen within one poll of the network coming back.
+
+**Not checked on the device:** the outage could not be brought back on demand, so the
+new cadence under failure is covered by `test_source.c` and by reading the loop, not by a
+live run.

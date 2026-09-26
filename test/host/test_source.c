@@ -171,8 +171,29 @@ static void test_compass_abbrev(void)
     CHECK_STR(source_compass_abbrev_en(-1.0f), "N");
 }
 
+static void test_backoff_classification(void)
+{
+    GROUP("source_failure_backs_off: only an answer from the service backs off (D87)");
+    /* The network never got through: DNS, connect, timeout. The 2026-09-26
+     * outage was 20 minutes of exactly this, and backing off on it left the
+     * panel empty for up to 5 min after the router recovered. */
+    CHECK(!source_failure_backs_off(-2, 0));
+    CHECK(!source_failure_backs_off(-1, 0));
+    /* The service said no. */
+    CHECK(source_failure_backs_off(0, 429));
+    CHECK(source_failure_backs_off(120, 503));
+    CHECK(source_failure_backs_off(0, 308));
+    CHECK(source_failure_backs_off(512, 500));
+    CHECK(source_failure_backs_off(0, 301));
+    /* A 200 whose body did not parse: the link cut it short. */
+    CHECK(!source_failure_backs_off(16383, 200));
+    /* And a network failure never retries faster than the 10 s floor. */
+    CHECK(source_backoff_delay_ms(0) >= 10000);
+}
+
 int main(void)
 {
+    test_backoff_classification();
     test_backoff_schedule();
     test_throttle_status();
     test_source_table();

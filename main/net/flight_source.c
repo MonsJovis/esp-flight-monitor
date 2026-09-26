@@ -102,6 +102,9 @@ static struct {
     /* Health. */
     source_id_t active_source;
     int         consec_failures;
+    /* Of those, the run the SERVICE answered with an error (D87). Only these
+     * grow the backoff; consec_failures still drives "KEINE DATEN". */
+    int         service_failures;
     int64_t     last_success_ms; /* 0 = never succeeded */
 } s;
 
@@ -488,6 +491,7 @@ static void flight_source_task(void *arg)
                          s.consec_failures);
                 s.consec_failures = 0;
             }
+            s.service_failures = 0;
             xSemaphoreGive(s.mutex);
         }
         was_connected = connected;
@@ -610,12 +614,16 @@ static void flight_source_task(void *arg)
         }
         if (success) {
             s.consec_failures = 0;
+            s.service_failures = 0;
             s.last_success_ms = now;
             s.aircraft_count = ac_n;
             s.aircraft_radius_nm = radius;
             memcpy(s.aircraft, local_ac, sizeof(aircraft_t) * (size_t)ac_n);
         } else {
             s.consec_failures++;
+            if (source_failure_backs_off(n, status)) {
+                s.service_failures++;
+            }
             /* Deliberately does NOT touch s.aircraft / s.aircraft_count:
              * AGENTS.md §1 says a blank panel reads as broken, so the last
              * good snapshot stays published. flight_source_is_stale() tells
@@ -624,6 +632,7 @@ static void flight_source_task(void *arg)
              * switch to). */
         }
         int failures = s.consec_failures;
+        int backoff_failures = s.service_failures;
         xSemaphoreGive(s.mutex);
 
         if (success) {
@@ -635,7 +644,10 @@ static void flight_source_task(void *arg)
 
         /* A notification, not a vTaskDelay, so a location change is answered
          * now rather than after a twelve-second (or five-minute) wait. */
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(source_backoff_delay_ms(failures)));
+        /* Backoff counts only what the service said (D87): a network that
+         * cannot reach it is retried at the normal cadence, so the panel has
+         * data within one poll of the network coming back. */
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(source_backoff_delay_ms(backoff_failures)));
     }
 }
 
@@ -736,6 +748,7 @@ void flight_source_set_location(double lat, double lon, int radius_nm)
         s.aircraft_count = 0;
         s.last_success_ms = 0;
         s.consec_failures = 0;
+        s.service_failures = 0;
     }
     TaskHandle_t task = s.task;
     xSemaphoreGive(s.mutex);

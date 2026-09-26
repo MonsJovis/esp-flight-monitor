@@ -167,3 +167,8 @@ const char *source_compass_abbrev_en(float bearing_deg)
     }
     return names[idx];
 }
+
+bool source_failure_backs_off(int http_len, int http_status)
+{
+    return http_len >= 0 && http_status != 200;
+}

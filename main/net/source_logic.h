@@ -65,6 +65,18 @@ int64_t source_backoff_delay_ms(int consec_failures);
  * throttling is a KNOWN quirk (currently: adsb.lol only). */
 bool source_is_throttle_status(int http_status);
 
+/* Whether a failed poll earns BACKOFF (D87): true only when the service
+ * itself answered and the answer was not data — throttling or any other
+ * non-200 status. A request that never got an answer (`http_len` < 0: DNS,
+ * connect, timeout) never reached the service, or reached one that is not
+ * answering anyway, so waiting longer protects nobody; it only kept the panel
+ * empty for up to five minutes after the local network came back. A 200 whose
+ * body did not parse is almost always the link cutting it short (see the
+ * parse-failure log in flight_source.c), so it does not back off either.
+ * Those failures are retried at the normal cadence — which is still the
+ * 10 s floor AGENTS.md §5 demands. */
+bool source_failure_backs_off(int http_len, int http_status);
+
 /* ---- Position source table --------------------------------------------
  *
  * A table, not a single URL, so a second source can be added in M4 without
