@@ -3272,6 +3272,13 @@ WiFi reconnecting, and here WiFi never dropped.
 **Seen again at 17:53 the same day,** after another restart: the same wrong entry
 (`20:e1:5d:9f:42:e7`), read twice 35 s apart, with no data since boot.
 
+**Confirmed from a Mac on the same WiFi,** by capturing the ARP exchange while it asked
+for 192.168.0.1. Two devices answered, 2 µs apart:
+`54:67:51:bb:3b:26` (Compal, the router) and `20:e1:5d:9f:42:e7` (TP-Link). Whichever
+reply lands first wins. The Mac got the router's reply first and the panel got the
+TP-Link's; that is the whole difference between them. A TP-Link router or extender
+ships with 192.168.0.1 as its own address, the same as this router.
+
 **Checked on the device (v1.0.2):** after a fresh boot the outage came straight back, so
 the new cadence could be watched live. Failed polls followed each other every ~19 s (12 s
 plus the 7 s DNS timeout) for minutes, never growing.
