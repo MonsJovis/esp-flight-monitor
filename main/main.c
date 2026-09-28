@@ -1079,8 +1079,8 @@ static void wifi_scan_task(void *arg)
      * except that they can: 'K' and a finger on Suchen start two tasks, and
      * the second one's wifi_scan() overwrites the first one's results while
      * the first is still reading them. Exactly the shape the review found in
-     * geo_search_task (D63). 264 + 132 bytes on a 4 KB stack is not a reason
-     * to share a buffer. */
+     * geo_search_task (D63). About 540 bytes (eight saved networks since
+     * D91) on a 4 KB stack is not a reason to share a buffer. */
     char   found[8][WIFI_SSID_LEN];
     int8_t rssi[8];
     char   saved[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];

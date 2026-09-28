@@ -267,9 +267,19 @@ static bool attempt_connect(void)
         return true;
     }
     if (is_prefer) {
-        ESP_LOGW(TAG, "the chosen network \"%s\" did not connect; the next "
-                      "attempt takes the strongest instead", connecting_ssid);
-        g_skip_prefer_once = true;
+        /* Only if it is STILL the chosen one. A tap on another network during
+         * this attempt's 10 s wait has already cleared the flag in
+         * note_choice(); setting it now would skip that fresh choice. */
+        xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
+        bool still_prefer = strcmp(g_prefer, connecting_ssid) == 0;
+        if (still_prefer) {
+            g_skip_prefer_once = true;
+        }
+        xSemaphoreGive(g_cred_mutex);
+        if (still_prefer) {
+            ESP_LOGW(TAG, "the chosen network \"%s\" did not connect; the next "
+                          "attempt takes the strongest instead", connecting_ssid);
+        }
     }
     return false;
 }
@@ -445,11 +455,15 @@ esp_err_t wifi_creds_set(int slot, const char *ssid, const char *pass)
  * NVS commit, skipped when nothing changed. Caller holds no lock. */
 static esp_err_t note_choice(int slot, const char *ssid)
 {
-    g_skip_prefer_once = false;
-
+    /* g_skip_prefer_once is cleared under g_cred_mutex, in the same hold that
+     * makes `ssid` the preference, so attempt_connect()'s "still the chosen
+     * one?" check cannot re-arm it for the new choice. */
     xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
     bool same = strcmp(g_prefer, ssid) == 0 && g_seq[slot] + 1 == g_seq_next;
     uint32_t seq = same ? g_seq[slot] : g_seq_next;
+    if (same) {
+        g_skip_prefer_once = false;
+    }
     xSemaphoreGive(g_cred_mutex);
     if (same) {
         return ESP_OK;
@@ -475,6 +489,7 @@ static esp_err_t note_choice(int slot, const char *ssid)
     g_seq_next  = seq + 1;
     strncpy(g_prefer, ssid, sizeof g_prefer - 1);
     g_prefer[sizeof g_prefer - 1] = '\0';
+    g_skip_prefer_once = false;
     xSemaphoreGive(g_cred_mutex);
     return ESP_OK;
 }

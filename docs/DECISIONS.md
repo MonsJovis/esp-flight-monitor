@@ -3467,3 +3467,11 @@ wanted to switch back to the first, we had to type its password again.
 **Checked:** host suite and firmware build. Not yet seen on the panel, and not yet
 stress-navigated (AGENTS.md §11 rule 3). The screens did not change, only what a tap on
 them does, but open WLAN forty times anyway before calling it proven.
+
+**Follow-up, from review (v1.0.5).** A failed attempt on the *previous* choice could undo
+a fresh one. Say the device is 10 s into an attempt on A and he taps B. `wifi_choose(B)`
+cleared the skip flag. Then A failed, and because A had been the chosen network when the
+attempt started, the flag was set again. The reconnect his tap asked for then skipped B
+and took the strongest network: the original bug, in a narrow timing window. Now a
+failure sets the flag only if the network that failed is *still* the chosen one. That
+check, and the clearing when a new choice is recorded, both happen under `g_cred_mutex`.
