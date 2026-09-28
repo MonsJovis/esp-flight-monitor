@@ -18,12 +18,15 @@ static const char *TAG = "axp";
 /* Registers, numbered as the AXP2101 datasheet numbers them. Only these. */
 #define REG_STATUS1     0x00    /* [5] vbus good, [3] battery present */
 #define REG_STATUS2     0x01    /* [6:5] current direction, [2:0] charge status */
+#define REG_COMMON_CFG  0x10    /* [0] software power-off: write 1 and every rail drops */
 #define REG_CHIP_ID     0x03    /* undocumented in the datasheet; logged, never gated on */
 #define REG_IIN_LIMIT   0x16
 #define REG_PWRON_STS   0x20    /* why it last powered on */
 #define REG_PWROFF_STS  0x21    /* why it last powered off */
 #define REG_PWROFF_EN   0x22    /* [1] the side PWRKEY may power the device off, [0] off vs restart */
-#define REG_KEY_LEVELS  0x27    /* [3:2] how long a press has to be to count as off */
+#define REG_KEY_LEVELS  0x27    /* [5:4] long-press IRQ time, [3:2] off time, [1:0] on time */
+#define REG_IRQ_EN1     0x41    /* [3:0] the PWRKEY interrupts, see PKEY_* */
+#define REG_IRQ_STS1    0x49    /* the same bits, latched; write 1 to clear */
 #define REG_MODULE_EN   0x18    /* [3] gauge, [1] cell charger */
 #define REG_ADC_EN      0x30
 #define REG_VBAT_H      0x34
@@ -66,9 +69,26 @@ static const char *TAG = "axp";
 #define ITERM_EN_100MA  0x14    /* bit 4 enables termination, [3:0] = 100 mA */
 #define IIN_LIMIT_1A5   0x04    /* the POR default, written out so it lives here and not in an eFuse */
 
+/* ---- the side PWRKEY (D90) ---------------------------------------------
+ *
+ * REG27: long-press IRQ at 2 s ([5:4] = 10), which pwrkey_policy.h turns into
+ * a 3 s off; the chip's own off at 4 s ([3:2] = 00, its shortest), which only
+ * matters if the firmware has stopped. [1:0], the on time, is left as the
+ * eFuse set it — that is the half the owner said already works.
+ * REG22: [1] let the key power the device off, [0] = 0 off rather than restart.
+ * REG41/49 [3:0]: short press, long press, and the two edges. */
+#define KEY_LEVELS_MASK   0x3C
+#define KEY_LEVELS_SET    0x20
+#define PWROFF_KEY_EN     0x02
+#define PWROFF_RESTART    0x01
+#define PKEY_LONG         0x04
+#define PKEY_EDGES        0x03
+#define PKEY_ALL          0x0F
+
 static i2c_master_dev_handle_t s_dev;
 static SemaphoreHandle_t       s_lock;
 static bool                    s_ready;
+static bool                    s_pwrkey_ok;
 
 /* ---- bus --------------------------------------------------------------- */
 
@@ -229,6 +249,20 @@ esp_err_t axp2101_init(void)
 
     s_ready = true;
 
+    /* The PWRKEY, after the charger and separately from it: a device whose
+     * key cannot be configured must still charge. Whatever the power-on
+     * press latched is cleared here, so the first thing the watcher sees
+     * is the release of that press (pwrkey_policy.h). */
+    esp_err_t kerr = reg_update(REG_KEY_LEVELS, KEY_LEVELS_MASK, KEY_LEVELS_SET);
+    if (kerr == ESP_OK) kerr = reg_update(REG_PWROFF_EN, PWROFF_RESTART, PWROFF_KEY_EN);
+    if (kerr == ESP_OK) kerr = reg_update(REG_IRQ_EN1, 0x00, PKEY_ALL);
+    if (kerr == ESP_OK) kerr = reg_write8(REG_IRQ_STS1, PKEY_ALL);
+    s_pwrkey_ok = (kerr == ESP_OK);
+    if (!s_pwrkey_ok) {
+        ESP_LOGE(TAG, "PWRKEY configuration failed: %s — the key switches "
+                      "off only if the eFuse says so", esp_err_to_name(kerr));
+    }
+
     uint8_t st1 = 0;
     (void)reg_read8(REG_STATUS1, &st1);
     ESP_LOGW(TAG, "AXP2101 at 0x%02X (id 0x%02X): charger 500 mA to 4.1 V, "
@@ -240,6 +274,49 @@ esp_err_t axp2101_init(void)
 bool axp2101_present(void)
 {
     return s_ready;
+}
+
+esp_err_t axp2101_pwrkey_poll(pwrkey_irq_t *out)
+{
+    if (out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_ready || !s_pwrkey_ok) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
+    uint8_t sts = 0;
+    esp_err_t err = reg_read8(REG_IRQ_STS1, &sts);
+    if (err == ESP_OK && (sts & PKEY_ALL) != 0) {
+        /* Only the key's bits: the others belong to nobody yet, and clearing
+         * them would hide them from the day someone reads them. */
+        err = reg_write8(REG_IRQ_STS1, (uint8_t)(sts & PKEY_ALL));
+    }
+    unlock();
+    if (err != ESP_OK) {
+        return err;
+    }
+    out->edge = (sts & PKEY_EDGES) != 0;
+    out->lng  = (sts & PKEY_LONG)  != 0;
+    return ESP_OK;
+}
+
+void axp2101_power_off(void)
+{
+    if (!s_ready) {
+        return;
+    }
+    bool locked = lock();
+    esp_err_t err = reg_update(REG_COMMON_CFG, 0x00, 0x01);
+    if (locked) {
+        unlock();
+    }
+    /* Reached only if the rails did not drop — logged, and the device simply
+     * carries on, which is the least surprising way to fail. */
+    ESP_LOGE(TAG, "power-off requested, and the device is still here: %s",
+             esp_err_to_name(err));
 }
 
 esp_err_t axp2101_read(battery_raw_t *out)
@@ -299,10 +376,10 @@ void axp2101_dump(void)
         REG_STATUS1, REG_STATUS2, REG_CHIP_ID, REG_IIN_LIMIT, REG_MODULE_EN,
         REG_ADC_EN, REG_TS_CTRL, REG_IPRECHG, REG_ICC, REG_ITERM, REG_CV,
         REG_BAT_DETECT, REG_GAUGE_PCT,
-        /* The side PWRKEY. Read-only here and deliberately not configured:
-         * what this button does is decided by the chip's eFuse, and the only
-         * way to find out what that eFuse says is to look. */
+        /* The side PWRKEY. Configured by axp2101_init() since D90; dumped so
+         * what the chip actually holds can be read back against that. */
         REG_PWRON_STS, REG_PWROFF_STS, REG_PWROFF_EN, REG_KEY_LEVELS,
+        REG_IRQ_EN1, REG_IRQ_STS1,
     };
     if (!lock()) {
         printf("\nPMIC: busy\n");

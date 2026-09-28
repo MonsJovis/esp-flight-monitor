@@ -45,6 +45,7 @@ set(SRCS
     "net/ota.c"
     "power/axp2101.c"
     "power/battery_policy.c"
+    "power/pwrkey_policy.c"
 )
 
 # Generated font faces are globbed: they are build output with stable names,

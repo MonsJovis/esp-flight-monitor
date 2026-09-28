@@ -360,6 +360,48 @@ static void battery_sim_cycle(void)
     }
 }
 
+/* The side PWRKEY as an off switch (D90).
+ *
+ * Its own task, not a line in power_tick(): that runs on the UI tick, which
+ * is 2 s, and a 3 s hold judged at 2 s steps would switch off anywhere from
+ * 3 to 5 s. 100 ms is one short register read and, now and then, one write,
+ * on a bus the touch controller polls far more often than that. */
+#define PWRKEY_POLL_MS 100
+
+static void pwrkey_task(void *arg)
+{
+    (void)arg;
+    pwrkey_state_t st;
+    pwrkey_init(&st, esp_timer_get_time() / 1000);
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(PWRKEY_POLL_MS));
+        pwrkey_irq_t irq = { 0 };
+        if (axp2101_pwrkey_poll(&irq) != ESP_OK) {
+            /* A transient bus fault reads as "nothing happened", which is
+             * the safe direction: the hold just has to last one poll longer. */
+            irq = (pwrkey_irq_t){ 0 };
+        }
+        if (irq.edge || irq.lng) {
+            ESP_LOGI(TAG, "PWRKEY:%s%s", irq.edge ? " edge" : "", irq.lng ? " long" : "");
+        }
+        if (!pwrkey_step(&st, irq, esp_timer_get_time() / 1000)) {
+            continue;
+        }
+        ESP_LOGW(TAG, "PWRKEY held %d ms: switching off",
+                 PWRKEY_LONG_IRQ_MS + PWRKEY_OFF_AFTER_LONG_MS);
+        /* Dark first, so the answer to the hold is immediate even if the
+         * rails take a moment. */
+        bsp_display_backlight_off();
+        vTaskDelay(pdMS_TO_TICKS(50));
+        axp2101_power_off();
+        /* Still here: the write failed. Light back up and keep watching;
+         * -1 makes the next tick re-apply the hour's level and any cap. */
+        bsp_display_brightness_set(g_settings.brightness_pct);
+        s_brightness_applied = -1;
+        pwrkey_init(&st, esp_timer_get_time() / 1000);
+    }
+}
+
 /* One PMIC poll and everything that follows from it.
  *
  * Every early return leaves s_battery exactly as it was, which is the right
@@ -2113,7 +2155,10 @@ void app_main(void)
      * Never fatal, and a no-op on a device with no cell fitted — but the one
      * thing it does that nothing else can is stop the TS pin gating the
      * charger, so a battery plugged in later charges without a reflash. */
-    (void)axp2101_init();
+    if (axp2101_init() == ESP_OK &&
+        xTaskCreate(pwrkey_task, "pwrkey", 3072, NULL, 2, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "no PWRKEY watcher: the key switches off at 4 s only");
+    }
 
     log_memory_budget("after display init (framebuffer up)");
 

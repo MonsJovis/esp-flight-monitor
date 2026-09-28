@@ -21,16 +21,19 @@
  *     the schematic, so it does not reach an ESP32 GPIO. Everything here is
  *     POLLED, for the same reason the GT911 is (AGENTS.md §2).
  *
- * NOTHING IN HERE WRITES A RAIL. No DCDC enable, no LDO voltage, no BATFET,
- * no PWROFF threshold. One wrong byte to REG80 or REG90 powers down the
- * panel or the ESP32 itself, and the only way back is the PWRKEY on the side
- * edge. The registers this file touches are exactly the charger, the ADC and
- * the fuel gauge.
+ * NOTHING IN HERE WRITES A RAIL. No DCDC enable, no LDO voltage, no BATFET.
+ * One wrong byte to REG80 or REG90 powers down the panel or the ESP32 itself,
+ * and the only way back is the PWRKEY on the side edge. The registers this
+ * file touches are the charger, the ADC, the fuel gauge — and, since D90, the
+ * PWRKEY: its timings (REG27), whether it may switch off (REG22), its
+ * interrupts (REG41/49), and the one deliberate power-off (REG10[0]), which
+ * only axp2101_power_off() writes and only a 3 s hold on the key calls.
  */
 #pragma once
 #include <stdbool.h>
 #include "esp_err.h"
 #include "battery_policy.h"
+#include "pwrkey_policy.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,6 +59,16 @@ bool axp2101_present(void);
  * redraw the screen.
  */
 esp_err_t axp2101_read(battery_raw_t *out);
+
+/* Reads what the PWRKEY latched since the last call, and clears it. Returns
+ * ESP_ERR_INVALID_STATE when there is no PMIC or its key could not be
+ * configured, and a bus error as it comes; *out is untouched on any error. */
+esp_err_t axp2101_pwrkey_poll(pwrkey_irq_t *out);
+
+/* Switches the device off (REG10[0]). Every rail drops, the ESP32 with them,
+ * so on success this does not return in any useful sense; it returns only if
+ * the write failed. The key switches it back on. */
+void axp2101_power_off(void);
 
 /* VBUS millivolts, for the console. 0 when unavailable. */
 int axp2101_vbus_mv(void);

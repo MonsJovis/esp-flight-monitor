@@ -136,8 +136,9 @@ Routed here from AGENTS.md §7.
   charging". The symptom is a device that looks fine and quietly stays flat — the Akku line
   in Einstellungen says "wird nicht geladen" for exactly this case.
 - **Never write a rail.** REG80/REG90 and friends turn the panel or the ESP32 off, and the
-  only way back is the PWRKEY on the side edge. The driver touches the charger, the ADC and
-  the gauge, nothing else.
+  only way back is the PWRKEY on the side edge. The driver touches the charger, the ADC,
+  the gauge and, since D90, the PWRKEY's own registers (REG22/27/41/49) plus the one
+  deliberate power-off in REG10[0], nothing else.
 - **A zeroed `battery_status_t` means a black screen.** Its `brightness_cap_pct` is 0 and the
   dimmer takes the minimum of the schedule and the cap, so the one in main.c is initialised
   explicitly. Copy that if you ever add another.

@@ -3378,3 +3378,52 @@ convert (letters in the suffix, unknown airline, registration as callsign, zeros
 long, lower case, truncation). `test_tables.c` checks that the new table is sorted, unique
 and two characters per designator. `test_view.c` checks the detail layer reads `OS 453`.
 Not yet seen on the panel.
+
+## D90 — The side key switches the device off, with the same 3 s hold
+
+**The owner:** a 3 s press on the side key switches the device on. The same press does not
+switch it off.
+
+**Why.** The firmware never configured the key. `axp2101.c` only read REG22 and REG27 for
+the console dump, on purpose: "what this button does is decided by the chip's eFuse". On
+this unit that eFuse does not let a long press power the device off, or its off time is
+longer than anyone holds a button. Either way, nothing in the firmware watched the key, so
+nothing could switch off.
+
+**Now:**
+- **`axp2101_init()` configures the key**, after the charger and separately from it. A key
+  that cannot be configured must not stop a cell from charging. Settings:
+  - REG27: long-press interrupt at 2 s; the chip's own off at 4 s, its shortest.
+  - REG22: the key may power off (bit 1), and it powers off rather than restarting
+    (bit 0 = 0).
+  - REG41: the four key interrupts on.
+  - REG49: cleared, so the first thing the watcher sees is the release of the power-on
+    press.
+- **A `pwrkey` task polls REG49 every 100 ms.** The IRQ pin reaches no GPIO. The chip
+  latches edges and a single long-press flag; it has no "held now" bit. A hold therefore
+  counts as: the long flag, then no further edge for 1 s. That makes 3 s in all, the same
+  hold as switching on. The task turns the backlight off, then sets REG10[0].
+- **The chip's own 4 s off stays armed as a backstop.** It covers a firmware that has
+  stopped running, which is exactly when he would hold the key.
+- **The press that switched it on cannot switch it off.** He holds for 3 s, the rails come
+  up within 2 s, and the firmware is polling before his thumb comes off. So nothing counts
+  until the watcher has seen the release, or until 8 s after start on a device powered up
+  by USB. The timing lives in `pwrkey_policy.c`, which is pure, and `test_pwrkey.c` covers
+  it: a 3 s hold, a release at 2.7 s, a release in the same reading as the long flag, a
+  short press, the power-on hold, a USB start, and a bus fault.
+
+**This amends D61**, which says "no PWROFF threshold" and warns against a device that
+switches itself off in front of him with USB plugged in. That warning was about an
+automatic off driven by a fuel gauge. This off happens only when he holds the key for
+3 s, and it is the key that brings the device back.
+
+**Not yet seen on the panel.** No board was attached when this was written. The register
+bits come from the AXP2101 datasheet and match the layout XPowersLib uses. Two things are
+unconfirmed:
+- whether a device switched off with USB still plugged in stays off (the PMIC's power-on
+  sources are the key and a VBUS *insertion*, so it should);
+- that REG49 latches the key bits on this unit.
+
+The console `y` now dumps REG41 and REG49 as well, and the watcher logs every key event it
+reads (`PWRKEY: edge` / `PWRKEY: long`). So the second one can be checked from the host:
+a short press should log one or two edges, and a hold should log `long` after 2 s.
