@@ -38,6 +38,7 @@ set(SRCS
     "net/geocode.c"
     "net/source_logic.c"
     "net/wifi.c"
+    "net/wifi_pick.c"
     "net/http_get.c"
     "net/flight_source.c"
     "net/timesync.c"

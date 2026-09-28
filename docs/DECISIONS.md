@@ -3427,3 +3427,43 @@ unconfirmed:
 The console `y` now dumps REG41 and REG49 as well, and the watcher logs every key event it
 reads (`PWRKEY: edge` / `PWRKEY: long`). So the second one can be checked from the host:
 a short press should log one or two edges, and a hold should log `long` after 2 s.
+
+## D91 — Going back to a saved network goes back to it, and a full list forgets the stalest
+
+**The owner:** we joined a network and it worked. Then we joined another one. When we
+wanted to switch back to the first, we had to type its password again.
+
+**Two causes. Either one alone produces that report.**
+- **Tapping a saved network never meant "join this one".** The tap called
+  `wifi_reconnect_now()`. `attempt_connect()` then re-scanned and took the *strongest*
+  remembered network in range. With both networks in range and the new one louder, "switch
+  back" landed on the network he was leaving. D69 documented this and the join watcher
+  reported it honestly ("Verbunden mit" the other one), but nothing on the panel let him
+  override it. The only thing that looked like a way out was typing the password again.
+- **A full list always gave up slot 3.** There were four slots. The panel and the serial
+  path each carried their own copy of the rule "same SSID, else first free, else the
+  last". On a device that lives in more than one home, the fifth network overwrote
+  whatever sat in slot 3: possibly the network he had used an hour earlier. That network
+  then showed as unsaved, and tapping it asked for its password.
+
+**Now:**
+- **The network he chose wins whenever it is in range**, however weak. Tapping a saved
+  row records the choice (`wifi_choose()`), and so does typing a new password
+  (`wifi_remember()`). It is kept in NVS (`pref`), so a restart or a night-time update
+  lands on it too.
+- **The strongest network is the fallback, as before.** It is used when the chosen network
+  is not in range, which is the travelling case (AGENTS.md §6). It is also used for one
+  attempt after the chosen network failed to connect, so a changed password there cannot
+  keep the device off a network that works.
+- **A full list gives up the network chosen longest ago** (`seqN` in NVS), never the one
+  the device is on right now. Networks stored before this have no record and count as the
+  oldest.
+- **Eight slots, not four.**
+- **One rule, not two copies.** `wifi_remember()` picks the slot. `main.c` no longer
+  carries its own slot picker twice. Both rules live in `wifi_pick.c`, which is pure.
+  `test_wifi_pick.c` covers them, including the owner's exact sequence (A, then B, then
+  back to A, with B louder).
+
+**Checked:** host suite and firmware build. Not yet seen on the panel, and not yet
+stress-navigated (AGENTS.md §11 rule 3). The screens did not change, only what a tap on
+them does, but open WLAN forty times anyway before calling it proven.

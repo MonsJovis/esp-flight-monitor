@@ -8,6 +8,11 @@
  * reachable. Credentials live in NVS namespace "wifi" (keys "ssidN"/"passN",
  * N = 0..WIFI_MAX_NETWORKS-1) — never hard-coded, never written anywhere
  * else in the repo, and never logged (AGENTS.md §10).
+ *
+ * WHICH ONE, D91: the network he last CHOSE ("pref") wins whenever it is in
+ * range; otherwise the strongest remembered one. When each network was last
+ * chosen ("seqN") decides which one a full list gives up. The rules are
+ * wifi_pick.c's, and host-tested.
  */
 #pragma once
 #include <stdbool.h>
@@ -19,7 +24,10 @@
 extern "C" {
 #endif
 
-#define WIFI_MAX_NETWORKS 4
+/* Was 4 until D91, on a device that lives in more than one home; a full list
+ * then overwrote slot 3 with every new network. NVS keys run to
+ * "ssid7"/"pass7"/"seq7". */
+#define WIFI_MAX_NETWORKS 8
 #define WIFI_SSID_LEN     33  /* 32 + NUL — IEEE 802.11 max SSID length */
 
 /* Brings up NVS + netif + the default event loop + the WiFi driver in
@@ -40,6 +48,18 @@ bool wifi_is_connected(void);
  * "" for an open network. Returns ESP_ERR_INVALID_ARG for an out-of-range
  * slot or an SSID/password too long to fit its NVS field. */
 esp_err_t wifi_creds_set(int slot, const char *ssid, const char *pass);
+
+/* Stores a network he has just typed the password for, and makes it the
+ * chosen one (see the top of this file). Picks the slot itself: the SSID's own
+ * slot, else a free one, else the one chosen longest ago — never the network
+ * the device is on right now. Does not reconnect; call wifi_reconnect_now().
+ * Never logs `pass`. */
+esp_err_t wifi_remember(const char *ssid, const char *pass);
+
+/* Makes an already-remembered network the chosen one: tapping a saved row.
+ * ESP_ERR_NOT_FOUND when `ssid` is not remembered. Does not reconnect; call
+ * wifi_reconnect_now(). */
+esp_err_t wifi_choose(const char *ssid);
 
 /* Writes exactly min(max, WIFI_MAX_NETWORKS) entries into
  * out[][WIFI_SSID_LEN] — SSIDs only, NEVER passwords (AGENTS.md §10). An
@@ -83,9 +103,10 @@ int wifi_rssi(void);
  * in the order he is choosing from anyway. */
 int wifi_scan(char out[][WIFI_SSID_LEN], int8_t rssi_out[], int max);
 
-/* Abandon the current backoff and try to associate right now. Called after new
- * credentials are stored: the reconnect loop may be 60 s into a wait, and
- * nobody should have to stand there after typing a password. */
+/* Abandon the current backoff and try to associate right now — with the
+ * chosen network if it is in range, even while associated with another one.
+ * Called after wifi_remember() / wifi_choose(): the reconnect loop may be 60 s
+ * into a wait, and nobody should have to stand there after typing a password. */
 void wifi_reconnect_now(void);
 
 #ifdef __cplusplus

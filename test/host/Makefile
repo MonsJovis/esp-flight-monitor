@@ -15,6 +15,7 @@ MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) \
                $(wildcard $(ROOT)/main/net/*_parse.c) \
                $(wildcard $(ROOT)/main/net/source_logic.c) \
                $(wildcard $(ROOT)/main/net/ota_policy.c) \
+               $(wildcard $(ROOT)/main/net/wifi_pick.c) \
                $(wildcard $(ROOT)/main/power/*_policy.c)
 SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c
 

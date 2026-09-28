@@ -194,9 +194,10 @@ _NON_UI_LITERALS = {
         "adsb.lol (point)", "adsb.lol (lat/lon/dist)",
         "NE", "SE", "SW", "NW",
     ),
-    # NVS key templates, one per stored network slot.
+    # NVS key templates, one per stored network slot; "seq%d" records when
+    # each was last chosen (D91).
     "main/net/wifi.c": (
-        "ssid%d", "pass%d",
+        "ssid%d", "pass%d", "seq%d",
     ),
     # The three layer keys on the on-screen keyboard. They ARE drawn — so this
     # is the one exemption here for a literal that reaches the panel — but

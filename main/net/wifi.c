@@ -18,6 +18,7 @@
 #include "nvs_flash.h"
 
 #include "wifi_bars.h"   /* WIFI_RSSI_NONE — the "nothing measured" sentinel */
+#include "wifi_pick.h"   /* which network to join, which slot to store in (D91) */
 
 static const char *TAG = "wifi";
 
@@ -37,6 +38,17 @@ typedef struct {
 } wifi_cred_t;
 
 static wifi_cred_t        g_creds[WIFI_MAX_NETWORKS];
+/* D91. The network he last chose, which wins whenever it is in range, and
+ * when each slot was last chosen, so a full list gives up the stalest one.
+ * Both in NVS ("pref", "seqN") and both guarded by g_cred_mutex. */
+static char               g_prefer[WIFI_SSID_LEN];
+static uint32_t           g_seq[WIFI_MAX_NETWORKS];
+static uint32_t           g_seq_next = 1;
+/* Set after an attempt on the chosen network failed: the next attempt goes
+ * to the strongest instead, so a changed password on the chosen one cannot
+ * keep the device off a network that works. Cleared by a fresh choice, which
+ * must never be the attempt that gets skipped. */
+static volatile bool      g_skip_prefer_once;
 static volatile bool      g_force_retry;
 static SemaphoreHandle_t  g_cred_mutex;
 static SemaphoreHandle_t  g_scan_mutex; /* serialises esp_wifi_scan_start() callers */
@@ -111,6 +123,21 @@ static void load_creds_from_nvs(void)
         if (nvs_get_str(h, key, g_creds[slot].pass, &len) != ESP_OK) {
             g_creds[slot].pass[0] = '\0';
         }
+
+        /* Absent on every network stored before D91: 0, i.e. "chosen longest
+         * ago", which is the truth as far as anything recorded goes. */
+        snprintf(key, sizeof key, "seq%d", slot);
+        if (nvs_get_u32(h, key, &g_seq[slot]) != ESP_OK) {
+            g_seq[slot] = 0;
+        }
+        if (g_seq[slot] >= g_seq_next) {
+            g_seq_next = g_seq[slot] + 1;
+        }
+    }
+
+    size_t len = sizeof g_prefer;
+    if (nvs_get_str(h, "pref", g_prefer, &len) != ESP_OK) {
+        g_prefer[0] = '\0';
     }
     nvs_close(h);
 }
@@ -153,27 +180,35 @@ static bool attempt_connect(void)
     }
 
     xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
-    int best_slot = -1;
-    int8_t best_rssi = INT8_MIN;
+    const char *known[WIFI_MAX_NETWORKS];
+    int         seen[WIFI_MAX_NETWORKS];
+    for (int slot = 0; slot < WIFI_MAX_NETWORKS; slot++) {
+        known[slot] = g_creds[slot].ssid;
+        seen[slot]  = WIFI_PICK_UNSEEN;
+    }
     for (int i = 0; i < (int)num; i++) {
         for (int slot = 0; slot < WIFI_MAX_NETWORKS; slot++) {
-            if (g_creds[slot].ssid[0] == '\0') {
-                continue;
-            }
-            if (strcmp((const char *)recs[i].ssid, g_creds[slot].ssid) == 0 &&
-                recs[i].rssi > best_rssi) {
-                best_rssi = recs[i].rssi;
-                best_slot = slot;
+            if (g_creds[slot].ssid[0] != '\0' &&
+                strcmp((const char *)recs[i].ssid, g_creds[slot].ssid) == 0 &&
+                (seen[slot] == WIFI_PICK_UNSEEN || recs[i].rssi > seen[slot])) {
+                seen[slot] = recs[i].rssi;
             }
         }
     }
     free(recs);
+
+    /* The one he chose, if it is in range; otherwise the strongest (D91). */
+    int best_slot = wifi_pick_join(known, seen, WIFI_MAX_NETWORKS,
+                                   g_prefer, !g_skip_prefer_once);
+    g_skip_prefer_once = false;
 
     if (best_slot < 0) {
         xSemaphoreGive(g_cred_mutex);
         ESP_LOGW(TAG, "no known network in range (%u seen)", (unsigned)num);
         return false;
     }
+    int8_t best_rssi   = (int8_t)seen[best_slot];
+    bool   is_prefer   = strcmp(g_creds[best_slot].ssid, g_prefer) == 0;
 
     wifi_config_t wifi_config = { 0 };
     strncpy((char *)wifi_config.sta.ssid, g_creds[best_slot].ssid, sizeof wifi_config.sta.ssid - 1);
@@ -230,6 +265,11 @@ static bool attempt_connect(void)
         /* SSID only -- never the password (AGENTS.md §10). */
         ESP_LOGI(TAG, "connected: ssid=%s (%d dBm at pick)", connecting_ssid, chosen_rssi);
         return true;
+    }
+    if (is_prefer) {
+        ESP_LOGW(TAG, "the chosen network \"%s\" did not connect; the next "
+                      "attempt takes the strongest instead", connecting_ssid);
+        g_skip_prefer_once = true;
     }
     return false;
 }
@@ -398,6 +438,114 @@ esp_err_t wifi_creds_set(int slot, const char *ssid, const char *pass)
 
     ESP_LOGI(TAG, "stored network in slot %d: %s", slot, ssid); /* never logs pass */
     return ESP_OK;
+}
+
+/* Records `ssid` as the network he chose: it wins the next pick whenever it
+ * is in range, and its slot becomes the last one a full list gives up. One
+ * NVS commit, skipped when nothing changed. Caller holds no lock. */
+static esp_err_t note_choice(int slot, const char *ssid)
+{
+    g_skip_prefer_once = false;
+
+    xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
+    bool same = strcmp(g_prefer, ssid) == 0 && g_seq[slot] + 1 == g_seq_next;
+    uint32_t seq = same ? g_seq[slot] : g_seq_next;
+    xSemaphoreGive(g_cred_mutex);
+    if (same) {
+        return ESP_OK;
+    }
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    char key[8];
+    snprintf(key, sizeof key, "seq%d", slot);
+    err = nvs_set_u32(h, key, seq);
+    if (err == ESP_OK) err = nvs_set_str(h, "pref", ssid);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
+    g_seq[slot] = seq;
+    g_seq_next  = seq + 1;
+    strncpy(g_prefer, ssid, sizeof g_prefer - 1);
+    g_prefer[sizeof g_prefer - 1] = '\0';
+    xSemaphoreGive(g_cred_mutex);
+    return ESP_OK;
+}
+
+/* The SSID of the association right now, or "" — the one network a full
+ * list must never give up to make room. */
+static void current_ssid(char out[WIFI_SSID_LEN])
+{
+    out[0] = '\0';
+    wifi_ap_record_t ap;
+    if (g_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        strncpy(out, (const char *)ap.ssid, WIFI_SSID_LEN - 1);
+        out[WIFI_SSID_LEN - 1] = '\0';
+    }
+}
+
+esp_err_t wifi_remember(const char *ssid, const char *pass)
+{
+    if (ssid == NULL || ssid[0] == '\0' || strlen(ssid) >= WIFI_SSID_LEN) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char on_now[WIFI_SSID_LEN];
+    current_ssid(on_now);
+
+    xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
+    const char *known[WIFI_MAX_NETWORKS];
+    for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+        known[i] = g_creds[i].ssid;
+    }
+    int  slot    = wifi_pick_store(known, g_seq, WIFI_MAX_NETWORKS, ssid, on_now);
+    bool evicts  = slot >= 0 && g_creds[slot].ssid[0] != '\0' &&
+                   strcmp(g_creds[slot].ssid, ssid) != 0;
+    char evicted[WIFI_SSID_LEN] = "";
+    if (evicts) {
+        strncpy(evicted, g_creds[slot].ssid, sizeof evicted - 1);
+    }
+    xSemaphoreGive(g_cred_mutex);
+
+    if (slot < 0) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (evicts) {
+        ESP_LOGW(TAG, "all %d slots full: \"%s\", chosen longest ago, makes room",
+                 WIFI_MAX_NETWORKS, evicted);
+    }
+    esp_err_t err = wifi_creds_set(slot, ssid, pass);
+    if (err == ESP_OK) {
+        err = note_choice(slot, ssid);
+    }
+    return err;
+}
+
+esp_err_t wifi_choose(const char *ssid)
+{
+    if (ssid == NULL || ssid[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    int slot = -1;
+    xSemaphoreTake(g_cred_mutex, portMAX_DELAY);
+    for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
+        if (strcmp(g_creds[i].ssid, ssid) == 0) {
+            slot = i;
+            break;
+        }
+    }
+    xSemaphoreGive(g_cred_mutex);
+    if (slot < 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    ESP_LOGI(TAG, "chosen: %s (slot %d)", ssid, slot);
+    return note_choice(slot, ssid);
 }
 
 esp_err_t wifi_creds_list(char out[][WIFI_SSID_LEN], int max)

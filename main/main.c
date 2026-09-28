@@ -547,34 +547,15 @@ static void provision_wifi(void)
     *tab = '\0';
     const char *ssid = line, *pass = tab + 1;
 
-    /* Pick the slot rather than always writing 0. The device is meant to
-     * remember several networks and join whichever is in range (AGENTS.md §6) —
-     * it spends half the year in Thailand — so provisioning a new one must not
-     * quietly destroy the one that gets him home. Same SSID overwrites itself;
-     * otherwise take the first free slot. */
-    char known[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
-    int slot = -1;
-    if (wifi_creds_list(known, WIFI_MAX_NETWORKS) == ESP_OK) {
-        for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
-            if (strcmp(known[i], ssid) == 0) { slot = i; break; }
-        }
-        if (slot < 0) {
-            for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
-                if (known[i][0] == '\0') { slot = i; break; }
-            }
-        }
-    }
-    if (slot < 0) {
-        slot = WIFI_MAX_NETWORKS - 1;   /* all full: replace the last */
-        ESP_LOGW(TAG, "all %d slots full — replacing slot %d",
-                 WIFI_MAX_NETWORKS, slot);
-    }
-
-    if (wifi_creds_set(slot, ssid, pass) == ESP_OK) {
+    /* wifi_remember() picks the slot: this SSID's own, else a free one, else
+     * the one chosen longest ago — never the one in use (D91). The device
+     * lives in more than one home (AGENTS.md §6), so provisioning a new
+     * network must not quietly destroy the one that gets him home. */
+    if (wifi_remember(ssid, pass) == ESP_OK) {
         /* SSID only. Never log the password. */
         /* The reconnect loop may be deep in a backoff, so nudge it instead of
          * making him wait up to a minute after typing his password. */
-        ESP_LOGW(TAG, "stored \"%s\" in slot %d; reconnecting now", ssid, slot);
+        ESP_LOGW(TAG, "stored \"%s\"; reconnecting now", ssid);
         wifi_reconnect_now();
     } else {
         ESP_LOGE(TAG, "could not store credentials");
@@ -1191,10 +1172,11 @@ static void start_wifi_scan(void)
  * for a wait with an end; this is that end.
  *
  * It reports the network the device is ACTUALLY on, read back from the
- * driver, not the one he tapped. wifi.c picks whichever remembered network is
- * in range rather than obeying a specific SSID (wifi.h), so those two can
- * differ — and "Verbunden mit X" when it is on Y is exactly the kind of
- * confident wrong answer this panel must not give.
+ * driver, not the one he tapped. Since D91 wifi.c joins the tapped network
+ * whenever it is in range, but it still falls back to the strongest one when
+ * it is not, or when it just failed, so those two can differ — and
+ * "Verbunden mit X" when it is on Y is exactly the kind of confident wrong
+ * answer this panel must not give.
  */
 /* True while a join watch is running. Guarded by display_lock(), which both
  * sides already take and which is recursive, so the tap that sets it may be
@@ -1305,6 +1287,9 @@ static void on_wifi_join(const char *ssid, const char *password)
     if (password == NULL && wifi_is_connected() &&
         esp_wifi_sta_get_ap_info(&cur) == ESP_OK &&
         strcmp((const char *)cur.ssid, ssid) == 0) {
+        /* Still a choice: without it the next drop could re-pick a network
+         * chosen earlier, and take him off this one (D91). */
+        (void)wifi_choose(ssid);
         ESP_LOGW(TAG, "already associated with \"%s\"; nothing to do", ssid);
         display_lock(0);
         if (nav_overlay_open()) {
@@ -1315,29 +1300,23 @@ static void on_wifi_join(const char *ssid, const char *password)
     }
 
     if (password != NULL) {
-        /* A new network. Slot choice is the same rule as the serial path: reuse
-         * the slot this SSID already occupies, else the first free one, so
-         * setting up a holiday network never destroys the one that gets him
-         * home (AGENTS.md §6). */
-        char known[WIFI_MAX_NETWORKS][WIFI_SSID_LEN];
-        int slot = -1;
-        if (wifi_creds_list(known, WIFI_MAX_NETWORKS) == ESP_OK) {
-            for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
-                if (strcmp(known[i], ssid) == 0) { slot = i; break; }
-            }
-            if (slot < 0) {
-                for (int i = 0; i < WIFI_MAX_NETWORKS; i++) {
-                    if (known[i][0] == '\0') { slot = i; break; }
-                }
-            }
+        /* A new network: stored, and made the chosen one. wifi_remember()
+         * picks the slot by the same rule as the serial path, so setting up a
+         * holiday network never destroys the one that gets him home
+         * (AGENTS.md §6, D91). */
+        if (wifi_remember(ssid, password) == ESP_OK) {   /* never logs the password */
+            ESP_LOGW(TAG, "stored \"%s\" from the panel", ssid);
+        } else {
+            ESP_LOGE(TAG, "could not store \"%s\"", ssid);
         }
-        if (slot < 0) slot = WIFI_MAX_NETWORKS - 1;
-        wifi_creds_set(slot, ssid, password);   /* never logs the password */
-        ESP_LOGW(TAG, "stored \"%s\" in slot %d from the panel", ssid, slot);
     } else {
         /* A saved network: the screen never had the password and must not ask
-         * for one again. Just reconnect with what NVS already holds. */
-        ESP_LOGW(TAG, "reconnecting to saved network \"%s\"", ssid);
+         * for one again. Make it the chosen one, so the reconnect joins THIS
+         * network and not whichever saved one is loudest — before D91 it did
+         * the latter, and "switch back" landed on the network he was leaving. */
+        esp_err_t err = wifi_choose(ssid);
+        ESP_LOGW(TAG, "reconnecting to saved network \"%s\"%s", ssid,
+                 err == ESP_OK ? "" : " (could not record the choice)");
     }
     /* start_join_watch() calls wifi_reconnect_now() itself, so that the
      * watcher is in place before the attempt can finish. */
