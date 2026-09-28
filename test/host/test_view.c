@@ -753,7 +753,9 @@ static void test_identity_line(void)
         CHECK_STR(vm.hero, "London");
         /* Flight number, not registration: an airliner has one and it is what
          * he would type into his phone. Never both. */
-        CHECK(strstr(vm.identity, "AUA453") != NULL);
+        CHECK(strstr(vm.identity, "OS 453") != NULL);   /* the ticket's form, D89 */
+        CHECK(strstr(vm.identity, "AUA453") == NULL);
+        CHECK_STR(vm.callsign, "OS 453");
         CHECK(strstr(vm.identity, "OE-LBA") == NULL);
         CHECK(strstr(vm.identity, "Airbus") != NULL);
         remember_for_scan("airliner identity", &vm);

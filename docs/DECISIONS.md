@@ -3346,3 +3346,35 @@ was loading.
 - On the panel, swiping to the list 3 s after a reset: *Suche Flugzeuge...* with the bar
   and ghost rows, while the corner meter still showed no WiFi. At 21 s the list was
   there with 11 aircraft.
+
+## D89 — The flight number is the ticket's, not the callsign
+
+**The owner:** the flight number on the panel is not the flight number. It is another number.
+
+**Why.** The feed does not carry a flight number. It carries the ATC **callsign**, and the
+panel showed that as it came in. The callsign uses the ICAO airline code (`AUA453`,
+`RYR2381`). The ticket and the departure board use the IATA code (`OS 453`, `FR 2381`). So
+every airliner was named by a code he has never seen on a boarding pass. Many callsigns
+are also alphanumeric (`DLH1JN`, `RYR4MR`). Airlines choose these so that two similar
+numbers on one frequency are not confused. The flight number behind them is not in the
+callsign at all.
+
+**Now:**
+- **`flight_number()`** in `identity.c` turns a callsign of three ICAO letters and one to
+  four digits into the IATA form: `AUA453` → `OS 453`, `BAW012` → `BA 12`. The Radar
+  caption, the Liste rows and the detail layer all name an aircraft through it.
+- **An alphanumeric callsign stays as it is.** The owner chose this over hiding it or
+  paying for a schedule API. No free source gives the real number for these, and a
+  made-up number is worse than the callsign.
+- **`airline_iata()`** is a second table in `tbl_airline.c`, with only designators known to
+  be right. An airline that is not in it keeps its callsign. It sits in `tbl_airline.c`, not
+  a new file, because the string gate already knows that file as codes and names rather
+  than German. No fifth exception was added.
+- **The callsign is still the key.** `route_find()` and the route cache use `ac->flight`
+  unchanged; only the display text changed.
+
+**Checked:** `test_identity.c` covers the conversion, and every case where it must not
+convert (letters in the suffix, unknown airline, registration as callsign, zeros only, too
+long, lower case, truncation). `test_tables.c` checks that the new table is sorted, unique
+and two characters per designator. `test_view.c` checks the detail layer reads `OS 453`.
+Not yet seen on the panel.

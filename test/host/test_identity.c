@@ -32,6 +32,45 @@ int main(void)
         CHECK_STR(b, "RYR4MR \xC2\xB7 Boeing 737-800");
     }
 
+    GROUP("the flight number is the ticket's, not the ATC callsign (D89)");
+    {
+        /* What he reported: the panel said "AUA453" and the boarding pass
+         * says "OS 453". Same flight, different airline code. */
+        aircraft_t a = mk("AUA453", "OE-LBA", "A20N", "A3");
+        aircraft_identity(&a, true, b, sizeof b);
+        CHECK_STR(b, "OS 453 \xC2\xB7 Airbus A320neo");
+
+        flight_number("RYR2381", b, sizeof b);  CHECK_STR(b, "FR 2381");
+        flight_number("DLH1234", b, sizeof b);  CHECK_STR(b, "LH 1234");
+        flight_number("EWG9", b, sizeof b);     CHECK_STR(b, "EW 9");
+        flight_number("THA931", b, sizeof b);   CHECK_STR(b, "TG 931");
+        flight_number("BAW012", b, sizeof b);   CHECK_STR(b, "BA 12");   /* leading zeros */
+    }
+
+    GROUP("where no flight number can be derived, the callsign stays");
+    {
+        /* Letters in the suffix: an operational callsign. The flight number
+         * behind it is not in it, and inventing one would be worse than
+         * showing what the aircraft actually transmits. */
+        static const char *const keep[] = {
+            "RYR4MR", "DLH1JN", "AUA695J", "EZY12AB",   /* alphanumeric suffix       */
+            "XYZ123",                                   /* airline not in the table  */
+            "OEABC", "DEVSL",                           /* a registration as callsign */
+            "BAW0000", "AUA", "AUA12345", "aua453",     /* no number / too long / case */
+        };
+        for (size_t i = 0; i < sizeof keep / sizeof keep[0]; i++) {
+            flight_number(keep[i], b, sizeof b);
+            CHECK_STR(b, keep[i]);
+        }
+        flight_number("", b, sizeof b);    CHECK_STR(b, "");
+        flight_number(NULL, b, sizeof b);  CHECK_STR(b, "");
+        CHECK_INT((int)flight_number("AUA453", NULL, 8), 0);
+
+        char tiny[4];
+        CHECK_INT((int)flight_number("AUA453", tiny, sizeof tiny), 3);
+        CHECK_STR(tiny, "OS ");                        /* truncated, never overflowed */
+    }
+
     GROUP("a private aircraft is named by its registration");
     {
         /* No flight number exists for it, so the registration is not a
@@ -46,7 +85,7 @@ int main(void)
     {
         aircraft_t a = mk("AUA453", "OE-LBA", "A20N", "A3");
         aircraft_identity(&a, true, b, sizeof b);
-        CHECK(strstr(b, "AUA453") != NULL);
+        CHECK(strstr(b, "OS 453") != NULL);
         CHECK(strstr(b, "OE-LBA") == NULL);   /* two codes side by side is a database row */
     }
 
@@ -67,7 +106,7 @@ int main(void)
             aircraft_t a = mk("AUA453", "OE-LBA", unknown[i], "");
             aircraft_identity(&a, true, b, sizeof b);
             CHECK(strstr(b, unknown[i]) == NULL);
-            CHECK_STR(b, "AUA453");            /* the model is simply omitted */
+            CHECK_STR(b, "OS 453");            /* the model is simply omitted */
 
             aircraft_t g = mk("", "", unknown[i], "");
             aircraft_identity(&g, true, b, sizeof b);

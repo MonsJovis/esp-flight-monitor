@@ -182,7 +182,10 @@ static void fill_reason(const ac_type_t *t, char *out, size_t outsz)
 
 static void fill_aircraft_common(const aircraft_t *ac, const ac_type_t *t, view_model_t *out)
 {
-    copy_trunc(out->callsign, sizeof out->callsign, ac->flight);
+    /* The flight number as the ticket prints it ("OS 453"), not the ATC
+     * callsign it comes from (D89). Display text only; the callsign stays
+     * the route key in ac->flight. */
+    flight_number(ac->flight, out->callsign, sizeof out->callsign);
     copy_trunc(out->registration, sizeof out->registration, ac->reg);
 
     /* actype_display_name(), the same single source the hero and the list use

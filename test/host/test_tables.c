@@ -176,6 +176,31 @@ int main(void)
         free(keys);
     }
 
+    GROUP("airline IATA table: sorted, unique keys, two-character designators");
+    {
+        size_t n = 0;
+        const str_lookup_t *tbl = tbl_airline_iata_entries(&n);
+        CHECK(n >= 100);
+        const char **keys = malloc(n * sizeof(char *));
+        for (size_t i = 0; i < n; i++) {
+            keys[i] = tbl[i].key;
+            CHECK_INT((int)strlen(tbl[i].key), 3);
+            CHECK_INT((int)strlen(tbl[i].value), 2);
+            for (int c = 0; c < 2; c++) {
+                char ch = tbl[i].value[c];
+                CHECK((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'));
+            }
+        }
+        check_sorted_unique("airline_iata", keys, n);
+        free(keys);
+
+        CHECK_STR(airline_iata("AUA"), "OS");
+        CHECK_STR(airline_iata("RYR"), "FR");
+        CHECK(airline_iata("ZZZ") == NULL);
+        CHECK(airline_iata("") == NULL);
+        CHECK(airline_iata(NULL) == NULL);
+    }
+
     GROUP("actype table: sorted, unique keys");
     {
         size_t n = 0;

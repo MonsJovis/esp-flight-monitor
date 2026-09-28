@@ -248,3 +248,176 @@ const str_lookup_t *tbl_airline_entries(size_t *count)
     *count = AIRLINE_COUNT;
     return AIRLINES;
 }
+
+/* ---- Airline ICAO code -> IATA designator: "AUA" -> "OS", "RYR" -> "FR".
+ *
+ * WHY THIS EXISTS. The feed gives the ATC callsign, "AUA453", and that is not
+ * what is printed on a ticket or on the departure board. The ticket says
+ * "OS 453". For a callsign whose suffix is all digits the two differ only in
+ * the airline prefix, so swapping ICAO for IATA recovers the flight number he
+ * knows (identity.c, flight_number()). An alphanumeric callsign ("DLH1JN")
+ * carries no flight number at all and nothing here can recover one.
+ *
+ * ONLY CODES THAT ARE CERTAIN. A wrong designator prints a flight number that
+ * does not exist, which is worse than printing the callsign; a missing one
+ * falls back to the callsign, which is what the panel always did. So this is
+ * deliberately shorter than tbl_airline.c, and defunct carriers whose code
+ * has since been reassigned are left out.
+ *
+ * Sorted ascending by ICAO code for bsearch — test_tables.c checks sortedness,
+ * uniqueness and the two-character shape against tbl_airline_iata_entries().
+ *
+ * It lives in this file, not its own, because this is the file the string gate
+ * already knows to be codes and names rather than German (check_strings.py).
+ */
+
+static const str_lookup_t AIRLINES_IATA[] = {
+    {"AAL", "AA"},
+    {"AAR", "OZ"},
+    {"ACA", "AC"},
+    {"AEA", "UX"},
+    {"AEE", "A3"},
+    {"AFL", "SU"},
+    {"AFR", "AF"},
+    {"AHY", "J2"},
+    {"AIC", "AI"},
+    {"AIQ", "FD"},
+    {"ALK", "UL"},
+    {"AMX", "AM"},
+    {"ANA", "NH"},
+    {"ANE", "YW"},
+    {"ARG", "AR"},
+    {"AUA", "OS"},
+    {"AUI", "PS"},
+    {"AVA", "AV"},
+    {"AXB", "IX"},
+    {"AXM", "AK"},
+    {"AZA", "AZ"},
+    {"AZU", "AD"},
+    {"BAW", "BA"},
+    {"BBC", "BG"},
+    {"BEL", "SN"},
+    {"BKP", "PG"},
+    {"BTI", "BT"},
+    {"CAI", "XC"},
+    {"CAL", "CI"},
+    {"CCA", "CA"},
+    {"CEB", "5J"},
+    {"CES", "MU"},
+    {"CFG", "DE"},
+    {"CHH", "HU"},
+    {"CLH", "CL"},
+    {"CLX", "CV"},
+    {"CMP", "CM"},
+    {"CPA", "CX"},
+    {"CRL", "SS"},
+    {"CSA", "OK"},
+    {"CSN", "CZ"},
+    {"CTN", "OU"},
+    {"DAH", "AH"},
+    {"DAL", "DL"},
+    {"DLH", "LH"},
+    {"EIN", "EI"},
+    {"EJU", "EC"},
+    {"ELY", "LY"},
+    {"ETD", "EY"},
+    {"ETH", "ET"},
+    {"EVA", "BR"},
+    {"EWE", "EW"},
+    {"EWG", "EW"},
+    {"EXS", "LS"},
+    {"EZY", "U2"},
+    {"FDB", "FZ"},
+    {"FDX", "FX"},
+    {"FIN", "AY"},
+    {"GIA", "GA"},
+    {"HVN", "VN"},
+    {"IBE", "IB"},
+    {"IBS", "I2"},
+    {"ICE", "FI"},
+    {"IGO", "6E"},
+    {"ITY", "AZ"},
+    {"JAL", "JL"},
+    {"JBU", "B6"},
+    {"JZR", "J9"},
+    {"KAC", "KU"},
+    {"KAL", "KE"},
+    {"KLM", "KL"},
+    {"KQA", "KQ"},
+    {"KZR", "KC"},
+    {"LDA", "EN"},
+    {"LGL", "LG"},
+    {"LOT", "LO"},
+    {"LZB", "FB"},
+    {"MAS", "MH"},
+    {"MEA", "ME"},
+    {"MSR", "MS"},
+    {"NAX", "DY"},
+    {"NOK", "DD"},
+    {"OAL", "OA"},
+    {"OMA", "WY"},
+    {"PAL", "PR"},
+    {"PGT", "PC"},
+    {"PIA", "PK"},
+    {"QFA", "QF"},
+    {"QTR", "QR"},
+    {"RAM", "AT"},
+    {"RJA", "RJ"},
+    {"ROT", "RO"},
+    {"RWD", "WB"},
+    {"RYR", "FR"},
+    {"SAA", "SA"},
+    {"SAS", "SK"},
+    {"SEJ", "SG"},
+    {"SIA", "SQ"},
+    {"SJX", "JX"},
+    {"SVA", "SV"},
+    {"SWA", "WN"},
+    {"SWR", "LX"},
+    {"SXS", "XQ"},
+    {"TAP", "TP"},
+    {"TGW", "TR"},
+    {"THA", "TG"},
+    {"THY", "TK"},
+    {"TOM", "BY"},
+    {"TRA", "HV"},
+    {"TSC", "TS"},
+    {"TVJ", "VZ"},
+    {"TVS", "QS"},
+    {"UAE", "EK"},
+    {"UAL", "UA"},
+    {"UZB", "HY"},
+    {"VIR", "VS"},
+    {"VJC", "VJ"},
+    {"VLG", "VY"},
+    {"VOE", "V7"},
+    {"WJA", "WS"},
+    {"WZZ", "W6"},
+    {"XAX", "D7"},
+};
+
+#define AIRLINE_IATA_COUNT (sizeof(AIRLINES_IATA) / sizeof(AIRLINES_IATA[0]))
+
+static int airline_iata_cmp(const void *key, const void *elem)
+{
+    const char *k = (const char *)key;
+    const str_lookup_t *e = (const str_lookup_t *)elem;
+    return strcmp(k, e->key);
+}
+
+const char *airline_iata(const char *icao3)
+{
+    if (icao3 == NULL || icao3[0] == '\0') {
+        return NULL;
+    }
+    const str_lookup_t *hit = (const str_lookup_t *)bsearch(
+        icao3, AIRLINES_IATA, AIRLINE_IATA_COUNT, sizeof(AIRLINES_IATA[0]),
+        airline_iata_cmp);
+    return hit ? hit->value : NULL;
+}
+
+const str_lookup_t *tbl_airline_iata_entries(size_t *count)
+{
+    *count = AIRLINE_IATA_COUNT;
+    return AIRLINES_IATA;
+}

@@ -52,7 +52,7 @@ typedef struct {
     char airline[VIEW_LINE_LEN];  /* "Austrian Airlines"; "" when unknown         */
     char type_full[VIEW_LINE_LEN];/* "Airbus A320neo"                             */
     char size_class[VIEW_LINE_LEN];/* "Mittelstreckenjet"                         */
-    char callsign[16];            /* "AUA453"                                     */
+    char callsign[16];            /* "OS 453" — flight_number(), not the callsign  */
     /* "AUA453 · Airbus A320neo" — which aircraft this is, as opposed to where
      * it is going. The line he needs to look it up afterwards, and the only
      * place the flight number appears at all. Composed here, after the

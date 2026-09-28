@@ -854,7 +854,7 @@ void screen_radar_create(lv_obj_t *parent)
  * cache and for the visible caption, so a tapped aircraft can never be
  * described differently from the nearest one.
  *
- * Line 1 follows identity.c's one rule: callsign first, registration where
+ * Line 1 follows identity.c's one rule: flight number first, registration where
  * there is no flight number, never both, never a raw ICAO designator. The
  * model falls back to "Unbekanntes Flugzeug" rather than to nothing, because
  * "we do not know what this is" is itself an answer (D46). */
@@ -872,7 +872,9 @@ static void build_caption(const aircraft_t *a, const route_t *routes, int n_rout
     }
     snprintf(name_out, nsz, "%s", name);
 
-    const char *who   = (a->flight[0] != '\0') ? a->flight : a->reg;
+    char flight[16];
+    flight_number(a->flight, flight, sizeof flight);   /* "OS 453", D89 */
+    const char *who   = (flight[0] != '\0') ? flight : a->reg;
     const char *model = actype_display_name(a->type, a->category);
     if (model == NULL) {
         model = STR_UNKNOWN_AIRCRAFT;

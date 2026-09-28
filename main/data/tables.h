@@ -41,6 +41,13 @@ const char *airport_de(const char *icao);
  */
 const char *airline_de(const char *icao3);
 
+/* The same key, mapped to the 2-character IATA designator printed on tickets
+ * and departure boards: "AUA" -> "OS". NULL when the code is not in the table,
+ * which is deliberately limited to designators known to be right
+ * (tbl_airline.c) — the caller then keeps the callsign as it is.
+ */
+const char *airline_iata(const char *icao3);
+
 /* ---- 3. ICAO aircraft type -> structured entry ------------------------ */
 
 /* Keyed on the ICAO type designator from adsb.lol's `t` field (e.g. "A20N",
@@ -84,6 +91,7 @@ typedef struct {
 
 const str_lookup_t   *tbl_airport_entries(size_t *count);
 const str_lookup_t   *tbl_airline_entries(size_t *count);
+const str_lookup_t   *tbl_airline_iata_entries(size_t *count);
 const actype_lookup_t *tbl_actype_entries(size_t *count);
 
 /* ICAO emitter category ("A1", "A3", "B1", ...) -> plain German class name.

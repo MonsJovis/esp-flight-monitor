@@ -7,9 +7,12 @@
  *
  * Two identifiers, and which one applies depends on what is flying:
  *
- *   The CALLSIGN is the flight number — "AUA453", "RYR4MR". Airliners have
- *   one; it is what is printed on a boarding pass and what Flightradar24
- *   searches on.
+ *   The FLIGHT NUMBER — "OS 453", "FR 2381" — is what is printed on a
+ *   boarding pass and on the departure board. The feed does not carry it; it
+ *   carries the ATC CALLSIGN, "AUA453", which uses the ICAO airline code
+ *   instead of the IATA one. flight_number() below turns one into the other
+ *   where that is possible, and keeps the callsign where it is not
+ *   ("RYR4MR" carries no flight number at all — D89).
  *
  *   The REGISTRATION is the aircraft's own name — "OE-LBA", "D-EABC". A
  *   glider or a Cessna over the house has no flight number at all, so the
@@ -33,7 +36,7 @@
 extern "C" {
 #endif
 
-/* Writes "RYR4MR · Boeing 737-800", or "OE-ABC · Cessna 172", or just
+/* Writes "OS 453 · Airbus A320neo", "RYR4MR · Boeing 737-800", or "OE-ABC · Cessna 172", or just
  * "RYR4MR" when the model is unknown or unwanted, or "" when the feed gave
  * neither an identifier nor a type.
  *
@@ -47,6 +50,21 @@ extern "C" {
  */
 size_t aircraft_identity(const aircraft_t *ac, bool with_model,
                          char *out, size_t outsz);
+
+/* The flight number as the ticket prints it, from the ATC callsign.
+ *
+ *   "AUA453"  -> "OS 453"    ICAO airline code + digits: the IATA form
+ *   "BAW012"  -> "BA 12"     leading zeros are not part of the number
+ *   "RYR4MR"  -> "RYR4MR"    letters in the suffix: no flight number exists,
+ *                            so the callsign stays, exactly as before
+ *   "OEABC"   -> "OEABC"     not an airline callsign at all
+ *   "XYZ123"  -> "XYZ123"    airline not in tbl_airline.c: never guess
+ *
+ * The callsign itself stays the KEY everywhere (route_find(), the route
+ * cache); this is display text only. Returns bytes written, excluding the
+ * NUL, clamped to what fit. NULL or "" writes "".
+ */
+size_t flight_number(const char *callsign, char *out, size_t outsz);
 
 /* The same joining rule, for callers that already hold the two strings.
  *
