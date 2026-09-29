@@ -37,7 +37,7 @@ APP_CFLAGS := $(CFLAGS_COMMON) $(SAN) -Wall -Wextra -Wno-unused-parameter \
               -I$(ROOT)/main/data -I$(ROOT)/main/net -I$(ROOT)/main/power \
               -I$(ROOT)/main/debug -I$(CJSON_DIR)
 
-.PHONY: all run clean
+.PHONY: all run clean readme
 all: run
 
 $(BUILD)/lvgl/%.o: $(LVGL)/src/%.c lv_conf.h
@@ -75,6 +75,33 @@ LIST_SRCS := $(ROOT)/main/ui/screen_list.c \
 
 $(BUILD)/sim_list: sim_list.c sim_common.h $(LIST_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
 	@$(CC) $(APP_CFLAGS) -o $@ sim_list.c $(LIST_SRCS) $(BUILD)/liblvgl.a -lm
+
+# The README's pictures (sim_readme.c): the real Gloggnitz capture through
+# every screen, recompressed into docs/screens/. Not part of `run` — it writes
+# into the tree, and only when someone asks it to.
+READMEDIR := $(ROOT)/docs/screens
+README_SRCS := $(ROOT)/main/ui/screen_radar.c \
+               $(ROOT)/main/ui/screen_list.c \
+               $(ROOT)/main/ui/screen_overhead.c \
+               $(ROOT)/main/ui/widget_compass.c \
+               $(ROOT)/main/ui/widget_busy.c \
+               $(wildcard $(ROOT)/main/ui/fonts/*.c) \
+               $(wildcard $(ROOT)/main/data/*.c) \
+               $(ROOT)/main/net/adsb_parse.c \
+               $(ROOT)/main/net/route_parse.c \
+               $(CJSON_DIR)/cJSON.c
+
+$(BUILD)/sim_readme: sim_readme.c sim_common.h $(README_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
+	@$(CC) $(APP_CFLAGS) -o $@ sim_readme.c $(README_SRCS) $(BUILD)/liblvgl.a -lm
+
+readme: $(BUILD)/sim_readme
+	@mkdir -p $(OUT)
+	@echo "== readme"
+	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_readme $(OUT)
+	@python3 png_squeeze.py $(OUT)/readme_radar.png    $(READMEDIR)/radar.png
+	@python3 png_squeeze.py $(OUT)/readme_liste.png    $(READMEDIR)/liste.png
+	@python3 png_squeeze.py $(OUT)/readme_detail.png   $(READMEDIR)/detail.png
+	@python3 png_squeeze.py $(OUT)/readme_no_route.png $(READMEDIR)/detail-ohne-route.png
 
 run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list
 	@mkdir -p $(OUT)

@@ -1,215 +1,291 @@
 # Flugradar
 
-A 4-inch panel that answers one question, in German:
+A 4-inch touch panel that answers one question, in German:
 
 > **Das Flugzeug da oben — wo fliegt es hin, wo kommt es her, und was ist es?**
+>
+> *That plane up there — where is it going, where did it come from, and what is it?*
 
-![Radar](docs/screens/3-radar.png)
+![Radar: twelve aircraft within 55 km, the nearest ringed and named along the bottom edge](docs/screens/radar.png)
 
-Real traffic over Gloggnitz, Lower Austria. This is what the panel shows by itself, with
-nobody touching it: where they are, which way they point, how many there are, north up,
-and the nearest one named along the bottom edge. Every picture in this file is the panel's
-own framebuffer read back over USB, not a mockup.
+Real traffic over Gloggnitz, Lower Austria, at 09:47 on 18 September 2026. This is what the
+panel shows by itself, with nobody touching it: where the aircraft are, which way they point,
+how many there are, north up, and the nearest one named along the bottom edge. Here the
+nearest is a helicopter, 16,8 km to the north-north-east.
 
-Tap one, and it answers in words:
+Tap an aircraft, and the panel answers in words:
 
-![Über dir jetzt](docs/screens/1-ueber-dir.png)
+![Detail: Skopje → Wien, landing in about 14 minutes](docs/screens/detail.png)
 
-An Austrian Airlines flight out of Vienna, 4.793 m up, 16,4 km to the north-east, on its
-way to Bologna.
+An Austrian Airlines Airbus A220 from Skopje, 6.187 m up and 49 km to the south, due to land
+in Vienna in about fourteen minutes. The same moment, the same sky.
 
 ## Why it exists
 
-It was built for one person: my father-in-law, who is Austrian, in his eighties, and not
-technical. When he hears a plane he pulls out his phone and opens Flightradar24. This has
-to be faster and easier than that, or there is no reason for it to exist.
+I built it for one person: my father-in-law. He is Austrian, in his eighties, and not
+technical. When he hears a plane, he takes out his phone and opens Flightradar24. The panel
+has to be faster and easier than that. If it is not, there is no reason for it to exist.
 
-So the whole design follows from two things he does. He **hears a plane and glances up** —
-the scope is already showing him where it is and how many are up there, with nothing to
-press. Or he **wants it in words** — and taps the aircraft.
+The whole design follows from two things he does:
 
-That split is his own correction. It originally opened on the written answer and kept the
-scope a swipe away, which is what the brief said to do. After living with it he asked for
-the other way round, and he was right: the glance is served by the picture, and the tap
-costs him nothing.
+- He **hears a plane and glances up.** The scope already shows where it is and how many are
+  up there. He does not press anything.
+- He **wants the answer in words.** He taps the aircraft.
 
-That is why the destination is the headline in 100 px type rather than a field in a table,
-why it says "Airbus A321neo" and not `A21N`, and why the screen is never blank: an empty
-panel reads as *broken* to someone who did not build it.
+That split is his own correction. The first version opened on the written answer and kept
+the scope a swipe away, as the brief said. After living with it he asked for the other way
+round, and he was right: the picture serves the glance, and the tap costs him nothing.
 
-He splits the year between Gloggnitz, Vienna and Pattaya. One tap moves the device —
-location, time zone, clock and all. He never sets a clock, because the timezone is bound to
-the place rather than configured beside it.
+The same idea explains the rest:
+
+- The destination is the headline in 100 px type, not a field in a table.
+- It says "Airbus A220-300", not `BCS3`, and "Wien", not "Vienna".
+- The screen is never blank. An empty panel reads as *broken* to someone who did not build it.
+
+He spends the year between Gloggnitz, Vienna and Pattaya. One tap moves the device: the
+location, the time zone and the clock all follow. He never sets a clock, because the time
+zone belongs to the place instead of being a setting beside it.
 
 ## The screens
 
-Two pages side by side, and the answer one layer underneath either of them.
+There are two pages side by side, Radar and Liste. The answer in words is one layer under
+either of them.
 
-| | |
+**Radar** is the default page, [pictured at the top](#flugradar), north up. Magenta is the
+nearest aircraft, cyan is every other one. A filled mark has a filed route; a hollow one has
+not. The white ring shows which aircraft the caption is naming. Between polls the marks move
+the way the aircraft do, instead of jumping once every twelve seconds.
+
+**Liste** shows everything in range, nearest first, and it scrolls. Each row has two lines:
+where it is going (or what it is, if there is no route), then how far and in which
+direction. On the right, small: who it is. That is the flight number as printed on a ticket
+(`OS 453` rather than the radio callsign `AUA453`) where one can be worked out, otherwise
+the callsign or the registration.
+
+The colours come from aviation, not from taste: magenta is the thing you are heading toward
+(the route, the bearing, the nearest aircraft), green is normal, amber is a missing value.
+No colour ever carries meaning on its own; there is always a shape or a word beside it. That
+is FAA AC 25-11A and RTCA DO-257A, written by people who had already learned what happens
+when a glance goes wrong.
+
+**Moving around:**
+
+- Swipe between Radar and Liste.
+- Tap a mark on the radar to move the caption to that aircraft. Tap the caption to open the
+  detail layer.
+- Tap a row in the list to open the detail layer.
+- On the detail layer, **Zurück** sits top left. A tap anywhere on the screen does the same,
+  because a man in his eighties should not have to aim for a button.
+- After 30 seconds of an untouched, empty sky the deck returns to the radar by itself. The
+  detail layer never closes on its own: if it is open, someone is reading it.
+
+**Aircraft without a route are not a failure case.** In the capture above, the four nearest
+aircraft had no flight plan: a helicopter, two light aircraft, and a Ryanair jet whose route
+the route service itself marked as implausible. The light aircraft are exactly the ones he
+*hears*, low and slow over the house. They keep the same layout: the type becomes the
+headline, and an amber tag says what is missing.
+
+| Liste | Detail, no route |
 |---|---|
-| ![Radar](docs/screens/3-radar.png) | ![Liste](docs/screens/2-liste.png) |
-| **Radar** — where they are and which way they point, north up. Magenta is the nearest, cyan has a filed route, amber does not. The marks are carried forward between polls, so they creep the way the aircraft does instead of jumping once every twelve seconds. | **Liste** — everything in range, nearest first, scrolling. Two lines a row: where it is going, then how far and in which direction — with the flight number and the model in the half of that line the distance was never using. |
+| ![Liste: twelve aircraft in range, the nearest four without a route](docs/screens/liste.png) | ![Detail without a route: KEIN FLUGPLAN, Kleinflugzeug](docs/screens/detail-ohne-route.png) |
 
-Swipe between the two. Tap an aircraft on either one — or the caption along the bottom of
-the radar — and **Über dir jetzt** opens underneath it: the same answer the device used to
-open on, now one tap away instead of zero. **Zurück** sits in the top-left, and a tap
-anywhere on the screen does the same thing, because a man in his eighties should not have
-to find a button.
+For a known light-aircraft type the sentence is more specific: *"Eine Route gibt es nur zu
+Flügen mit Flugnummer."* ("Only flights with a flight number have a route.")
 
-After 30 seconds of an untouched, empty sky the deck returns to the radar by itself. The
-detail layer never closes on its own — if it is open, someone is reading it.
+**Everything else** lives in **Einstellungen**, which opens with a long press anywhere on
+the deck, so he cannot land there by accident:
 
-Aircraft with no filed route are not a failure case — seven of the thirteen in our first
-live capture were light aircraft with no flight plan, and those are precisely the ones he
-*hears*, low and slow over the house. They keep the layout and say why:
+- **Ort** — where the device stands: Gloggnitz, Wien, Pattaya, or any place found by name
+  with **Ort suchen**.
+- **Umkreis** — how far to look (default 55 km).
+- **Helligkeit** — brightness, plus a night dim window.
+- **WLAN** — an on-screen network list and keyboard, with umlauts. No captive portal, no
+  phone.
+- **Software** — check for an update now, and install it now.
 
-> **Eine Route gibt es nur zu Flügen mit Flugnummer.**
+A small signal meter in the top right corner shows what the radio hears. Its steps were
+measured on this hardware: one bar means "too weak for the aircraft poll to finish".
 
-Settings are one screen: where he is, how far to look, how bright, and when to dim.
+A 3-second press on the side key switches the device on, and the same press switches it off.
 
-| | |
-|---|---|
-| ![Einstellungen](docs/screens/4-einstellungen.png) | ![WLAN](docs/screens/6-wlan.png) |
+### How the pictures above are made
+
+They are rendered on a computer, not photographed. `test/sim/sim_readme.c` runs the
+**real screen code** and **real LVGL 9.6**, in the device's own render mode, into a
+480 × 480 RGB565 framebuffer. The input is the **real adsb.lol capture and adsb.im route
+answer** in `test/fixtures/`, parsed by the device's own parsers. Not drawn: the page dots
+and the corner meters. They belong to the deck around the screens.
+
+```bash
+make -C test/sim readme    # re-renders docs/screens/ from the capture
+```
+
+On the unit itself, `tools/grab_screen.py` reads the live framebuffer back over USB. That is
+how every layout bug in [`docs/DECISIONS.md`](docs/DECISIONS.md) was found.
 
 ## Hardware
 
-**Waveshare ESP32-S3-Touch-LCD-4B** — the "Smart 86 Box". ESP32-S3-WROOM-1-N16R8, 16 MB
-flash, 8 MB octal PSRAM, a 480 × 480 ST7701 RGB565 panel and a GT911 touch controller, in
-a standard 86-type wall-plate form factor (86.5 × 86.5 × 14 mm). Power is USB-C on the
-side edge.
+**Waveshare ESP32-S3-Touch-LCD-4B**, the "Smart 86 Box":
 
-Built with **ESP-IDF 5.4.4**, the Waveshare BSP and **LVGL 9.6**, in C.
+- ESP32-S3-WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM
+- 480 × 480 ST7701 panel on an RGB565 bus, GT911 touch controller
+- AXP2101 power management; power over USB-C
+- a standard 86-type wall plate, 86.5 × 86.5 × 14 mm
 
-```
-ls /dev/cu.usbmodem*          # the board re-enumerates; the node is not fixed
+An optional 3.7 V Li-ion cell on the PH2.0 header keeps it running for about four hours off
+the cable. The driver is written and reads back correctly on the unit, but no cell has been
+connected yet. Every code path works the same without one.
+
+The full board profile — pins, I²C addresses, and what is **not** on the board despite the
+reseller listings — is in [`docs/HARDWARE.md`](docs/HARDWARE.md). Beware: the
+`ESP32-S3-Touch-LCD-4` without the "B" is a different board, and its pin table is wrong for
+this one.
+
+## Building it
+
+Written in C with **ESP-IDF 5.4.4** (the patch level matters, see D81), the Waveshare BSP
+and **LVGL 9.6**.
+
+**Before the first build, generate a signing key.** Every image is signed (see
+[Updating it remotely](#updating-it-remotely)). An unsigned build does not fail to compile:
+it builds, flashes, and then aborts on boot.
+
+```bash
+. ~/esp/esp-idf/export.sh
+idf.py secure-generate-signing-key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
 idf.py build
+ls /dev/cu.usbmodem*          # the board re-enumerates; the node name is not fixed
 idf.py -p /dev/cu.usbmodem101 flash monitor
 ```
 
-WiFi credentials are typed straight into the device over serial and stored in NVS. They
-are never in this repository and never pass through a config file:
+WiFi credentials can be typed on the panel itself, or sent over serial into NVS. Either way
+they never pass through this repository or a config file:
 
-```
+```bash
 python3 tools/provision.py
 ```
 
 ## Standing it up
 
-The board is a flush wall plate, which is the wrong shape for a table, so
+The board is a flush wall plate, which is the wrong shape for a table. So
 [`hardware/desk_stand.scad`](hardware/desk_stand.scad) is a parametric wedge that holds it
-at 20° off vertical — square to the sight line of someone seated about 70 cm away, which
-is the same geometry the type sizes are set from. 95 × 55 mm footprint, one part, no
-supports, with a notch so a right-angle USB-C plug leaves sideways instead of pushing the
-stand off the table.
+at 20° off vertical. That is square to the sight line of someone seated about 70 cm away,
+the same geometry the type sizes are set from. The footprint is 95 × 55 mm, one part, no
+supports. A notch lets a right-angle USB-C plug leave sideways instead of pushing the stand
+off the table.
 
-**It has not been printed, and its dimensions come from the datasheet rather than from
-calipers on the unit in hand.** Render `part = "fittest"` first — it is the slot and the
-lip alone, four minutes of filament, and it tells you whether the depth is right before
-you commit to an hour.
+**It has not been printed yet, and its dimensions come from the datasheet, not from
+calipers on the real unit.** Render `part = "fittest"` first. It is only the slot and the
+lip: four minutes of filament that tell you whether the depth is right before you commit to
+an hour.
 
 ## How it gets verified
 
-The panel is the product, so the panel is what gets checked. `tools/grab_screen.py` pulls
-the live framebuffer back over USB and writes it as a PNG — every screenshot above is the
-real thing, read off the hardware, not a mockup. Every layout bug in `docs/DECISIONS.md`
-was found that way, including several no host test could ever have seen.
+Everything that can be tested off the device is tested off the device. Neither needs a board
+or a network. The host suite runs in under ten seconds from a clean tree; the simulators
+need one `idf.py build` to fetch LVGL, then compile it once (about 20 s):
 
-Everything that can be tested off the device is:
-
-```
-cd test/host && make
+```bash
+make -C test/host    # parsers, formatters, tables, settings, failover, OTA policy, gates
+make -C test/sim     # Radar, Liste and detail layer: real LVGL, a scripted finger, ASan/UBSan
 ```
 
-Nine suites and two gates, **28,069 checks**, under ten seconds from a clean tree. Half of
-that count is one exhaustive cross-product: all 13,824 combinations of hour, window start
-and window end, with the updater's answer checked against the dimmer's own — two
+`make` prints the exact count; it is in the tens of thousands of checks. Most of them come
+from exhaustive loops. One example: all 13,824 combinations of hour, dim-window start and
+dim-window end, checking the updater's answer against the dimmer's. These are two
 implementations of one midnight wrap, in two translation units that cannot share code. If
-they ever disagree the device dims at one hour and installs at another, and only one of
-those is visible. The gates:
+they ever disagreed, the device would dim at one hour and install at another, and only one
+of the two is visible.
 
-- **`check_font_coverage.py`** — LVGL draws a missing glyph as *nothing at all*. No error,
-  no placeholder, just text that is shorter than you wrote. This fails the build if any
-  string needs a character the generated font subset lacks.
+The simulators in `test/sim` render the real screens into a framebuffer, press them with a
+scripted finger, and check the result from pixels. That is how the radar's touch handling
+was verified without a board attached.
+
+Three gates run with the host suite and fail the build:
+
+- **`check_font_coverage.py`** — LVGL draws a missing glyph as *nothing at all*: no error,
+  no placeholder, just text shorter than you wrote. This fails if any string needs a
+  character the generated font lacks.
 - **`check_strings.py`** — every user-facing word lives in `main/strings_de.h`. This fails
-  the build if one leaks into a widget constructor. `--list` prints the whole German
-  vocabulary, grouped by screen, for reading aloud.
+  if one leaks into a widget. `--list` prints the whole German vocabulary, grouped by
+  screen, for reading aloud.
+- **`check_console_keys.py`** — the serial debug console is documented in two places. This
+  fails if either list drifts from the code.
 
 ## Updating it remotely
 
-It spends half the year 9,000 km away, so it can update itself — but only if you tell it
-where from, and it leaves the workshop not knowing. Press `u` on the serial console and
-paste the manifest URL:
+It spends half the year 9,000 km away, so it updates itself. It leaves the workshop not
+knowing where from: press `u` on the serial console and paste the manifest URL.
 
 ```
 https://github.com/MonsJovis/esp-flight-monitor/releases/latest/download/manifest.json
 ```
 
-That is a GitHub release asset, which answers `302` every time; the device follows the
-redirect itself. Behind it is the file each release publishes next to the image:
+That GitHub release asset answers with a `302`; the device follows the redirect itself.
+Behind it is the file each release publishes next to the image:
 
 ```json
 {
-  "version": "0.2.0",
-  "url": "https://github.com/MonsJovis/esp-flight-monitor/releases/download/v0.2.0/esp-flight-monitor-0.2.0.bin",
+  "version": "1.0.5",
+  "url": "https://github.com/MonsJovis/esp-flight-monitor/releases/download/v1.0.5/esp-flight-monitor-1.0.5.bin",
   "size": 2428928
 }
 ```
 
-**Publishing one** is a tag. `.github/workflows/release.yml` runs the whole host suite,
-builds with `PROJECT_VER` taken from the tag, signs the image, checks the finished binary
-against the tag it is being published under, writes that manifest from the numbers it just
-verified, and uploads both:
+**Publishing a release is a tag.** `.github/workflows/release.yml` then:
+
+1. runs the whole host suite,
+2. builds with `PROJECT_VER` taken from the tag,
+3. signs the image,
+4. checks the finished binary against the tag (`tools/check_release.py`),
+5. writes the manifest from the numbers it just verified, and uploads both.
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag -a v1.0.6 -m v1.0.6 && git push origin v1.0.6
 ```
 
-**Images are signed**, and the device checks. This is Secure Boot V2's signature scheme
-without hardware secure boot: no fuses are burned and the bootloader is still replaceable
-over USB, but a firmware image has to be signed by the same key that signed whatever is
-already running, so controlling the URL is no longer enough to control the device. The
-public half is in `tools/ota_signing_key.pub.pem`; the private half is in a GitHub Actions
-secret and nowhere else.
+**Images are signed, and the device checks.** This is the Secure Boot V2 signature scheme
+without hardware secure boot: no fuses are burned, and the bootloader can still be replaced
+over USB. But a new image must be signed by the same key as the image already running, so
+controlling the URL is not enough to control the device. The public half of the key is
+`tools/ota_signing_key.pub.pem`. The private half is a GitHub Actions secret and nowhere
+else. A key you generate yourself works fine on a panel you flash yourself; it just cannot
+update the one already in Austria, which is the point.
 
-That has one consequence if you build this yourself: **generate a key before your first
-build**, because an unsigned build aborts on boot rather than failing to compile.
+**When it installs:**
 
-```bash
-idf.py secure-generate-signing-key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
-```
+- **By itself:** it checks about once a day and installs only inside the night dim window.
+  That is a precaution, not a measurement. Small NVS writes were measured on this unit and do
+  *not* tear the panel, but a 2.4 MB image write is a different workload, and nobody has yet
+  watched the glass during one. At 3 a.m. it costs nothing to assume the worse case.
+- **When asked:** the **Software** row in Einstellungen checks now and offers *Jetzt
+  installieren*. Someone standing in front of the panel does not want to wait for the night.
 
-A fresh key is fine — a panel you flash yourself will run your builds happily. It just
-cannot update the one already in Austria, which is the point.
-
-It checks about once a day and installs **only inside the night dim window**. That is a
-precaution rather than a measurement: small NVS writes were measured on this unit and do
-*not* tear the panel (espressif/esp-bsp#570 does not reproduce here), but a 2 MB image
-write is a different workload. One has now run — 2.4 MB in about 26 seconds — and it
-still is not a measurement, because the person present was reading the serial log rather
-than looking at the glass. So the question the window exists for is open in the same way
-it always was. At 3 a.m. it costs nothing to assume the worse case.
-
-A freshly written image boots on probation: it has to stay on WiFi for two minutes before
-it confirms itself, and if it cannot, the bootloader puts the working build back. Plain
-HTTP is refused — whoever controls that URL controls the device.
+A fresh image boots on probation. It must stay on WiFi for two minutes before it confirms
+itself; if it cannot, the bootloader puts the previous build back. Plain HTTP is refused:
+whoever controls that URL controls the device.
 
 ## Data
 
-Positions come from **[adsb.lol](https://adsb.lol)**, routes from
-**[adsb.im](https://adsb.im)**. Both are free, community-run, and this device is a polite
-client: one position request every 12 seconds and never faster than 10, because rapid
-requests earn a `429` and then a multi-minute `503`. Route lookups are batched — one POST
-resolves every callsign on screen — and cached to NVS, so a route survives a reboot and is
-never asked for twice. A route does not change mid-flight.
+- **Positions:** [adsb.lol](https://adsb.lol)
+- **Routes:** [adsb.im](https://adsb.im)
+- **Place names**, for Ort suchen: [Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)
 
-Place names, for setting where the device is standing, come from
-**[Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)** — one
-request when somebody taps Suchen, and none otherwise. It was chosen over Nominatim and
-Photon for a reason that looks like a detail and is not: it answers over plain HTTP, and
-the other two redirect to HTTPS. This device carries no TLS on its data path because a
-handshake wants about 40 KB of internal heap and the board has roughly 24 KB free. It also
-returns each place's timezone, which is what lets the clock follow the location without
-anyone setting one.
+All three are free, and the first two are run by volunteers, so this device is a polite
+client:
+
+- One position request every 12 seconds, never faster than 10. Rapid requests earn a `429`,
+  then a multi-minute `503`.
+- Route lookups are batched: one POST resolves every callsign on screen. Routes are cached in
+  NVS, so a route survives a reboot and is never asked for twice. A route does not change
+  mid-flight.
+- The geocoder is called once when someone taps Suchen, and never otherwise.
+
+All three are called over **plain HTTP**, on purpose. A TLS handshake wants about 40 KB of
+internal heap, and the board has about 24 KB free. That is also why Open-Meteo won over
+Nominatim and Photon: both redirect to HTTPS. Open-Meteo also returns each place's time
+zone, which is what lets the clock follow the location. Endpoints, measured rate limits and
+the fallback order are in [`docs/DATA.md`](docs/DATA.md).
 
 > Contains information from **adsb.lol**, which is made available under the
 > [Open Database License (ODbL) v1.0](https://opendatacommons.org/licenses/odbl/1-0/).
@@ -224,23 +300,22 @@ anyone setting one.
 
 This project's own code is [MIT](LICENSE).
 
-It also reuses other people's code, fonts and data — the Waveshare BSP's display init
-path, the route parser from sky_overhead, the rotated aircraft glyph from ThingPulse,
-IBM Plex, and flight data from adsb.lol and Open-Meteo. Those come under their own
-terms, which travel with them into any fork and into every firmware image built from
-this. [THIRD-PARTY.md](THIRD-PARTY.md) lists what, from whom, and under which licence.
+It also reuses other people's code, fonts and data: the Waveshare BSP's display init path,
+the route parser from sky_overhead, the rotated aircraft glyph from ThingPulse, IBM Plex, and
+flight data from adsb.lol and Open-Meteo. Those come under their own terms, which travel
+with them into any fork and into every firmware image built from this.
+[THIRD-PARTY.md](THIRD-PARTY.md) lists what, from whom, and under which licence.
 
 ## Reading the repo
 
-| | |
+| File | What is in it |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | The operating manual. Product intent, verified hardware profile, data architecture, the gotchas that cost a day each, and the three ways this repo has actually failed. |
-| [`docs/DESIGN.md`](docs/DESIGN.md) | Colour semantics, type scale, screen inventory. Read before building any screen. |
-| [`docs/PLAN.md`](docs/PLAN.md) | Milestones M0–M8 and where the build actually is. |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Every decision and why, including the ones that turned out to be wrong. |
-| [`docs/RESEARCH.md`](docs/RESEARCH.md) | Survey of the existing open-source flight radars, and what was worth taking. |
-
-The colour vocabulary is borrowed from aviation, not chosen for looks: magenta is the
-active route, green is normal, amber is a missing value, and no colour ever carries
-meaning on its own — that is FAA AC 25-11A and RTCA DO-257A, and they were written by
-people who had already learned what happens when a glance goes wrong.
+| [`AGENTS.md`](AGENTS.md) | The operating manual and router: product intent, the dev loop, the serial console, settled decisions, conventions, and the three ways this repo has actually failed. |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Colour meanings, type scale, size floors, every screen. Read before building one. |
+| [`docs/PLAN.md`](docs/PLAN.md) | Milestones M0–M13 and what is actually done. |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Every decision (D1–D91) and why, including the ones that turned out wrong. |
+| [`docs/HARDWARE.md`](docs/HARDWARE.md) | The verified board profile. |
+| [`docs/DATA.md`](docs/DATA.md) | The APIs, their measured rate limits, and the fallback order. |
+| [`docs/GOTCHAS.md`](docs/GOTCHAS.md) | The things that cost a day each. Read before your first build. |
+| [`docs/PLACES.md`](docs/PLACES.md) | Where the device stands, and what that means for the clock and the poll. |
+| [`docs/RESEARCH.md`](docs/RESEARCH.md) | A survey of existing open-source flight radars, and what was worth taking. |
