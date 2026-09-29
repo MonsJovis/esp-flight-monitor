@@ -99,9 +99,9 @@ readme: $(BUILD)/sim_readme
 	@echo "== readme"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_readme $(OUT)
 	@python3 png_squeeze.py $(OUT)/readme_radar.png    $(READMEDIR)/radar.png
-	@python3 png_squeeze.py $(OUT)/readme_liste.png    $(READMEDIR)/liste.png
+	@python3 png_squeeze.py $(OUT)/readme_liste.png    $(READMEDIR)/list.png
 	@python3 png_squeeze.py $(OUT)/readme_detail.png   $(READMEDIR)/detail.png
-	@python3 png_squeeze.py $(OUT)/readme_no_route.png $(READMEDIR)/detail-ohne-route.png
+	@python3 png_squeeze.py $(OUT)/readme_no_route.png $(READMEDIR)/detail-no-route.png
 
 run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list
 	@mkdir -p $(OUT)

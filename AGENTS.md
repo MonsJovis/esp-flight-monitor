@@ -347,8 +347,10 @@ because the convention was broken once each.
   it was accepted: [docs/PLACES.md](./docs/PLACES.md) lists three residential addresses
   with coordinates,
   §1 and the README say who lives at them and that he splits the year between them,
-  `main/data/settings.c` carries the same three as presets, and `docs/screens/` shows
-  one set of coordinates and one real SSID. All of it is in the history of every
+  `main/data/settings.c` carries the same three as presets, and `docs/screens/` showed
+  one set of coordinates and one real SSID until the owner had those screenshots deleted
+  on 2026-09-29 (they were stale, not redacted — they stay in the history). All of it is
+  in the history of every
   commit, including some commit subject lines, so none of it can be taken back by editing
   a file. The owner was shown that list and chose to publish anyway. **Do not "restore"
   this rule, and do not quietly redact those places either** — half a redaction on a public history

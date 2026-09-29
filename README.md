@@ -1,23 +1,23 @@
-# Flugradar
+# Flight Radar
 
-A 4-inch touch panel that answers one question, in German:
+A 4-inch touch panel that answers one question:
 
-> **Das Flugzeug da oben — wo fliegt es hin, wo kommt es her, und was ist es?**
->
-> *That plane up there — where is it going, where did it come from, and what is it?*
+> **That plane up there — where is it going, where did it come from, and what is it?**
+
+It is built for a German-speaking user, so everything on the screen is in German.
 
 ![Radar: twelve aircraft within 55 km, the nearest ringed and named along the bottom edge](docs/screens/radar.png)
 
 Real traffic over Gloggnitz, Lower Austria, at 09:47 on 18 September 2026. This is what the
 panel shows by itself, with nobody touching it: where the aircraft are, which way they point,
 how many there are, north up, and the nearest one named along the bottom edge. Here the
-nearest is a helicopter, 16,8 km to the north-north-east.
+nearest is a helicopter, 16.8 km to the north-north-east.
 
 Tap an aircraft, and the panel answers in words:
 
-![Detail: Skopje → Wien, landing in about 14 minutes](docs/screens/detail.png)
+![Detail: Skopje → Vienna, landing in about 14 minutes](docs/screens/detail.png)
 
-An Austrian Airlines Airbus A220 from Skopje, 6.187 m up and 49 km to the south, due to land
+An Austrian Airlines Airbus A220 from Skopje, 6,187 m up and 49 km to the south, due to land
 in Vienna in about fourteen minutes. The same moment, the same sky.
 
 ## Why it exists
@@ -39,7 +39,8 @@ round, and he was right: the picture serves the glance, and the tap costs him no
 The same idea explains the rest:
 
 - The destination is the headline in 100 px type, not a field in a table.
-- It says "Airbus A220-300", not `BCS3`, and "Wien", not "Vienna".
+- It says "Airbus A220-300", not `BCS3`, and it names cities the way he would, not in the
+  English the route service returns.
 - The screen is never blank. An empty panel reads as *broken* to someone who did not build it.
 
 He spends the year between Gloggnitz, Vienna and Pattaya. One tap moves the device: the
@@ -48,15 +49,15 @@ zone belongs to the place instead of being a setting beside it.
 
 ## The screens
 
-There are two pages side by side, Radar and Liste. The answer in words is one layer under
+There are two pages side by side, Radar and List. The answer in words is one layer under
 either of them.
 
-**Radar** is the default page, [pictured at the top](#flugradar), north up. Magenta is the
+**Radar** is the default page, [pictured at the top](#flight-radar), north up. Magenta is the
 nearest aircraft, cyan is every other one. A filled mark has a filed route; a hollow one has
 not. The white ring shows which aircraft the caption is naming. Between polls the marks move
 the way the aircraft do, instead of jumping once every twelve seconds.
 
-**Liste** shows everything in range, nearest first, and it scrolls. Each row has two lines:
+**List** shows everything in range, nearest first, and it scrolls. Each row has two lines:
 where it is going (or what it is, if there is no route), then how far and in which
 direction. On the right, small: who it is. That is the flight number as printed on a ticket
 (`OS 453` rather than the radio callsign `AUA453`) where one can be worked out, otherwise
@@ -70,11 +71,11 @@ when a glance goes wrong.
 
 **Moving around:**
 
-- Swipe between Radar and Liste.
+- Swipe between Radar and List.
 - Tap a mark on the radar to move the caption to that aircraft. Tap the caption to open the
   detail layer.
 - Tap a row in the list to open the detail layer.
-- On the detail layer, **Zurück** sits top left. A tap anywhere on the screen does the same,
+- On the detail layer, a back label sits top left. A tap anywhere on the screen does the same,
   because a man in his eighties should not have to aim for a button.
 - After 30 seconds of an untouched, empty sky the deck returns to the radar by itself. The
   detail layer never closes on its own: if it is open, someone is reading it.
@@ -85,21 +86,21 @@ the route service itself marked as implausible. The light aircraft are exactly t
 *hears*, low and slow over the house. They keep the same layout: the type becomes the
 headline, and an amber tag says what is missing.
 
-| Liste | Detail, no route |
+| List | Detail, no route |
 |---|---|
-| ![Liste: twelve aircraft in range, the nearest four without a route](docs/screens/liste.png) | ![Detail without a route: KEIN FLUGPLAN, Kleinflugzeug](docs/screens/detail-ohne-route.png) |
+| ![List: twelve aircraft in range, the nearest four without a route](docs/screens/list.png) | ![Detail without a route: an amber no-flight-plan tag over the words light aircraft](docs/screens/detail-no-route.png) |
 
-For a known light-aircraft type the sentence is more specific: *"Eine Route gibt es nur zu
-Flügen mit Flugnummer."* ("Only flights with a flight number have a route.")
+For a known light-aircraft type the sentence under the headline is more specific: only
+flights with a flight number have a route.
 
-**Everything else** lives in **Einstellungen**, which opens with a long press anywhere on
+**Everything else** lives in **Settings**, which opens with a long press anywhere on
 the deck, so he cannot land there by accident:
 
-- **Ort** — where the device stands: Gloggnitz, Wien, Pattaya, or any place found by name
-  with **Ort suchen**.
-- **Umkreis** — how far to look (default 55 km).
-- **Helligkeit** — brightness, plus a night dim window.
-- **WLAN** — an on-screen network list and keyboard, with umlauts. No captive portal, no
+- **Location** — where the device stands: Gloggnitz, Vienna, Pattaya, or any place found
+  by name with the **location search**.
+- **Radius** — how far to look (default 55 km).
+- **Brightness** — plus a night dim window.
+- **WiFi** — an on-screen network list and keyboard, with umlauts. No captive portal, no
   phone.
 - **Software** — check for an update now, and install it now.
 
@@ -187,7 +188,7 @@ need one `idf.py build` to fetch LVGL, then compile it once (about 20 s):
 
 ```bash
 make -C test/host    # parsers, formatters, tables, settings, failover, OTA policy, gates
-make -C test/sim     # Radar, Liste and detail layer: real LVGL, a scripted finger, ASan/UBSan
+make -C test/sim     # Radar, List and detail layer: real LVGL, a scripted finger, ASan/UBSan
 ```
 
 `make` prints the exact count; it is in the tens of thousands of checks. Most of them come
@@ -258,8 +259,8 @@ update the one already in Austria, which is the point.
   That is a precaution, not a measurement. Small NVS writes were measured on this unit and do
   *not* tear the panel, but a 2.4 MB image write is a different workload, and nobody has yet
   watched the glass during one. At 3 a.m. it costs nothing to assume the worse case.
-- **When asked:** the **Software** row in Einstellungen checks now and offers *Jetzt
-  installieren*. Someone standing in front of the panel does not want to wait for the night.
+- **When asked:** the **Software** row in Settings checks now and offers to install right
+  away. Someone standing in front of the panel does not want to wait for the night.
 
 A fresh image boots on probation. It must stay on WiFi for two minutes before it confirms
 itself; if it cannot, the bootloader puts the previous build back. Plain HTTP is refused:
@@ -269,7 +270,7 @@ whoever controls that URL controls the device.
 
 - **Positions:** [adsb.lol](https://adsb.lol)
 - **Routes:** [adsb.im](https://adsb.im)
-- **Place names**, for Ort suchen: [Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)
+- **Place names**, for the location search: [Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)
 
 All three are free, and the first two are run by volunteers, so this device is a polite
 client:
@@ -279,7 +280,7 @@ client:
 - Route lookups are batched: one POST resolves every callsign on screen. Routes are cached in
   NVS, so a route survives a reboot and is never asked for twice. A route does not change
   mid-flight.
-- The geocoder is called once when someone taps Suchen, and never otherwise.
+- The geocoder is called once when someone taps Search, and never otherwise.
 
 All three are called over **plain HTTP**, on purpose. A TLS handshake wants about 40 KB of
 internal heap, and the board has about 24 KB free. That is also why Open-Meteo won over
