@@ -187,6 +187,13 @@ attribution.
   Their terms do not permit mirroring the route data into another database,
   and this project does not: routes are cached per callsign for the flight and
   go no further.
+- **[Lufthansa Open API](https://developer.lufthansa.com/docs)** — flight status at
+  Vienna, read by the `timetable` workflow, never by a device (D94). Licensed under
+  Lufthansa's [General Terms and Conditions](https://developer.lufthansa.com/General_Terms_and_Conditions)
+  (version May 2018): the data may be shown to the users of an application, and may not
+  be redistributed. The workflow is off until the owner switches it on, for that reason.
+- **[OurAirports](https://ourairports.com/data/)** — IATA to ICAO airport codes, used by
+  the same workflow. Public domain.
 - **[Open-Meteo](https://open-meteo.com/en/docs/geocoding-api)** — place names
   and timezones when someone searches for a location. Derived from
   [GeoNames](https://www.geonames.org/) under

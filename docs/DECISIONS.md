@@ -3534,3 +3534,82 @@ right *and* the callsign's digits must be the flight number. `test_identity.c` k
 **Not changed:** KLM. The only evidence is a secondhand report of KL605 flying as KLM281.
 It goes out when a pair is seen, not before. Austrian, BA, LOT, Korean and ITA numeric
 callsigns matched their flight numbers in every sample (research notes, 2026-10-19).
+
+## D94 — The ticket's number for an alphanumeric callsign, from a timetable CI builds
+
+**The report:** the panel showed `AUA25L` and `AUA26V`. The flights were OS 254 and OS
+266. "The third digit lags behind."
+
+**Why D89 could not do it.** D89 turns `AUA453` into `OS 453` because there the digits
+are the flight number. In `AUA25L` they are not: Austrian, like most airlines, gives its
+flights alphanumeric callsigns each season so that similar numbers on one frequency are
+not confused. Around Vienna that is most airline traffic. ADS-B carries only the callsign,
+and every route database stores the suffix as the "number" (adsb.im `"25L"`, adsbdb
+`"OS25L"`).
+
+**What others do (researched 2026-10-19).** tar1090, readsb, Virtual Radar Server and the
+route databases behind adsb.im, adsb.lol, adsbdb and hexdb all key on the callsign and
+cannot show it; tar1090's author: "Flight number isn't broadcast on 1090 MHz." Of 45 hobby
+displays on GitHub, the 8 that show real numbers read them from Flightradar24's unofficial
+feed, which FR24's terms forbid and which FR24 has been blocking since 30 April 2026. A few
+scrape flightaware.com, whose terms forbid robots. Vienna Airport's board JSON has every
+number and its terms forbid automated access. ACARS mirrors the callsign for Austrian,
+Lufthansa, Swiss, Ryanair and Turkish (`OS025L`). The owner does not want to pay for an API.
+
+**What works, and is free: a timetable.** Airline, route and time pick the flight. And
+Austrian makes it close to exact: in all 11 pairs measured, its callsign keeps the leading
+digits of the flight number (AUA25L = OS 254, AUA25M = OS 257, AUA52TV = OS 527).
+
+**Now:**
+- **CI builds the timetable** (`.github/workflows/timetable.yml`,
+  `tools/build_timetable.py`). Every two hours it asks the Lufthansa Open API (free Public
+  Plan) for every flight arriving at and leaving VIE from 4 h back to 28 h ahead, turns
+  the airports into ICAO with OurAirports, and force-pushes `vie.csv` as the only commit
+  on the `timetable` branch. The key is an Actions secret. It never reaches a device or
+  the public tree.
+- **The panel fetches it once an hour** from raw.githubusercontent.com
+  (`net/timetable_fetch.c`), over the HTTPS path D92 opened. No redirect, headers under
+  512 bytes. Parsed into PSRAM; nothing is allocated per flight.
+- **The panel matches** (`data/timetable.c`, pure). A number is shown only when exactly
+  one flight survives: same airline, same two airports as the resolved and plausible route,
+  `now` between departure and arrival (30 min early, 60 min late allowed), the arrival
+  estimate (D79) within 45 min of the flight's arrival when there is one, and for Austrian
+  the callsign's digits leading the number. Anything else keeps the callsign, as D89 does.
+  The match runs afresh every UI tick, so nothing learned about a callsign can outlive a
+  season change.
+- **One rule still names an aircraft.** `aircraft_t.flight_no` carries the match, and
+  `aircraft_flight_number()` in identity.c is the only reader. The Radar caption, the Liste
+  and the detail layer all go through it.
+- **The writer and the reader are tested against the same bytes.** `--selftest` feeds a
+  canned API answer through the script (including the single-flight-as-object quirk) and
+  must produce `test/fixtures/timetable_sample.csv`, which `test_timetable.c` parses with
+  the device's parser. Both run in `make -C test/host`.
+
+**OFF UNTIL THE OWNER SWITCHES IT ON, and why.** Lufthansa's General Terms and Conditions
+(version May 2018) license the data for use "in connection with the Licensee's
+Application", and allow a sub-licence "to End Users to permit them to use and view the
+Licensed Data". That covers the panel showing OS 254. They also say: "Nothing in this GTC
+permits the Licensee or its Affiliates to redistribute or permit the redistribution of
+the Licensed Data", and the licensee "shall take all reasonable steps to prevent third
+parties from screen scraping or the use of other automated data collection of the Licensed
+Data". A CSV on a public branch is readable by anyone. So the job runs only when the
+repository variable `TIMETABLE_PUBLISH` is `true`. Two ways to switch it on honestly:
+ask Lufthansa for written approval (their portal invites contact for real use), or keep
+the file off the public internet, which needs a secret on every panel and a USB visit to
+each. Until then every panel gets a 404 and shows callsigns, exactly as before.
+
+**To switch it on:** register at developer.lufthansa.com, create an application on the
+Public Plan, put its key and secret into the repo's Actions secrets as `LH_CLIENT_ID` and
+`LH_CLIENT_SECRET`, set the variable, and run the workflow once by hand. The panels need
+the firmware with this change; the table reaches them within an hour of the first run.
+
+**Not covered, and staying callsigns:** Ryanair, Wizz, easyJet, Turkish and everyone else
+outside the Lufthansa Group; overflights that do not land at or leave Vienna; Pattaya.
+GitHub disables a scheduled workflow after 60 days without repository activity; the panel
+then runs out of flights within 28 hours and goes back to callsigns.
+
+**Not verified:** the Lufthansa API has never answered this repo (no key yet), so the
+response handling rests on its documentation, and whether it returns every Austrian flight
+at VIE is unknown. The Austrian prefix rule rests on 11 pairs from one evening. The
+tolerances are judgement, not measurement: log a week across the 25 Oct season change
+before trusting them. Not seen on the panel.

@@ -306,7 +306,9 @@ the per-project survey.
 **Data licences:** adsb.lol is ODbL 1.0. adsb.fi is personal/non-commercial only and
 requires attribution. adsbdb's route data may be displayed but **not mirrored into another
 database**. Open-Meteo's geocoding data is GeoNames under **CC BY 4.0**, and its free tier
-is non-commercial. Show an attribution line in the UI — there are two now, at the foot of
+is non-commercial. The Lufthansa Open API's data may be shown to the panel's users but
+**not redistributed**, which is why the timetable workflow is off by default (D94).
+Show an attribution line in the UI — there are two now, at the foot of
 Einstellungen (`STR_ATTRIBUTION`, `STR_ATTRIBUTION_2`), because all of it does not fit on
 one line at that size and a truncated attribution is not a cosmetic problem.
 
@@ -326,7 +328,9 @@ because the convention was broken once each.
   there are seven screens and three people editing them.
 - **One rule names an aircraft**, and it lives in `main/data/identity.c`: callsign first,
   registration where there is no flight number, never both, and never the raw ICAO
-  designator in front of him (D36, D46).
+  designator in front of him (D36, D46). The flight number is the timetable's where it
+  matched exactly one flight, else the one the callsign spells; read it through
+  `aircraft_flight_number()`, never `ac->flight` (D89, D94).
 - **The UI formats nothing.** `view_model_t` carries final display text — German, correct
   units, correctly grouped numbers. Screens position strings and pick colours. That split
   is what lets the whole language layer be tested on the host in milliseconds.

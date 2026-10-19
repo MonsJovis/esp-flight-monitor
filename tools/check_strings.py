@@ -194,6 +194,14 @@ _NON_UI_LITERALS = {
         "adsb.lol (point)", "adsb.lol (lat/lon/dist)",
         "NE", "SE", "SW", "NW",
     ),
+    # The first line and the "generated" line of the CSV the timetable
+    # workflow writes (D94). File syntax, matched byte for byte, never drawn.
+    "main/data/timetable.h": (
+        "# esp-flight-monitor timetable 1",
+    ),
+    "main/data/timetable.c": (
+        "# generated ",
+    ),
     # NVS key templates, one per stored network slot; "seq%d" records when
     # each was last chosen (D91).
     "main/net/wifi.c": (

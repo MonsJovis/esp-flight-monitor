@@ -41,6 +41,11 @@ typedef struct {
      * only thing that says WHAT is overhead when `t` is missing — which happens
      * for real aircraft, not just blocked ones. */
     char    category[4];
+    /* The ticket's flight number, "OS 254", when the timetable matched this
+     * aircraft to exactly one flight (D94); "" otherwise, which is always the
+     * case straight out of the parser. Display text only: `flight` stays the
+     * key everywhere. Read it through aircraft_flight_number(), not here. */
+    char    flight_no[12];
 } aircraft_t;
 
 typedef struct {

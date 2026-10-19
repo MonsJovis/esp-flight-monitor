@@ -84,7 +84,7 @@ size_t aircraft_identity(const aircraft_t *ac, bool with_model,
      * fixed-size arrays in aircraft_t, so a missing one is an empty string
      * rather than NULL. */
     char flight[16];
-    flight_number(ac->flight, flight, sizeof flight);
+    aircraft_flight_number(ac, flight, sizeof flight);
     const char *who = (flight[0]  != '\0') ? flight
                     : (ac->reg[0] != '\0') ? ac->reg
                     : NULL;
@@ -95,4 +95,20 @@ size_t aircraft_identity(const aircraft_t *ac, bool with_model,
     const char *model = with_model ? actype_display_name(ac->type, ac->category) : NULL;
 
     return identity_compose(who, model, out, outsz);
+}
+
+size_t aircraft_flight_number(const aircraft_t *ac, char *out, size_t outsz)
+{
+    if (out == NULL || outsz == 0) {
+        return 0;
+    }
+    if (ac == NULL) {
+        out[0] = '\0';
+        return 0;
+    }
+    if (ac->flight_no[0] != '\0') {
+        int n = snprintf(out, outsz, "%s", ac->flight_no);
+        return (n < 0) ? 0 : ((size_t)n < outsz ? (size_t)n : outsz - 1);
+    }
+    return flight_number(ac->flight, out, outsz);
 }

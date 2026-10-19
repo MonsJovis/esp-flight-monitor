@@ -97,3 +97,43 @@ will get the device IP-banned from a free community service.
 
 **Cache routes per callsign for the whole flight** — a route never changes mid-flight.
 In practice that means one `routeset` POST every few minutes, not one per poll.
+
+---
+
+## Flight numbers for alphanumeric callsigns (D94)
+
+Nothing above knows that `AUA25L` is OS 254. ADS-B carries only the callsign, and every
+route database stores its suffix as the "number" (adsb.im: `"number": "25L"`, adsbdb:
+`"callsign_iata": "OS25L"`, both checked 2026-10-19). The research that day found no free
+source that maps the two and may be read by a program. The ones that know are
+Flightradar24's feed and flightaware.com, whose terms forbid robots, and Vienna Airport's
+board JSON, whose terms forbid automated access.
+
+What the panel does instead is match on airline, route and time against a timetable that
+CI builds:
+
+```
+CI      →  POST https://api.lufthansa.com/v1/oauth/token        (client credentials)
+CI      →  GET  https://api.lufthansa.com/v1/operations/flightstatus/{arrivals|departures}/VIE/{yyyy-MM-ddTHH:mm}
+CI      →  GET  https://davidmegginson.github.io/ourairports-data/airports.csv   (IATA → ICAO)
+Panel   →  GET  https://raw.githubusercontent.com/MonsJovis/esp-flight-monitor/timetable/vie.csv
+```
+
+- **Lufthansa Open API, Public Plan.** Free, registration at developer.lufthansa.com,
+  OAuth2 client credentials. A window is four hours and returns at most 80 flights; one
+  flight comes back as an object, several as a list (their Known Issues page). No callsign,
+  no registration in the answer. Covers the Lufthansa Group: Austrian, Lufthansa, Swiss,
+  Brussels and the rest, a little over half of VIE's movements. **Never seen answering
+  for this repo:** nobody had a key when it was built.
+- **The CI asks 64 times a run** (one window an hour, from 4 h back to 28 h ahead,
+  arrivals and departures), every two hours. That is under 800 calls a day.
+- **The panel asks once an hour**, ~25 KB, and gets a 404 until the workflow has
+  published something. A 404 changes nothing on screen.
+- **Austrian keeps the leading digits.** In all 11 pairs checked, the callsign's digits
+  were the start of the OS number and the letters were free: AUA25L = OS 254, AUA25M =
+  OS 257, AUA52TV = OS 527. So for Austrian the match also requires that prefix. No other
+  airline at Vienna does this (DLH6HE = LH 1340, RYR93QM = FR 780).
+- **Callsigns move between seasons.** AUA25L flew Frankfurt to Graz until 31 Oct 2025
+  and Hamburg to Vienna after. The match never caches a callsign's number: it matches
+  route and time afresh every two seconds, so a season change cannot leave a stale number
+  behind. The next change is Sun 25 Oct 2026.

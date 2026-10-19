@@ -23,6 +23,7 @@
 #include "http_get.h"
 #include "route_parse.h"
 #include "source_logic.h"
+#include "timetable_fetch.h"
 
 static const char *TAG = "flight_source";
 
@@ -641,6 +642,11 @@ static void flight_source_task(void *arg)
         } else {
             ESP_LOGW(TAG, "%d consecutive failure(s), published snapshot is stale", failures);
         }
+
+        /* Once an hour, on this task because it is the network task and its
+         * stack already carries a TLS handshake every poll (D92, D94). It does
+         * not depend on the poll having worked: a different host. */
+        timetable_fetch_if_due();
 
         /* A notification, not a vTaskDelay, so a location change is answered
          * now rather than after a twelve-second (or five-minute) wait. */

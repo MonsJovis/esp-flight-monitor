@@ -1,0 +1,65 @@
+# Build the timetable the panel matches alphanumeric callsigns against (D94).
+#
+# Every two hours, tools/build_timetable.py asks the Lufthansa Open API for
+# every flight at Vienna and writes vie.csv. This job force-pushes that file as
+# the only commit on the `timetable` branch, and the panel reads it from
+# raw.githubusercontent.com once an hour (main/net/timetable_fetch.h). Until it
+# has run, the panel gets a 404 and shows callsigns exactly as before.
+#
+# OFF UNTIL SWITCHED ON. It runs only when the repository variable
+# TIMETABLE_PUBLISH is "true", and it needs two secrets from a free Public Plan
+# account at developer.lufthansa.com: LH_CLIENT_ID and LH_CLIENT_SECRET.
+# Read D94 before setting the variable. Lufthansa's terms allow showing their
+# data to the users of an app, not redistributing it, and this branch is public.
+#
+# The key is in this job and nowhere else. First-party actions only, for the
+# reason release.yml gives: a job that holds a secret runs nobody else's code.
+name: timetable
+
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: timetable
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: vars.TIMETABLE_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same check the host suite runs: the writer must still produce the
+      # bytes the device's parser is tested against.
+      - name: Check the writer against its fixture
+        run: python3 tools/build_timetable.py --selftest
+
+      - name: Build the timetable
+        env:
+          LH_CLIENT_ID: ${{ secrets.LH_CLIENT_ID }}
+          LH_CLIENT_SECRET: ${{ secrets.LH_CLIENT_SECRET }}
+        run: |
+          mkdir -p out
+          python3 tools/build_timetable.py --airport VIE --out out/vie.csv
+
+      # A fresh one-commit repository each time, force-pushed: the branch is a
+      # file drop, not history. ci.yml only runs for main, so this push starts
+      # nothing else.
+      - name: Publish to the timetable branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          git init -q -b timetable
+          git add vie.csv
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "timetable $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            timetable

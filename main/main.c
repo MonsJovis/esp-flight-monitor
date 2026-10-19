@@ -65,6 +65,7 @@
 #include "net/flight_source.h"
 #include "net/source_logic.h"
 #include "net/timesync.h"
+#include "net/timetable_fetch.h"
 #include "net/ota.h"
 #include "net/adsb_parse.h"
 #include "data/extrapolate.h"
@@ -622,6 +623,16 @@ static void network_status(void)
             if (ssids[i][0]) ESP_LOGW(TAG, "  stored slot %d: %s", i, ssids[i]);
         }
     }
+
+    int     tt_flights = 0;
+    int64_t tt_gen     = 0;
+    timetable_status(&tt_flights, &tt_gen);
+    if (tt_gen > 0 && timesync_is_set()) {
+        ESP_LOGW(TAG, "  timetable: %d flight(s), generated %lld min ago (D94)",
+                 tt_flights, (long long)(time(NULL) - tt_gen) / 60);
+    } else {
+        ESP_LOGW(TAG, "  timetable: %d flight(s) loaded (D94)", tt_flights);
+    }
     /* NULL, not a throwaway array: wifi_scan() logs the dBm and the channel
      * of everything it sees on its way past, so asking for the numbers here
      * only to print them again would put each network on the console twice. */
@@ -811,6 +822,13 @@ static void ui_task(void *arg)
         time_t raw = time(NULL);
         struct tm now;
         localtime_r(&raw, &now);
+
+        /* The ticket's number for an alphanumeric callsign, where the
+         * timetable is certain (D94). Here, once, after the moves and the
+         * filter above and before anything reads `ac`, so the radar, the list
+         * and the detail layer name each aircraft the same way. No clock, no
+         * match: the time is half of what it matches on. */
+        timetable_annotate(ac, n, rt, n_rt, timesync_is_set() ? (int64_t)raw : 0);
 
         /* What the amber "KEIN NETZ" caution actually means.
          *
@@ -2179,6 +2197,10 @@ void app_main(void)
     double lat, lon;
     settings_coords(&g_settings, &lat, &lon);
     bsp_display_brightness_set(g_settings.brightness_pct);
+
+    /* Before anything that fetches or reads it: the poller fetches it, the
+     * UI task annotates with it (D94). */
+    timetable_init();
 
     if (wifi_start() == ESP_OK) {
         ESP_ERROR_CHECK(flight_source_start(lat, lon, g_settings.radius_nm));

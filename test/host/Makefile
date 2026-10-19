@@ -29,8 +29,8 @@ CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 
-.PHONY: all clean fontcheck stringcheck keycheck $(TESTS)
-all: fontcheck stringcheck keycheck $(TESTS)
+.PHONY: all clean fontcheck stringcheck keycheck timetablecheck $(TESTS)
+all: fontcheck stringcheck keycheck timetablecheck $(TESTS)
 
 # A glyph missing from the subset renders as NOTHING in LVGL — no error, no
 # placeholder. That is not something to discover on the panel, so it is checked
@@ -52,6 +52,13 @@ stringcheck:
 keycheck:
 	@echo "== console keys"
 	@python3 $(ROOT)/tools/check_console_keys.py
+
+# The timetable's writer runs in CI with a secret and no test of its own; this
+# feeds it a canned API answer and compares the file with the fixture the
+# device-side parser reads in test_timetable.c (D94).
+timetablecheck:
+	@echo "== timetable writer"
+	@python3 $(ROOT)/tools/build_timetable.py --selftest
 
 $(TESTS): %: $(BINDIR)/%
 	@echo "== $@"

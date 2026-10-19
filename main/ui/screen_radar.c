@@ -873,7 +873,7 @@ static void build_caption(const aircraft_t *a, const route_t *routes, int n_rout
     snprintf(name_out, nsz, "%s", name);
 
     char flight[16];
-    flight_number(a->flight, flight, sizeof flight);   /* "OS 453", D89 */
+    aircraft_flight_number(a, flight, sizeof flight);  /* "OS 453", D89/D94 */
     const char *who   = (flight[0] != '\0') ? flight : a->reg;
     const char *model = actype_display_name(a->type, a->category);
     if (model == NULL) {

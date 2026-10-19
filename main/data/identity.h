@@ -12,7 +12,9 @@
  *   carries the ATC CALLSIGN, "AUA453", which uses the ICAO airline code
  *   instead of the IATA one. flight_number() below turns one into the other
  *   where that is possible, and keeps the callsign where it is not
- *   ("RYR4MR" carries no flight number at all — D89).
+ *   ("RYR4MR" carries no flight number at all — D89). Where a timetable
+ *   says which flight an alphanumeric callsign is, aircraft_flight_number()
+ *   takes that instead ("AUA25L" -> "OS 254", D94).
  *
  *   The REGISTRATION is the aircraft's own name — "OE-LBA", "D-EABC". A
  *   glider or a Cessna over the house has no flight number at all, so the
@@ -65,6 +67,12 @@ size_t aircraft_identity(const aircraft_t *ac, bool with_model,
  * NUL, clamped to what fit. NULL or "" writes "".
  */
 size_t flight_number(const char *callsign, char *out, size_t outsz);
+
+/* The flight number for THIS aircraft: the one the timetable matched
+ * (`ac->flight_no`, D94) when there is one, else flight_number() of its
+ * callsign. Every screen names an aircraft through this, so "OS 254" reaches
+ * the Radar, the Liste and the detail layer together or not at all. */
+size_t aircraft_flight_number(const aircraft_t *ac, char *out, size_t outsz);
 
 /* The same joining rule, for callers that already hold the two strings.
  *
