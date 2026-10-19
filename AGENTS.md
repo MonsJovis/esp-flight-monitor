@@ -205,8 +205,12 @@ Reference sources:
 ## 4. Data architecture
 
 Positions from **adsb.lol**, routes from **adsb.im/routeset** (batched), place names from
-**Open-Meteo geocoding**. All three over **plain HTTP**, which is the single biggest heap
-win on this platform and is why `main/net/http_get.h` carries no TLS.
+**Open-Meteo geocoding**. ~~All three over **plain HTTP**, which is the single biggest heap
+win on this platform and is why `main/net/http_get.h` carries no TLS.~~ **Amended
+2026-10-19 (D92):** adsb.lol redirects plain HTTP to https:// now, so positions go over
+HTTPS. `http_get()` verifies an `https://` URL against the bundle OTA already carries,
+with its buffers in PSRAM. Routes and place names stay on plain HTTP, because those hosts
+still answer it and a handshake nobody asked for buys nothing.
 
 **Endpoints, field semantics, the fallback order and why these three and not OpenSky or
 Flightradar24 — [docs/DATA.md](./docs/DATA.md).**

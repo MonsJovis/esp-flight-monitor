@@ -87,19 +87,21 @@ static void test_source_table(void)
 
 static void test_build_url(void)
 {
-    GROUP("source_build_url: both adsb.lol URL shapes, plain HTTP");
+    GROUP("source_build_url: both adsb.lol URL shapes, over HTTPS (D92)");
 
     char buf[128];
     int n = source_build_url(SRC_ADSB_LOL_POINT, 47.6691, 15.9303, 30, buf, sizeof buf);
     CHECK(n > 0);
-    CHECK_STR(buf, "http://api.adsb.lol/v2/point/47.6691/15.9303/30");
+    CHECK_STR(buf, "https://api.adsb.lol/v2/point/47.6691/15.9303/30");
 
     n = source_build_url(SRC_ADSB_LOL_LATLON, 12.9211, 100.8721, 30, buf, sizeof buf);
     CHECK(n > 0);
-    CHECK_STR(buf, "http://api.adsb.lol/v2/lat/12.9211/lon/100.8721/dist/30");
+    CHECK_STR(buf, "https://api.adsb.lol/v2/lat/12.9211/lon/100.8721/dist/30");
 
-    /* No https:// anywhere — plain HTTP only (AGENTS.md architecture decision). */
-    CHECK(strstr(buf, "https://") == NULL);
+    /* HTTPS, never plain HTTP: since 2026-10-19 adsb.lol answers http:// with
+     * a 301 to https://, which http_get() deliberately does not follow, so a
+     * plain URL here is a panel with no aircraft (D92). */
+    CHECK(strncmp(buf, "https://", 8) == 0);
 
     /* Buffer too small must fail safely, not truncate silently. */
     char tiny[8];

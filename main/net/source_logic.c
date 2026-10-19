@@ -76,11 +76,11 @@ int source_build_url(source_id_t src, double lat, double lon, int radius_nm,
     int n;
     switch (src) {
     case SRC_ADSB_LOL_POINT:
-        n = snprintf(buf, buf_sz, "http://api.adsb.lol/v2/point/%.4f/%.4f/%d",
+        n = snprintf(buf, buf_sz, "https://api.adsb.lol/v2/point/%.4f/%.4f/%d",
                      lat, lon, radius_nm);
         break;
     case SRC_ADSB_LOL_LATLON:
-        n = snprintf(buf, buf_sz, "http://api.adsb.lol/v2/lat/%.4f/lon/%.4f/dist/%d",
+        n = snprintf(buf, buf_sz, "https://api.adsb.lol/v2/lat/%.4f/lon/%.4f/dist/%d",
                      lat, lon, radius_nm);
         break;
     default:

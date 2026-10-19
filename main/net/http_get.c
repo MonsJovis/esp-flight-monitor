@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 
@@ -60,11 +61,18 @@ static int do_request(const char *url, esp_http_client_method_t method,
         .event_handler = http_event_handler,
         .user_data = &ctx,
         /* Never auto-follow a redirect. adsb.lol's spurious 308 must be read
-         * as throttling, and a genuine 3xx (e.g. adsb.fi's plain-HTTP ->
-         * https:// bounce) must be surfaced as the status it is, not
-         * silently chased into a TLS connection this project does not carry
-         * the stack for (AGENTS.md §5, §7). */
+         * as throttling, and a genuine 3xx (a host bouncing http:// to
+         * https://) must be surfaced as the status it is, so the log says
+         * which URL needs changing (AGENTS.md §5, §7; D92). */
         .disable_auto_redirect = true,
+        /* Only for https://. esp_http_client picks the transport from the
+         * scheme; the bundle is what makes the TLS one verify the server
+         * rather than trust whoever answers. The default 512-byte header
+         * buffer is enough here: adsb.lol's longest header line over
+         * HTTP/1.1 measured 74 bytes, all of them 452 (2026-10-19). OTA needs
+         * 8 KB only because of GitHub's 3.6 KB CSP header (ota.c). */
+        .crt_bundle_attach = (strncmp(url, "https://", 8) == 0)
+                                 ? esp_crt_bundle_attach : NULL,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);

@@ -651,6 +651,11 @@ static void network_status(void)
 
     /* Resolve, then connect by raw IP. If the name fails but the IP works, it
      * is DNS; if both fail it is routing. */
+    /* The last address seen for api.adsb.lol, for when DNS itself is what
+     * failed. It moves: 89.58.11.153, hard-coded here until D92, stopped
+     * answering at all, which made this probe report a routing fault on a
+     * link that was fine. So the resolved address wins whenever there is one. */
+    char ip[16] = "159.195.60.218";
     struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM };
     struct addrinfo *res = NULL;
     int rc = getaddrinfo("api.adsb.lol", "80", &hints, &res);
@@ -659,15 +664,21 @@ static void network_status(void)
     } else {
         struct in_addr a = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
         ESP_LOGW(TAG, "  api.adsb.lol -> " IPSTR, IP2STR((esp_ip4_addr_t *)&a));
+        snprintf(ip, sizeof ip, IPSTR, IP2STR((esp_ip4_addr_t *)&a));
         freeaddrinfo(res);
     }
 
+    /* Plain HTTP on purpose: an IP has no name for a certificate to match.
+     * adsb.lol answers every plain request with a 301 to https:// (D92), and
+     * that is the expected result here. Any status at all proves the route. */
+    char url[64];
+    snprintf(url, sizeof url, "http://%s/v2/point/47.6691/15.9303/30", ip);
     char buf[512];
     int status = 0;
     bool trunc = false;
-    int got = http_get("http://89.58.11.153/v2/point/47.6691/15.9303/30",
-                       buf, sizeof buf, 8000, &status, &trunc);
-    ESP_LOGW(TAG, "  raw-IP GET: bytes=%d http=%d (bypasses DNS entirely)", got, status);
+    int got = http_get(url, buf, sizeof buf, 8000, &status, &trunc);
+    ESP_LOGW(TAG, "  raw-IP GET %s: bytes=%d http=%d (301 = reached; bypasses DNS)",
+             ip, got, status);
 }
 
 /* Reads the poller's snapshot and repaints. Owns no network state and does no

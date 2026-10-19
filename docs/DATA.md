@@ -8,10 +8,11 @@ Routed here from AGENTS.md §4 and §5.
 ---
 
 The ESP32 **cannot receive ADS-B** — 1090 MHz needs an SDR. All aircraft data comes from
-free community HTTP APIs. Every endpoint below was live-tested on 2026-09-18.
+free community HTTP APIs. Every endpoint below was live-tested on 2026-09-18, and again on
+2026-10-19, when adsb.lol had moved to HTTPS (D92).
 
 ```
-Positions  →  GET  http://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}
+Positions  →  GET  https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}
 Routes     →  POST http://adsb.im/api/0/routeset            (batched!)
 Type names →  const table in flash: ICAO code → "Airbus A320neo"
 Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&language=de
@@ -19,11 +20,14 @@ Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&lang
 
 ### Why this combination
 
-- **Both work over plain HTTP with no redirect.** No TLS *on the data path* means no
-  handshake and roughly 40 KB more free heap per connection — the single biggest win
-  available on this platform. (OTA does carry TLS and the Mozilla bundle, D72. The data
-  path stays plain on purpose; do not "upgrade" it.) tar1090's own source notes
-  adsb.im *prefers* HTTP here.
+- **~~Both work over plain HTTP with no redirect.~~ Amended 2026-10-19 (D92): adsb.lol
+  now answers plain HTTP with a `301` to https://, every request, so positions are polled
+  over HTTPS.** The rule used to be "no TLS on the data path": no handshake, and roughly
+  40 KB more free heap per connection. OTA had already brought TLS and the Mozilla bundle
+  in (D72) with its record buffers in PSRAM, so the heap half of that argument was gone
+  before adsb.lol forced the question. What is left is one handshake per poll. Hosts that
+  still answer plain HTTP keep it: adsb.im's routeset (`200`, and tar1090's own source
+  notes adsb.im *prefers* HTTP) and Open-Meteo (`200`), both checked 2026-10-19.
 - **`adsb.lol` pre-computes `dst` (distance, nm) and `dir` (bearing)** from the query point.
   No haversine needed on-device; sort by `dst` for free to find "the plane overhead".
 - **`adsb.im/routeset` is batched** — one POST resolves every callsign on screen, instead
@@ -49,9 +53,12 @@ Places     →  GET  http://geocoding-api.open-meteo.com/v1/search?name=…&lang
 | Layer | Primary | Fallback 1 | Fallback 2 |
 |---|---|---|---|
 | Positions | `adsb.lol` /v2/point (HTTP) | `adsb.fi` v3 (HTTPS, adds `desc` inline) | local tar1090 `aircraft.json` |
-| Routes | `adsb.im` routeset (batch) | `hexdb.io/callsign-route-iata` (**7 bytes**) | `adsbdb.com/v0/callsign` (adds airline + airport names) |
+| Routes | `adsb.im` routeset (batch) | `hexdb.io/callsign-route-iata` (**7 bytes**, HTTPS only since 2026-10) | `adsbdb.com/v0/callsign` (adds airline + airport names; HTTPS only) |
 | Airline | `airline_code` from routeset | `hexdb.io/hex-airline` | `adsbdb /v0/airline` |
 | Photo | `planespotters.net` (**custom UA required**) | `hexdb.io/hex-image` | — |
+
+None of the fallbacks is wired into `main/`. Every one of them redirects plain HTTP to
+https:// as of 2026-10-19 (`301`), which now only means each needs an `https://` URL.
 
 `adsb.fi` and `adsb.lol` share the tar1090 JSON shape, so **one parser handles both** —
 only the wrapper key differs (`ac` vs `aircraft`; adsb.fi v3 uses `ac`, v2 uses `aircraft`).
@@ -73,6 +80,13 @@ These are not documented numbers; they were hit for real during research.
   throttling it may also emit spurious `308` redirects — treat those as throttling, not
   as a real redirect.
 - **Poll positions every 10–15 s.** Never faster.
+- **adsb.lol now advertises a daily quota.** Every answer on 2026-10-19 carried
+  `x-ratelimit-limit: 4, 4;w=1, 60;w=60, 500;w=86400`: 4 per second, 60 per minute,
+  **500 per day**. A panel at the 12 s cadence makes about 7,200 polls a day. Whether the
+  daily figure is enforced per IP was not tested, because testing it means spending it.
+  Their README says limits are "dynamic based on the environment load" and that an API
+  key for feeders is coming. If the panel's log starts showing `throttled (HTTP 429)`
+  after about 100 minutes of a day, this is why (D92).
 - **`adsb.fi` is 1 request/second** and returns a bare `400` when annoyed.
 - **`adsbdb.com`**: 512 req/min → `429`; ≥1024 → **5-minute lockout**.
 - **`hexdb.io`** publishes no limit but asks you not to scrape. Cache aggressively.

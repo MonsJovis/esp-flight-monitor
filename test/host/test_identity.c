@@ -55,6 +55,8 @@ int main(void)
         static const char *const keep[] = {
             "RYR4MR", "DLH1JN", "AUA695J", "EZY12AB",   /* alphanumeric suffix       */
             "XYZ123",                                   /* airline not in the table  */
+            "WZZ839",                                   /* digits are not the number:
+                                                           W6 2274, not W6 839 (D93) */
             "OEABC", "DEVSL",                           /* a registration as callsign */
             "BAW0000", "AUA", "AUA12345", "aua453",     /* no number / too long / case */
         };

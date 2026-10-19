@@ -264,6 +264,13 @@ const str_lookup_t *tbl_airline_entries(size_t *count)
  * deliberately shorter than tbl_airline.c, and defunct carriers whose code
  * has since been reassigned are left out.
  *
+ * AND ONLY AIRLINES WHOSE DIGITS ARE THE NUMBER. A right designator is not
+ * enough: the swap also assumes the callsign's digits are the flight number,
+ * and for Wizz Air they are not. WZZ839 flew as W6 2274 (FR24 feed, sampled
+ * 2026-10-19), so "W6 839" was a number no ticket carries. WZZ is out until a
+ * sample says otherwise (D93). KLM is the next suspect on thinner evidence
+ * (KL605 reported as KLM281) and stays in until a pair is seen.
+ *
  * Sorted ascending by ICAO code for bsearch — test_tables.c checks sortedness,
  * uniqueness and the two-character shape against tbl_airline_iata_entries().
  *
@@ -392,7 +399,6 @@ static const str_lookup_t AIRLINES_IATA[] = {
     {"VLG", "VY"},
     {"VOE", "V7"},
     {"WJA", "WS"},
-    {"WZZ", "W6"},
     {"XAX", "D7"},
 };
 

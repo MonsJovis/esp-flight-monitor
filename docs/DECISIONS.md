@@ -3475,3 +3475,62 @@ attempt started, the flag was set again. The reconnect his tap asked for then sk
 and took the strongest network: the original bug, in a narrow timing window. Now a
 failure sets the flag only if the network that failed is *still* the chosen one. That
 check, and the clearing when a new choice is recorded, both happen under `g_cred_mutex`.
+
+## D92 — Positions over HTTPS, because adsb.lol stopped answering plain HTTP
+
+**Found, not reported:** on 2026-10-19, while checking a flight-number report from the
+field, `http://api.adsb.lol/v2/point/...` answered `301 Moved Permanently` to `https://`,
+with `strict-transport-security`, on every request, including with the firmware's own
+User-Agent. `http_get()` never follows a redirect (on purpose, see below), and
+`flight_source.c` treats any 3xx other than 308 as a hard failure. So every poll failed,
+the backoff climbed to five minutes, and a panel on v1.0.x showed no aircraft.
+
+**Why not just follow the redirect.** A followed 301 would cost a plain round trip plus a
+handshake on every poll, and it would hide the move until the day the http:// URL stops
+answering at all. The URL is what changed, so the URL is what changes.
+
+**Now:**
+- **Both adsb.lol URL shapes are `https://`** (`source_logic.c`). `test_source.c` asserts
+  the scheme, where it used to assert the opposite.
+- **`http_get()` attaches the certificate bundle for an `https://` URL** and leaves an
+  `http://` one plain. adsb.im's routeset and Open-Meteo still answer plain HTTP with `200`
+  (checked the same day) and stay that way.
+- **Nothing new in memory.** The Mozilla bundle has been in the image since D72, and
+  mbedTLS keeps its record buffers in PSRAM and frees them between connections
+  (`sdkconfig.defaults`). The chain adsb.lol serves is Let's Encrypt YE2 → Root YE →
+  ISRG Root X2 → ISRG Root X1, and the bundle carries X1 and X2. Its response headers come
+  to 452 bytes over HTTP/1.1, the longest line 74, so esp_http_client's default 512-byte
+  header buffer holds them. OTA's 8 KB is for GitHub's 3.6 KB CSP header, not for this.
+- **The `n` probe resolves its raw-IP target** instead of using a hard-coded one.
+  89.58.11.153 no longer answers at all, so the probe was reporting a routing fault on a
+  link that was fine. It keeps 159.195.60.218 as the fallback for when DNS is the fault,
+  and says that a `301` there means "reached".
+- AGENTS.md §4 and DATA.md amended inline; the fallback rows in DATA.md note that hexdb,
+  adsbdb and adsb.fi also redirect plain HTTP now.
+
+**Open: a daily quota.** Every adsb.lol answer that day carried
+`x-ratelimit-limit: 4, 4;w=1, 60;w=60, 500;w=86400`. At the 12 s cadence a panel makes
+about 7,200 requests a day. Whether 500 a day is enforced per IP was not tested, because
+the only test is to spend it. If it is, the log will show `throttled (HTTP 429)` after
+about 100 minutes, and the answer is a second source (adsb.fi, now that TLS is no longer
+the obstacle) or a slower cadence. Not decided here.
+
+**Checked:** host suite and firmware build. **Not yet seen on the panel**: no board was
+attached. The cost of a handshake every 12 s is unmeasured. Press `p` on the device to
+time the real request, and read the poller's `stack headroom` line, before calling this
+done.
+
+## D93 — Wizz Air's numeric callsigns are not its flight numbers
+
+**Found:** FR24's feed paired `WZZ839` with **W6 2274** on 2026-10-19. D89's
+`flight_number()` turned the same callsign into "W6 839", a number no ticket carries. D89's
+own rule says a made-up number is worse than the callsign.
+
+**Now:** `WZZ` is out of `AIRLINES_IATA`, so a Wizz callsign stays as it is transmitted.
+The table's header now says what it has really meant all along: the designator must be
+right *and* the callsign's digits must be the flight number. `test_identity.c` keeps
+`WZZ839` as `WZZ839`.
+
+**Not changed:** KLM. The only evidence is a secondhand report of KL605 flying as KLM281.
+It goes out when a pair is seen, not before. Austrian, BA, LOT, Korean and ITA numeric
+callsigns matched their flight numbers in every sample (research notes, 2026-10-19).

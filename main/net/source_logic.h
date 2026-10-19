@@ -81,11 +81,12 @@ bool source_failure_backs_off(int http_len, int http_status);
  *
  * A table, not a single URL, so a second source can be added in M4 without
  * restructuring flight_source.c. Both entries here are the SAME host
- * (api.adsb.lol) — opendata.adsb.fi was measured live on 2026-09-18 and
- * redirects plain HTTP to https:// (301), and this project carries no TLS
- * stack in M2 (AGENTS.md's ~40 KB-per-connection architecture decision).
- * TODO(M4): revisit TLS, then give adsb.fi its own enabled SRC_* entry —
- * it also returns a `desc` field inline that would remove a lookup.
+ * (api.adsb.lol), polled over https:// since D92: adsb.lol itself started
+ * redirecting plain HTTP to https:// (301) on 2026-10-19. opendata.adsb.fi
+ * did the same back on 2026-09-18, which is why it was left out while the
+ * data path carried no TLS. That reason is gone (http_get.h).
+ * TODO(M4): give adsb.fi its own enabled SRC_* entry — it also returns a
+ * `desc` field inline that would remove a lookup.
  *
  * Only source_next_enabled() should be used to pick which entry to poll;
  * do not assume SRC_ADSB_LOL_POINT is always the answer once M4 adds a
@@ -94,7 +95,8 @@ bool source_failure_backs_off(int http_len, int http_status);
 typedef enum {
     SRC_ADSB_LOL_POINT = 0,   /* GET /v2/point/{lat}/{lon}/{radius_nm} — the one actually polled */
     SRC_ADSB_LOL_LATLON,      /* GET /v2/lat/{lat}/lon/{lon}/dist/{radius_nm} — same host, alternate
-                                 URL shape. Confirmed to return the same payload over plain HTTP.
+                                 URL shape. Confirmed to return the same payload (then over plain
+                                 HTTP, 2026-09-18).
                                  NOT a failover target: it shares fate with SRC_ADSB_LOL_POINT under
                                  throttling, since it's the same host. Present in the table, disabled,
                                  purely so the shape exists for reference / future use. */
