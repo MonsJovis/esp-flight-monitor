@@ -100,40 +100,48 @@ In practice that means one `routeset` POST every few minutes, not one per poll.
 
 ---
 
-## Flight numbers for alphanumeric callsigns (D94)
+## Flight numbers for alphanumeric callsigns (D94, D95)
 
 Nothing above knows that `AUA25L` is OS 254. ADS-B carries only the callsign, and every
 route database stores its suffix as the "number" (adsb.im: `"number": "25L"`, adsbdb:
 `"callsign_iata": "OS25L"`, both checked 2026-10-19). The research that day found no free
-source that maps the two and may be read by a program. The ones that know are
-Flightradar24's feed and flightaware.com, whose terms forbid robots, and Vienna Airport's
-board JSON, whose terms forbid automated access.
+source that maps the two and may be read by a program without a key. The ones that know
+are Flightradar24's feed and flightaware.com, whose terms forbid robots, and Vienna
+Airport's board JSON, whose terms forbid automated access.
 
-What the panel does instead is match on airline, route and time against a timetable that
-CI builds:
+AeroDataBox's airport board knows both, with a free key: its ADS-B receivers fill in the
+callsign of every flight they saw. CI reads it, the panel looks callsigns up in the result:
 
 ```
-CI      →  POST https://api.lufthansa.com/v1/oauth/token        (client credentials)
-CI      →  GET  https://api.lufthansa.com/v1/operations/flightstatus/{arrivals|departures}/VIE/{yyyy-MM-ddTHH:mm}
-CI      →  GET  https://davidmegginson.github.io/ourairports-data/airports.csv   (IATA → ICAO)
-Panel   →  GET  https://raw.githubusercontent.com/MonsJovis/esp-flight-monitor/timetable/vie.csv
+CI      →  GET  https://aerodatabox.p.rapidapi.com/flights/airports/icao/LOWW/{fromLocal}/{toLocal}
+                ?withLeg=false&direction=Both&withCodeshared=false&...      (X-RapidAPI-Key)
+Panel   →  GET  https://raw.githubusercontent.com/MonsJovis/esp-flight-monitor/timetable/vie.tt
 ```
 
-- **Lufthansa Open API, Public Plan.** Free, registration at developer.lufthansa.com,
-  OAuth2 client credentials. A window is four hours and returns at most 80 flights; one
-  flight comes back as an object, several as a list (their Known Issues page). No callsign,
-  no registration in the answer. Covers the Lufthansa Group: Austrian, Lufthansa, Swiss,
-  Brussels and the rest, a little over half of VIE's movements. **Never seen answering
-  for this repo:** nobody had a key when it was built.
-- **The CI asks 64 times a run** (one window an hour, from 4 h back to 28 h ahead,
-  arrivals and departures), every two hours. That is under 800 calls a day.
-- **The panel asks once an hour**, ~25 KB, and gets a 404 until the workflow has
-  published something. A 404 changes nothing on screen.
+- **AeroDataBox, Basic plan on RapidAPI.** Free, 400 units a month, 1 request a second,
+  no commercial use. The board ("FIDS") is a Tier 2 endpoint: 2 units a call, and at most
+  12 hours a call on this plan. Each flight carries `number` ("OS 254"), `callSign`
+  ("AUA25L"), `codeshareStatus`, `status`, and `movement.airport`, which is the OTHER
+  airport of the route. The callsign comes from their ADS-B layer: "always" for a flight
+  their receivers saw, absent for one they did not (their data-coverage page). Their
+  terms: data kept seven days at most (§5.5), not passed to third parties (§5.8), and
+  credited when it came through a free plan (§5.4). **Never seen answering for this
+  repo:** nobody had a key when it was built.
+- **The CI asks twice a day**, the last twelve hours each time: 4 units a day, about 120
+  a month. It keeps the pairs of the last six days, so a weekly flight is still known on
+  its next day, and drops everything seen before the current IATA season began.
+- **The file is encrypted** (AES-256-CTR and HMAC-SHA256, `main/net/timetable_crypt.h`),
+  because it sits on a public branch and AeroDataBox's terms forbid giving it to anyone
+  but our own users. The key is the `TIMETABLE_KEY` Actions secret and sits in each
+  panel's NVS (`tools/provision.py --timetable-key`).
+- **The panel asks once an hour**, about 100 KB at most, and only with a key. Until the
+  workflow has published something it gets a 404, which changes nothing on screen.
+- **A pair names a flight only on its own route.** The panel's routeset answer must have
+  the same two airports, so a callsign that moved to another route is not misnamed.
 - **Austrian keeps the leading digits.** In all 11 pairs checked, the callsign's digits
   were the start of the OS number and the letters were free: AUA25L = OS 254, AUA25M =
-  OS 257, AUA52TV = OS 527. So for Austrian the match also requires that prefix. No other
-  airline at Vienna does this (DLH6HE = LH 1340, RYR93QM = FR 780).
+  OS 257, AUA52TV = OS 527. A pair for AUA that breaks this is treated as bad data. No
+  other airline at Vienna does this (DLH6HE = LH 1340, RYR93QM = FR 780).
 - **Callsigns move between seasons.** AUA25L flew Frankfurt to Graz until 31 Oct 2025
-  and Hamburg to Vienna after. The match never caches a callsign's number: it matches
-  route and time afresh every two seconds, so a season change cannot leave a stale number
-  behind. The next change is Sun 25 Oct 2026.
+  and Hamburg to Vienna after. The CI drops every pair seen before the season began; the
+  next change is Sun 25 Oct 2026.

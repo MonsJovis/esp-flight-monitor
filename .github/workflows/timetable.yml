@@ -1,24 +1,28 @@
-# Build the timetable the panel matches alphanumeric callsigns against (D94).
+# Build the encrypted callsign pairs the panel names aircraft with (D94, D95).
 #
-# Every two hours, tools/build_timetable.py asks the Lufthansa Open API for
-# every flight at Vienna and writes vie.csv. This job force-pushes that file as
-# the only commit on the `timetable` branch, and the panel reads it from
-# raw.githubusercontent.com once an hour (main/net/timetable_fetch.h). Until it
-# has run, the panel gets a 404 and shows callsigns exactly as before.
+# Every twelve hours, tools/build_timetable.py reads the last twelve hours of
+# Vienna's airport board from AeroDataBox (free Basic plan on RapidAPI, 2 of
+# its 400 monthly units per run), merges what it saw into the previous file,
+# encrypts the result and this job force-pushes it as the only commit on the
+# `timetable` branch. The panel reads it from raw.githubusercontent.com once
+# an hour (main/net/timetable_fetch.h). Until it has run, or on a panel with
+# no key, every aircraft keeps its callsign, exactly as before.
 #
 # OFF UNTIL SWITCHED ON. It runs only when the repository variable
-# TIMETABLE_PUBLISH is "true", and it needs two secrets from a free Public Plan
-# account at developer.lufthansa.com: LH_CLIENT_ID and LH_CLIENT_SECRET.
-# Read D94 before setting the variable. Lufthansa's terms allow showing their
-# data to the users of an app, not redistributing it, and this branch is public.
+# TIMETABLE_PUBLISH is "true", and it needs two secrets:
+#   AERODATABOX_KEY  the RapidAPI key of a subscription to AeroDataBox Basic
+#   TIMETABLE_KEY    64 hex digits; the same value goes onto every panel
+#                    (tools/provision.py --timetable-key) and into 1Password
 #
-# The key is in this job and nowhere else. First-party actions only, for the
+# The file is encrypted because it is AeroDataBox's data on a public branch,
+# and their terms forbid passing it to third parties (D95). Both keys are in
+# this job and nowhere else in the repo. First-party actions only, for the
 # reason release.yml gives: a job that holds a secret runs nobody else's code.
 name: timetable
 
 on:
   schedule:
-    - cron: '17 */2 * * *'
+    - cron: '23 5,17 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -35,28 +39,40 @@ jobs:
       - uses: actions/checkout@v4
 
       # The same check the host suite runs: the writer must still produce the
-      # bytes the device's parser is tested against.
-      - name: Check the writer against its fixture
+      # bytes the device's parser and decryptor are tested against.
+      - name: Check the writer against its fixtures
         run: python3 tools/build_timetable.py --selftest
+
+      # The last published file, so pairs from earlier runs carry over. Read
+      # from git rather than the CDN, which may still hold an older copy. On
+      # the very first run there is no branch yet, and that is fine.
+      - name: Fetch the previous timetable
+        run: |
+          mkdir -p out
+          if git fetch -q --depth=1 origin timetable 2>/dev/null; then
+            git show FETCH_HEAD:vie.tt > out/previous.tt || rm -f out/previous.tt
+          fi
 
       - name: Build the timetable
         env:
-          LH_CLIENT_ID: ${{ secrets.LH_CLIENT_ID }}
-          LH_CLIENT_SECRET: ${{ secrets.LH_CLIENT_SECRET }}
+          AERODATABOX_KEY: ${{ secrets.AERODATABOX_KEY }}
+          TIMETABLE_KEY: ${{ secrets.TIMETABLE_KEY }}
         run: |
-          mkdir -p out
-          python3 tools/build_timetable.py --airport VIE --out out/vie.csv
+          python3 tools/build_timetable.py --airport LOWW \
+            --previous out/previous.tt --out out/vie.tt
+          rm -f out/previous.tt
 
       # A fresh one-commit repository each time, force-pushed: the branch is a
-      # file drop, not history. ci.yml only runs for main, so this push starts
-      # nothing else.
+      # file drop, not history, and an older copy of AeroDataBox's data must
+      # not stay reachable from it (seven days at most, D95). ci.yml only runs
+      # for main, so this push starts nothing else.
       - name: Publish to the timetable branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd out
           git init -q -b timetable
-          git add vie.csv
+          git add vie.tt
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "timetable $(date -u +%Y-%m-%dT%H:%MZ)"

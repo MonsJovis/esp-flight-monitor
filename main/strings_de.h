@@ -218,6 +218,12 @@
  * been truncated — which for an attribution is not a cosmetic problem. */
 #define STR_ATTRIBUTION_2          "Orte Open-Meteo \xC2\xB7 GeoNames (CC BY 4.0)"
 
+/* A THIRD line, for the flight numbers (D95). AeroDataBox's terms require
+ * naming them as the source when the data comes through their free plan
+ * (§5.4), and the callsign pairs do. Its own line for the same reason as the
+ * second: appended to either, it runs past the content column. */
+#define STR_ATTRIBUTION_3          "Flugnummern AeroDataBox"
+
 /* The running firmware version, on its own line under the two attributions.
  * It exists for one conversation: for half the year the device is 9,000 km
  * from anyone who could look at it, and "what does it say at the very bottom

@@ -4,6 +4,10 @@
 ROOT      := ../..
 IDF_PATH  ?= $(HOME)/esp/esp-idf
 CJSON_DIR := $(IDF_PATH)/components/json/cJSON
+# The same mbedtls sources the firmware builds, for timetable_crypt.c only
+# (D95). tt_mbedtls_config.h switches on AES and HMAC-SHA256 and nothing else.
+MBEDTLS   := $(IDF_PATH)/components/mbedtls/mbedtls
+MBEDTLS_SRCS := $(addprefix $(MBEDTLS)/library/, aes.c sha256.c md.c platform_util.c constant_time.c)
 
 # Host-safe module sources: parsers and data tables only. Anything that touches
 # esp_* headers belongs in a different file and is not linked here.
@@ -16,8 +20,9 @@ MODULE_SRCS := $(wildcard $(ROOT)/main/data/*.c) \
                $(wildcard $(ROOT)/main/net/source_logic.c) \
                $(wildcard $(ROOT)/main/net/ota_policy.c) \
                $(wildcard $(ROOT)/main/net/wifi_pick.c) \
+               $(wildcard $(ROOT)/main/net/timetable_crypt.c) \
                $(wildcard $(ROOT)/main/power/*_policy.c)
-SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c
+SRCS        := $(MODULE_SRCS) $(CJSON_DIR)/cJSON.c $(MBEDTLS_SRCS)
 
 TESTS   := $(patsubst %.c,%,$(wildcard test_*.c))
 BINDIR  := build
@@ -25,7 +30,8 @@ BINDIR  := build
 CFLAGS  := -std=c11 -g -O1 -Wall -Wextra -Wno-unused-parameter \
            -I$(ROOT)/main -I$(ROOT)/main/data -I$(ROOT)/main/net -I$(ROOT)/main/ui \
            -I$(ROOT)/main/power \
-           -I$(CJSON_DIR) -I. \
+           -I$(CJSON_DIR) -I$(MBEDTLS)/include -I. \
+           -DMBEDTLS_CONFIG_FILE=\"tt_mbedtls_config.h\" \
            -DHOST_TEST=1 -DTEST_DIR=\"$(CURDIR)\"
 LDFLAGS := -lm
 

@@ -10,6 +10,13 @@ appears in any log or transcript.
 
 Slot 0 is the Austrian network, slot 1 the Thai one — the device stores several
 and connects to whichever is in range, because it travels (AGENTS.md §6).
+
+    python3 tools/provision.py --timetable-key
+
+stores the key that opens the callsign pairs CI publishes (D95): the same 64
+hex digits as the repo's TIMETABLE_KEY secret, kept in the personal 1Password
+next to the signing key. The same rules as the password: prompted for, never
+echoed, never written anywhere, filtered out of everything printed back.
 """
 import argparse, getpass, json, subprocess, sys, time
 import serial
@@ -47,11 +54,45 @@ def prompt_credentials():
            _osascript("WLAN-Passwort:", True)
 
 
+def provision_timetable_key(port):
+    if sys.stdin.isatty():
+        key = getpass.getpass("Timetable key, 64 hex digits (not echoed): ").strip()
+    else:
+        print("no TTY here — opening a dialog on your desktop...", flush=True)
+        key = _osascript("Fahrplan-Schlüssel (64 Hex-Zeichen):", True).strip()
+    if len(key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key):
+        sys.exit("not 64 hex digits; nothing sent")
+
+    with serial.Serial(port, 115200, timeout=0.5) as s:
+        s.reset_input_buffer()
+        s.write(b"T")                      # firmware prompts for one line
+        s.flush()
+        time.sleep(0.5)
+        s.write(key.encode() + b"\n")
+        s.flush()
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            line = s.readline().decode("utf-8", "replace").rstrip()
+            # The console echoes what it reads; never print a line with the key.
+            if not line or key.lower() in line.lower():
+                continue
+            print("  " + line)
+            if "timetable key" in line and ("stored" in line or "rejected" in line
+                                            or "could not" in line):
+                return
+    print("no answer seen — press 'n' on the device to check the timetable line")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default=_default_port())
     ap.add_argument("--slot", type=int, default=0, choices=range(4))
+    ap.add_argument("--timetable-key", action="store_true",
+                    help="store the timetable key instead of a WiFi network (D95)")
     a = ap.parse_args()
+    if a.timetable_key:
+        provision_timetable_key(a.port)
+        return
 
     ssid, password = prompt_credentials()
     if not ssid:

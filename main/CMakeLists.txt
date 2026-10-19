@@ -43,6 +43,7 @@ set(SRCS
     "net/http_get.c"
     "net/flight_source.c"
     "net/timetable_fetch.c"
+    "net/timetable_crypt.c"
     "net/timesync.c"
     "net/ota_policy.c"
     "net/ota.c"

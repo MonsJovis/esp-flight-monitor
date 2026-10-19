@@ -194,13 +194,22 @@ _NON_UI_LITERALS = {
         "adsb.lol (point)", "adsb.lol (lat/lon/dist)",
         "NE", "SE", "SW", "NW",
     ),
-    # The first line and the "generated" line of the CSV the timetable
-    # workflow writes (D94). File syntax, matched byte for byte, never drawn.
+    # The first line and the "generated" line of the plaintext the timetable
+    # workflow writes (D94, D95). File syntax, matched byte for byte, never drawn.
     "main/data/timetable.h": (
-        "# esp-flight-monitor timetable 1",
+        "# esp-flight-monitor timetable 2",
     ),
     "main/data/timetable.c": (
         "# generated ",
+    ),
+    # The encrypted container's magic and the two key-derivation labels
+    # (D95). Bytes the CI writes and the panel checks, never drawn.
+    "main/net/timetable_crypt.h": (
+        "ESPFMTT2",
+    ),
+    "main/net/timetable_crypt.c": (
+        "esp-flight-monitor timetable 2 enc",
+        "esp-flight-monitor timetable 2 mac",
     ),
     # NVS key templates, one per stored network slot; "seq%d" records when
     # each was last chosen (D91).

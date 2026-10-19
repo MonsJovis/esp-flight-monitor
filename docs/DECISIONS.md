@@ -3537,6 +3537,12 @@ callsigns matched their flight numbers in every sample (research notes, 2026-10-
 
 ## D94 — The ticket's number for an alphanumeric callsign, from a timetable CI builds
 
+> **Data source superseded by D95 (2026-10-19).** Lufthansa's developer portal answered
+> "Registration is currently disabled", so this never ran. What carries over: the
+> workflow-plus-branch delivery, the hourly fetch, `aircraft_flight_number()` as the one
+> reader, the Austrian prefix rule, and the writer/reader fixture check. The time-window
+> matcher and the Lufthansa script are gone.
+
 **The report:** the panel showed `AUA25L` and `AUA26V`. The flights were OS 254 and OS
 266. "The third digit lags behind."
 
@@ -3613,3 +3619,68 @@ response handling rests on its documentation, and whether it returns every Austr
 at VIE is unknown. The Austrian prefix rule rests on 11 pairs from one evening. The
 tolerances are judgement, not measurement: log a week across the 25 Oct season change
 before trusting them. Not seen on the panel.
+
+## D95 — The flight numbers come from AeroDataBox's airport board, encrypted for the panels
+
+**Why D94's source went:** Lufthansa's developer portal answered "Registration is currently
+disabled". No key, no timetable.
+
+**Why AeroDataBox is better anyway.** Its airport board ("FIDS") lists the ATC callsign
+next to the flight number, filled in by its own ADS-B receivers. So there is nothing to
+guess from route and time: the pair *is* the answer, AUA25L flew HAM to VIE as OS 254. It
+covers every airline at Vienna, not only the Lufthansa Group, and it settles numeric
+callsigns that are not their flight number too (WZZ839 is W6 2274, D93). The Basic plan on
+RapidAPI is free: 400 units a month, and a board call is 2 units for up to 12 hours.
+Airlines give a flight the same callsign every day of a season, so what CI saw yesterday
+names today's flights.
+
+**Now:**
+- **CI collects the pairs** (`tools/build_timetable.py`, `.github/workflows/timetable.yml`).
+  At 05:23 and 17:23 UTC it reads the last twelve hours of Vienna's board, about 120 units a
+  month. It opens the previous file and merges: a pair seen again is refreshed, a pair
+  older than six days or seen before the current IATA season began is dropped. A callsign
+  that came back with two numbers on one route in the same run is left out. Codeshares,
+  cargo, cancelled and diverted flights are skipped.
+- **The panel looks the callsign up** (`data/timetable.c`). It shows a number only when the
+  callsign matches exactly, the routeset's two airports are the pair's two airports, the
+  pair is at most seven days old, and exactly one flight number is left. For Austrian, the
+  number must also start with the callsign's digits (D94's rule, now a check on the data).
+  No clock is needed except for the age.
+- **The file is encrypted.** AeroDataBox's terms forbid passing their data to third parties
+  (§5.8), and the `timetable` branch is public. CI writes `ESPFMTT2 | IV | AES-256-CTR |
+  HMAC-SHA256` with two keys derived from `TIMETABLE_KEY`; the panel checks the tag before it
+  decrypts anything (`net/timetable_crypt.c`). The cipher comes from the `openssl` command
+  and the HMAC from Python's standard library, so the job holding both secrets installs
+  nothing. The panel uses the mbedtls it already has.
+- **The key goes onto each panel once, over USB:** `tools/provision.py --timetable-key`,
+  which drives the new console key `T`. Kept in NVS, never logged, never echoed back by the
+  tool. Without a key the panel fetches nothing.
+- **They are credited**, because their free plan requires it (§5.4): a third line at the
+  foot of Einstellungen, "Flugnummern AeroDataBox".
+- **Retention.** Their terms allow seven days (§5.5). CI keeps six; the force-pushed branch
+  holds one commit; the panel ignores any pair older than seven days, so a file left behind
+  by a workflow that stopped running ages out by itself on the panel. The file on the branch
+  does not: if the workflow is retired, delete the `timetable` branch.
+- **Tested from both ends.** `--selftest` runs a canned board and a canned previous file
+  through the whole pipeline and must produce `test/fixtures/timetable_sample.csv` and,
+  with a published test key and an IV that makes the counter carry across three bytes,
+  `timetable_sample.tt`. `test_timetable.c` decrypts that `.tt` with the firmware's own code
+  against mbedtls built on the host, and parses it. Mutations of the counter carry, the
+  Austrian rule and the age check each fail the suite.
+
+**To switch it on:**
+1. Create a free RapidAPI account, subscribe to AeroDataBox **Basic**, copy the key.
+2. Make a key: `python3 -c "import secrets; print(secrets.token_hex(32))"`. Put it in the
+   personal 1Password next to the signing key.
+3. Repo secrets `AERODATABOX_KEY` and `TIMETABLE_KEY`, repo variable `TIMETABLE_PUBLISH` =
+   `true`, then run the workflow once by hand.
+4. On each panel, over USB: `python3 tools/provision.py --timetable-key`. Press `n` to see
+   the timetable line.
+
+**Not covered, and staying callsigns:** overflights that neither land at nor leave Vienna,
+flights AeroDataBox's receivers did not see, and Pattaya.
+
+**Not verified:** AeroDataBox has never answered this repo, so the response handling rests on
+their OpenAPI spec and data-coverage page, and how many Vienna flights actually carry a
+callsign there is unknown. The Austrian prefix rule rests on 11 pairs. Not seen on the panel.
+GitHub disables a scheduled workflow after 60 days without repository activity.

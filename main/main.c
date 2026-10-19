@@ -19,6 +19,7 @@
  *   n  network status and a scan of what is in range
  *   p  probe the link (DNS, then a raw GET by IP)
  *   u  the OTA update console
+ *   T  store the timetable key (typed in over serial, kept in NVS; D95)
  *   R  restart the way an install does, with core 0 kept busy (D81)
  *   y  battery: the judged status and the PMIC registers under it
  *   W  cycle a PRETENDED WLAN signal through the corner meter's five states
@@ -66,6 +67,7 @@
 #include "net/source_logic.h"
 #include "net/timesync.h"
 #include "net/timetable_fetch.h"
+#include "net/timetable_crypt.h"
 #include "net/ota.h"
 #include "net/adsb_parse.h"
 #include "data/extrapolate.h"
@@ -624,14 +626,16 @@ static void network_status(void)
         }
     }
 
-    int     tt_flights = 0;
-    int64_t tt_gen     = 0;
-    timetable_status(&tt_flights, &tt_gen);
-    if (tt_gen > 0 && timesync_is_set()) {
-        ESP_LOGW(TAG, "  timetable: %d flight(s), generated %lld min ago (D94)",
-                 tt_flights, (long long)(time(NULL) - tt_gen) / 60);
+    int     tt_pairs = 0;
+    int64_t tt_gen   = 0;
+    timetable_status(&tt_pairs, &tt_gen);
+    if (!timetable_has_key()) {
+        ESP_LOGW(TAG, "  timetable: no key stored (T), nothing fetched (D95)");
+    } else if (tt_gen > 0 && timesync_is_set()) {
+        ESP_LOGW(TAG, "  timetable: %d pair(s), generated %lld min ago (D95)",
+                 tt_pairs, (long long)(time(NULL) - tt_gen) / 60);
     } else {
-        ESP_LOGW(TAG, "  timetable: %d flight(s) loaded (D94)", tt_flights);
+        ESP_LOGW(TAG, "  timetable: %d pair(s) loaded (D95)", tt_pairs);
     }
     /* NULL, not a throwaway array: wifi_scan() logs the dBm and the channel
      * of everything it sees on its way past, so asking for the numbers here
@@ -823,11 +827,11 @@ static void ui_task(void *arg)
         struct tm now;
         localtime_r(&raw, &now);
 
-        /* The ticket's number for an alphanumeric callsign, where the
-         * timetable is certain (D94). Here, once, after the moves and the
-         * filter above and before anything reads `ac`, so the radar, the list
-         * and the detail layer name each aircraft the same way. No clock, no
-         * match: the time is half of what it matches on. */
+        /* The ticket's number for a callsign, where the pairs CI saw are
+         * certain (D94, D95). Here, once, after the moves and the filter above
+         * and before anything reads `ac`, so the radar, the list and the
+         * detail layer name each aircraft the same way. Without a clock only
+         * the age check is skipped. */
         timetable_annotate(ac, n, rt, n_rt, timesync_is_set() ? (int64_t)raw : 0);
 
         /* What the amber "KEIN NETZ" caution actually means.
@@ -1975,6 +1979,41 @@ static void restart_console(void)
     xTaskCreatePinnedToCore(restart_task, "restart", 3072, NULL, 3, NULL, 1);
 }
 
+/* The timetable key, typed in over serial (tools/provision.py
+ * --timetable-key). The same shape as provision_wifi() and for the same
+ * reason: it opens AeroDataBox's data, which only this panel's users may see
+ * (D95), so it lives in NVS and never in the repo. Never echoed back, never
+ * logged. */
+static void timetable_key_console(void)
+{
+    printf("\ntimetable key   : %s\n", timetable_has_key() ? "stored" : "(none)");
+    printf("\nPaste the 64 hex characters and press ENTER.\n"
+           "ENTER alone leaves it as it is; \"-\" removes it.\n> ");
+    fflush(stdout);
+
+    char line[80];
+    if (dbg_read_line(line, sizeof line, 120000) < 0) {
+        printf("\ntimed out, nothing stored\n");
+        return;
+    }
+    if (line[0] == '\0') {
+        printf("unchanged\n");
+    } else if (strcmp(line, "-") == 0) {
+        printf(timetable_clear_key() ? "timetable key removed\n" : "timetable key could not be removed\n");
+    } else {
+        uint8_t key[TT_KEY_LEN];
+        if (timetable_key_from_hex(line, key) != 0) {
+            printf("timetable key rejected (must be exactly 64 hex characters)\n");
+        } else if (timetable_set_key(key)) {
+            printf("timetable key stored; fetching with the next poll\n");
+        } else {
+            printf("timetable key could not be stored\n");
+        }
+        memset(key, 0, sizeof key);
+    }
+    memset(line, 0, sizeof line);
+}
+
 /* Update source, typed in over serial. Deliberately the same shape as
  * provision_wifi(): a URL that decides what firmware this device will run is
  * not something to leave in a config file in a repository either. */
@@ -2130,6 +2169,7 @@ static void on_cmd(char c)
     else if (c == 'a') { display_lock(0); bool ok = screen_geo_debug_layer(); display_unlock();
                          ESP_LOGW(TAG, "keyboard layer key: %s", ok ? "pressed" : "not found"); }
     else if (c == 'u') update_console();
+    else if (c == 'T') timetable_key_console();
     else if (c == 'R') restart_console();
     else if (c == 'd') scroll_to_end();
     else if (c == 'v') lvgl_mem_report("on demand");
@@ -2229,7 +2269,7 @@ void app_main(void)
      * line and the header block above claiming a console this firmware no
      * longer has. AGENTS.md §11 rule 1 is about exactly that. */
     ESP_LOGW(TAG, "ready: s/S=shot f=fontcard b=bench m=metrics t=tearing v=heap w=wifi n=net p=probe "
-                  "u=update U=updatesim R=restart y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
+                  "u=update T=fahrplan U=updatesim R=restart y=akku Y=akkusim W=signalsim x=touch i=detail o=ort g=seite e=einst k/K=wlan j=join "
                   "a=kbdlayer c/C=neusuchen q/Q/z/Z=ortsuche d=scroll 1-5=fixture 0=live");
 
     /* Rollback confirmation. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE a

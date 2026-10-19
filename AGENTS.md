@@ -178,7 +178,7 @@ The firmware takes single command bytes on the same serial link (`on_cmd()` in
   network (the real path) or had to force it open because everything in range is already
   saved — those are not the same check and it does not report them as one.
 - `n` network status — `p` probe the link — `w` provision WiFi — `o` cycle location
-- `u` update console — `v` LVGL heap report — `R` restart exactly as an install ends
+- `u` update console — `T` store the timetable key (D95) — `v` LVGL heap report — `R` restart exactly as an install ends
   (`esp_restart()` from core 1, WiFi up, panel live), with core 0 held busy on cached code:
   the losing side of the race that crashed the v0.9.0 install (D81), constructed, not hoped for
 - `y` battery status and the PMIC registers — `Y` pretend to be a battery (60/18/5/off)
@@ -306,11 +306,12 @@ the per-project survey.
 **Data licences:** adsb.lol is ODbL 1.0. adsb.fi is personal/non-commercial only and
 requires attribution. adsbdb's route data may be displayed but **not mirrored into another
 database**. Open-Meteo's geocoding data is GeoNames under **CC BY 4.0**, and its free tier
-is non-commercial. The Lufthansa Open API's data may be shown to the panel's users but
-**not redistributed**, which is why the timetable workflow is off by default (D94).
-Show an attribution line in the UI — there are two now, at the foot of
-Einstellungen (`STR_ATTRIBUTION`, `STR_ATTRIBUTION_2`), because all of it does not fit on
-one line at that size and a truncated attribution is not a cosmetic problem.
+is non-commercial. AeroDataBox's callsign pairs may be shown to the panel's users but
+**not passed to anyone else** and kept **seven days at most**, which is why the file the
+timetable workflow publishes is encrypted (D95). Show an attribution line in the UI —
+there are three now, at the foot of Einstellungen (`STR_ATTRIBUTION`, `_2`, `_3`),
+because all of it does not fit on one line at that size and a truncated attribution is
+not a cosmetic problem.
 
 ## 10. Conventions
 
@@ -328,9 +329,9 @@ because the convention was broken once each.
   there are seven screens and three people editing them.
 - **One rule names an aircraft**, and it lives in `main/data/identity.c`: callsign first,
   registration where there is no flight number, never both, and never the raw ICAO
-  designator in front of him (D36, D46). The flight number is the timetable's where it
-  matched exactly one flight, else the one the callsign spells; read it through
-  `aircraft_flight_number()`, never `ac->flight` (D89, D94).
+  designator in front of him (D36, D46). The flight number is the callsign pairs' where they
+  name exactly one flight, else the one the callsign spells; read it through
+  `aircraft_flight_number()`, never `ac->flight` (D89, D95).
 - **The UI formats nothing.** `view_model_t` carries final display text — German, correct
   units, correctly grouped numbers. Screens position strings and pick colours. That split
   is what lets the whole language layer be tested on the host in milliseconds.

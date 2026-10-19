@@ -5,10 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "arrival.h"
-#include "tables.h"
-
-/* ---- parsing ------------------------------------------------------------- */
+/* ---- shapes ---------------------------------------------------------------- */
 
 static bool is_icao(const char *s, size_t n)
 {
@@ -56,7 +53,46 @@ static bool parse_digits(const char *s, size_t n, long long *out)
     return true;
 }
 
-static bool parse_line(const char *p, const char *end, tt_flight_t *f)
+/* An airline's ATC callsign as Eurocontrol's rules allow it: three letters of
+ * ICAO code, one to four digits, up to two letters. "AUA25L" gives code "AUA"
+ * and digits "25"; "WZZ839" gives "WZZ" and "839". `code` and `digits` may be
+ * NULL when only the shape matters. */
+static bool split_callsign(const char *cs, size_t len, char code[4], char digits[5])
+{
+    if (len < 4 || len > 8) {
+        return false;
+    }
+    for (size_t i = 0; i < 3; i++) {
+        if (!isupper((unsigned char)cs[i])) {
+            return false;
+        }
+    }
+    size_t d = 3;
+    while (d < len && isdigit((unsigned char)cs[d])) {
+        d++;
+    }
+    if (d == 3 || d - 3 > 4 || len - d > 2) {
+        return false;
+    }
+    for (size_t i = d; i < len; i++) {
+        if (!isupper((unsigned char)cs[i])) {
+            return false;
+        }
+    }
+    if (code != NULL) {
+        memcpy(code, cs, 3);
+        code[3] = '\0';
+    }
+    if (digits != NULL) {
+        memcpy(digits, cs + 3, d - 3);
+        digits[d - 3] = '\0';
+    }
+    return true;
+}
+
+/* ---- parsing ----------------------------------------------------------------- */
+
+static bool parse_line(const char *p, const char *end, tt_pair_t *f)
 {
     const char *fld[6];
     size_t      flen[6];
@@ -80,30 +116,26 @@ static bool parse_line(const char *p, const char *end, tt_flight_t *f)
         return false;
     }
 
-    long long number, dep, arr;
-    if (!is_carrier(fld[0], flen[0]) ||
-        !parse_digits(fld[1], flen[1], &number) || number < 1 || number > 9999 ||
-        !is_icao(fld[2], flen[2]) || !is_icao(fld[3], flen[3]) ||
-        !parse_digits(fld[4], flen[4], &dep) ||
-        !parse_digits(fld[5], flen[5], &arr)) {
-        return false;
-    }
-    /* A flight lands after it leaves, and none of them flies for 20 hours. */
-    if (dep <= 0 || arr <= dep || arr - dep > 20 * 3600) {
+    long long number, seen;
+    if (!split_callsign(fld[0], flen[0], NULL, NULL) ||
+        !is_carrier(fld[1], flen[1]) ||
+        !parse_digits(fld[2], flen[2], &number) || number < 1 || number > 9999 ||
+        !is_icao(fld[3], flen[3]) || !is_icao(fld[4], flen[4]) ||
+        !parse_digits(fld[5], flen[5], &seen) || seen <= 0) {
         return false;
     }
 
     memset(f, 0, sizeof *f);
-    memcpy(f->carrier, fld[0], 2);
-    memcpy(f->from, fld[2], 4);
-    memcpy(f->to, fld[3], 4);
+    memcpy(f->callsign, fld[0], flen[0]);
+    memcpy(f->carrier, fld[1], 2);
+    memcpy(f->from, fld[3], 4);
+    memcpy(f->to, fld[4], 4);
     f->number = (uint16_t)number;
-    f->dep    = dep;
-    f->arr    = arr;
+    f->seen   = seen;
     return true;
 }
 
-int timetable_parse(const char *text, size_t len, tt_flight_t *out, int max,
+int timetable_parse(const char *text, size_t len, tt_pair_t *out, int max,
                     int64_t *generated)
 {
     if (generated != NULL) {
@@ -148,50 +180,16 @@ int timetable_parse(const char *text, size_t len, tt_flight_t *out, int max,
     return first ? -1 : n;   /* an empty body has no header either */
 }
 
-/* ---- matching ------------------------------------------------------------ */
+/* ---- lookup ------------------------------------------------------------------ */
 
-/* An airline's alphanumeric callsign: three letters, a digit, and at least
- * one letter somewhere after it. "AUA25L" gives code "AUA" and digits "25".
- * A callsign of digits only is not one of these: it already is its flight
- * number, and flight_number() says so (D89). */
-static bool split_callsign(const char *cs, char code[4], char digits[5])
-{
-    size_t len = strlen(cs);
-    if (len < 5 || len > 7) {
-        return false;
-    }
-    for (size_t i = 0; i < 3; i++) {
-        if (!isupper((unsigned char)cs[i])) {
-            return false;
-        }
-    }
-    size_t d = 3;
-    while (d < len && isdigit((unsigned char)cs[d])) {
-        d++;
-    }
-    if (d == 3 || d == len || d - 3 > 4) {
-        return false;
-    }
-    for (size_t i = d; i < len; i++) {
-        if (!isupper((unsigned char)cs[i]) && !isdigit((unsigned char)cs[i])) {
-            return false;
-        }
-    }
-    memcpy(code, cs, 3);
-    code[3] = '\0';
-    memcpy(digits, cs + 3, d - 3);
-    digits[d - 3] = '\0';
-    return true;
-}
-
-size_t timetable_match(const tt_flight_t *tt, int n, const aircraft_t *ac,
-                       const route_t *rt, int64_t now, char *out, size_t outsz)
+size_t timetable_lookup(const tt_pair_t *tt, int n, const char *callsign,
+                        const route_t *rt, int64_t now, char *out, size_t outsz)
 {
     if (out == NULL || outsz == 0) {
         return 0;
     }
     out[0] = '\0';
-    if (tt == NULL || n <= 0 || ac == NULL || rt == NULL || now <= 0) {
+    if (tt == NULL || n <= 0 || callsign == NULL || rt == NULL) {
         return 0;
     }
     if (!rt->resolved || !rt->plausible || rt->orig_icao[0] == '\0' ||
@@ -200,36 +198,23 @@ size_t timetable_match(const tt_flight_t *tt, int n, const aircraft_t *ac,
     }
 
     char code[4], digits[5];
-    if (!split_callsign(ac->flight, code, digits)) {
-        return 0;
-    }
-    const char *carrier = airline_iata(code);
-    if (carrier == NULL) {
+    if (!split_callsign(callsign, strlen(callsign), code, digits)) {
         return 0;
     }
     /* Austrian keeps the leading digits of the flight number in its
      * callsign; for everyone else the digits say nothing (timetable.h). */
     bool prefix_rule = (strcmp(code, "AUA") == 0);
 
-    int eta_min = arrival_minutes(ac, rt);
-    int64_t predicted_arr = (eta_min >= 0) ? now + (int64_t)eta_min * 60 : 0;
-
-    const tt_flight_t *hit = NULL;
+    const tt_pair_t *hit = NULL;
     for (int i = 0; i < n; i++) {
-        const tt_flight_t *f = &tt[i];
-        if (strcmp(f->carrier, carrier) != 0 ||
+        const tt_pair_t *f = &tt[i];
+        if (strcmp(f->callsign, callsign) != 0 ||
             strcmp(f->from, rt->orig_icao) != 0 ||
             strcmp(f->to, rt->dest_icao) != 0) {
             continue;
         }
-        if (now < f->dep - TT_SLACK_BEFORE_S || now > f->arr + TT_SLACK_AFTER_S) {
+        if (now > 0 && now - f->seen > TT_MAX_AGE_S) {
             continue;
-        }
-        if (predicted_arr != 0) {
-            int64_t off = predicted_arr - f->arr;
-            if (off < -TT_ETA_TOLERANCE_S || off > TT_ETA_TOLERANCE_S) {
-                continue;
-            }
         }
         if (prefix_rule) {
             char num[8];
@@ -238,7 +223,8 @@ size_t timetable_match(const tt_flight_t *tt, int n, const aircraft_t *ac,
                 continue;
             }
         }
-        if (hit != NULL && hit->number != f->number) {
+        if (hit != NULL &&
+            (hit->number != f->number || strcmp(hit->carrier, f->carrier) != 0)) {
             return 0;      /* two flights fit: not certain, so the callsign stays */
         }
         hit = f;

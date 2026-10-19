@@ -62,8 +62,9 @@ where it is going (or what it is, if there is no route), then how far and in whi
 direction. On the right, small: who it is. That is the flight number as printed on a ticket
 (`OS 453` rather than the radio callsign `AUA453`) where one can be worked out, otherwise
 the callsign or the registration. Most airline callsigns near Vienna carry letters
-(`AUA25L`), and those carry no flight number at all. Where a timetable built in CI says
-which flight it is, the panel shows that number instead (`OS 254`, D94).
+(`AUA25L`), and those carry no flight number at all. Where the pairs CI collects from
+Vienna's airport board say which flight it is, the panel shows that number instead
+(`OS 254`, D95).
 
 The colours come from aviation, not from taste: magenta is the thing you are heading toward
 (the route, the bearing, the nearest aircraft), green is normal, amber is a missing value.

@@ -701,10 +701,17 @@ void screen_settings_create(lv_obj_t *parent)
     lv_label_set_text(attrib2, STR_ATTRIBUTION_2);
     lv_obj_update_layout(attrib2);
     lv_obj_set_pos(attrib2, PAD + (CONTENT_W - lv_obj_get_width(attrib2)) / 2, y);
-    /* GAP_LABEL rather than GAP_INNER: the attributions are one item on two
+    y += lv_obj_get_height(attrib2) + GAP_INNER;
+
+    /* The flight numbers' source, required by AeroDataBox's free plan (D95). */
+    lv_obj_t *attrib3 = make_label(s_cont, &plex_mono_12, THEME_TEXT_LABEL);
+    lv_label_set_text(attrib3, STR_ATTRIBUTION_3);
+    lv_obj_update_layout(attrib3);
+    lv_obj_set_pos(attrib3, PAD + (CONTENT_W - lv_obj_get_width(attrib3)) / 2, y);
+    /* GAP_LABEL rather than GAP_INNER: the attributions are one item on three
      * lines, and the version is a different fact that happens to share their
      * type. Four extra pixels is enough to say so without a rule or heading. */
-    y += lv_obj_get_height(attrib2) + GAP_LABEL;
+    y += lv_obj_get_height(attrib3) + GAP_LABEL;
 
     /* ================= 10. Version =================
      * What the panel is running, for the phone call where something looks
