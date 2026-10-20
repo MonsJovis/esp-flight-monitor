@@ -70,17 +70,38 @@ def provision_timetable_key(port):
         time.sleep(0.5)
         s.write(key.encode() + b"\n")
         s.flush()
-        deadline = time.time() + 10
+        # First the console's answer, then the proof: with a key stored the
+        # panel fetches on its next poll (within ~12 s) and logs what it got.
+        # Waiting for that turns the USB session into an end-to-end check.
+        stored = False
+        deadline = time.time() + 60
         while time.time() < deadline:
             line = s.readline().decode("utf-8", "replace").rstrip()
             # The console echoes what it reads; never print a line with the key.
             if not line or key.lower() in line.lower():
                 continue
-            print("  " + line)
-            if "timetable key" in line and ("stored" in line or "rejected" in line
-                                            or "could not" in line):
-                return
-    print("no answer seen — press 'n' on the device to check the timetable line")
+            if "timetable key" in line:
+                print("  " + line)
+                # "could not be stored" contains "stored" too: test it first.
+                if "could not" in line or "rejected" in line or "stored" not in line:
+                    return
+                stored = True
+                print("\nwaiting for the panel to fetch and open the timetable...")
+            elif stored and "timetable:" in line:
+                print("  " + line)
+                if "pair(s) loaded" in line:
+                    print("\ndone: the panel has the pairs. Callsigns like AUA25L "
+                          "should show their flight number within a minute.")
+                    return
+                if "could not open" in line:
+                    sys.exit("\nthe panel fetched the file but the key does not open it: "
+                             "check it matches the TIMETABLE_KEY secret")
+                if "not fetched" in line:
+                    sys.exit("\nthe panel could not fetch the file: is it online, and has "
+                             "the timetable workflow run?")
+    print("no answer seen in a minute: open the console and press 'n' to see the "
+          "timetable line" if stored else
+          "no answer seen: is the panel on v1.0.7 or later?")
 
 
 def main():

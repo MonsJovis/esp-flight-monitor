@@ -169,6 +169,20 @@ they never pass through this repository or a config file:
 python3 tools/provision.py
 ```
 
+**The timetable key, once per panel, over USB.** It lets the panel open the flight-number
+pairs CI publishes (D95). Without it the panel shows callsigns (`AUA25L`), as it always has.
+The panel must run v1.0.7 or later; the key is in the personal 1Password as
+"esp-flight-monitor — timetable key (TIMETABLE_KEY)".
+
+```bash
+python3 tools/provision.py --timetable-key
+```
+
+It prompts for the key without echoing it, stores it in the panel's NVS, then waits until
+the panel has fetched and opened the timetable and says so ("done: the panel has the
+pairs"). If it reports that the key does not open the file, the key on the panel and the
+`TIMETABLE_KEY` secret differ.
+
 ## Standing it up
 
 The board is a flush wall plate, which is the wrong shape for a table. So
@@ -274,9 +288,11 @@ whoever controls that URL controls the device.
 - **Positions:** [adsb.lol](https://adsb.lol)
 - **Routes:** [adsb.im](https://adsb.im)
 - **Place names**, for the location search: [Open-Meteo's geocoding API](https://open-meteo.com/en/docs/geocoding-api)
+- **Flight numbers** for callsigns like `AUA25L`: [AeroDataBox](https://aerodatabox.com),
+  read by CI twice a day on its free plan, never by the panel itself (D95)
 
-All three are free, and the first two are run by volunteers, so this device is a polite
-client:
+The first three are free, and the first two are run by volunteers, so this device is a
+polite client:
 
 - One position request every 12 seconds, never faster than 10. Rapid requests earn a `429`,
   then a multi-minute `503`.
@@ -285,10 +301,12 @@ client:
   mid-flight.
 - The geocoder is called once when someone taps Search, and never otherwise.
 
-All three are called over **plain HTTP**, on purpose. A TLS handshake wants about 40 KB of
-internal heap, and the board has about 24 KB free. That is also why Open-Meteo won over
-Nominatim and Photon: both redirect to HTTPS. Open-Meteo also returns each place's time
-zone, which is what lets the clock follow the location. Endpoints, measured rate limits and
+Routes and place names go over **plain HTTP**, on purpose: a handshake nobody asked for buys
+nothing. Positions have gone over HTTPS since adsb.lol stopped answering plain HTTP on
+19 Oct 2026 (D92); the TLS buffers sit in PSRAM, so that costs no internal heap. Open-Meteo
+won over Nominatim and Photon back when the whole data path was plain HTTP, because both
+redirect to HTTPS. It also returns each place's time zone, which is what lets the clock
+follow the location. Endpoints, measured rate limits and
 the fallback order are in [`docs/DATA.md`](docs/DATA.md).
 
 > Contains information from **adsb.lol**, which is made available under the
@@ -299,6 +317,8 @@ the fallback order are in [`docs/DATA.md`](docs/DATA.md).
 > Place data from **Open-Meteo**, derived from **[GeoNames](https://www.geonames.org/)**
 > and made available under the
 > [Creative Commons Attribution 4.0 licence](https://creativecommons.org/licenses/by/4.0/).
+>
+> Flight numbers from **[AeroDataBox](https://aerodatabox.com)**.
 
 ## Licence
 
