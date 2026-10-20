@@ -138,10 +138,13 @@ Panel   →  GET  https://raw.githubusercontent.com/MonsJovis/esp-flight-monitor
   workflow has published something it gets a 404, which changes nothing on screen.
 - **A pair names a flight only on its own route.** The panel's routeset answer must have
   the same two airports, so a callsign that moved to another route is not misnamed.
-- **Austrian keeps the leading digits.** In all 11 pairs checked, the callsign's digits
-  were the start of the OS number and the letters were free: AUA25L = OS 254, AUA25M =
-  OS 257, AUA52TV = OS 527. A pair for AUA that breaks this is treated as bad data. No
-  other airline at Vienna does this (DLH6HE = LH 1340, RYR93QM = FR 780).
+- **Austrian's digits come from its flight number.** In the first real file (2026-10-20),
+  106 of 108 Austrian pairs had the callsign's digits inside the OS number, in order and
+  starting with its first digit: AUA25L = OS 254, AUA20C = OS 250, AUA30P = OS 320. The
+  panel uses that as a check on each AUA pair. The two exceptions were OS 46 from Chicago
+  and OS 428 from Palma. The 11 hand-matched pairs of 2026-10-19 had suggested a stricter
+  prefix rule; 12 of 75 real alphanumeric pairs broke it. No other airline at Vienna
+  shows any such pattern (DLH6HE = LH 1340, RYR93QM = FR 780).
 - **Callsigns move between seasons.** AUA25L flew Frankfurt to Graz until 31 Oct 2025
   and Hamburg to Vienna after. The CI drops every pair seen before the season began; the
   next change is Sun 25 Oct 2026.

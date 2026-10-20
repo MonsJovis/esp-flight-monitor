@@ -3540,7 +3540,7 @@ callsigns matched their flight numbers in every sample (research notes, 2026-10-
 > **Data source superseded by D95 (2026-10-19).** Lufthansa's developer portal answered
 > "Registration is currently disabled", so this never ran. What carries over: the
 > workflow-plus-branch delivery, the hourly fetch, `aircraft_flight_number()` as the one
-> reader, the Austrian prefix rule, and the writer/reader fixture check. The time-window
+> reader, the Austrian digit rule (loosened in D95), and the writer/reader fixture check. The time-window
 > matcher and the Lufthansa script are gone.
 
 **The report:** the panel showed `AUA25L` and `AUA26V`. The flights were OS 254 and OS
@@ -3644,7 +3644,8 @@ names today's flights.
 - **The panel looks the callsign up** (`data/timetable.c`). It shows a number only when the
   callsign matches exactly, the routeset's two airports are the pair's two airports, the
   pair is at most seven days old, and exactly one flight number is left. For Austrian, the
-  number must also start with the callsign's digits (D94's rule, now a check on the data).
+  callsign's digits must appear in the number, in order, from its first digit (D94's rule,
+  loosened by the first real file: see below).
   No clock is needed except for the age.
 - **The file is encrypted.** AeroDataBox's terms forbid passing their data to third parties
   (§5.8), and the `timetable` branch is public. CI writes `ESPFMTT2 | IV | AES-256-CTR |
@@ -3680,7 +3681,19 @@ names today's flights.
 **Not covered, and staying callsigns:** overflights that neither land at nor leave Vienna,
 flights AeroDataBox's receivers did not see, and Pattaya.
 
-**Not verified:** AeroDataBox has never answered this repo, so the response handling rests on
-their OpenAPI spec and data-coverage page, and how many Vienna flights actually carry a
-callsign there is unknown. The Austrian prefix rule rests on 11 pairs. Not seen on the panel.
+**Not verified:** not seen on the panel.
 GitHub disables a scheduled workflow after 60 days without repository activity.
+
+**First run, 2026-10-20 06:52 UTC** (switched on by hand; the window was the night before):
+220 flights on Vienna's board, **192 pairs**, 134 of them alphanumeric callsigns. By airline:
+Austrian 108, Ryanair 33, Eurowings 8, the rest a handful each. The file was 6,951 bytes,
+served by raw.githubusercontent.com with 200, and opened with the key from 1Password. No
+numeric callsign in it differed from its flight number.
+
+**And it corrected D94's Austrian rule.** "The number starts with the callsign's digits",
+from 11 hand-matched pairs, failed for 12 of the 75 Austrian alphanumeric pairs: AUA20C is
+OS 250, AUA21V is OS 201, AUA30P is OS 320. The panel would have shown the callsign for
+all of them. What holds is looser: the digits appear in the number in order, starting with
+its first digit, true for 106 of 108 Austrian pairs. The two that fail (AUA2R = OS 46 from
+Chicago, AUA8KS = OS 428 from Palma) keep their callsigns. `test_timetable.c` carries
+those real cases.

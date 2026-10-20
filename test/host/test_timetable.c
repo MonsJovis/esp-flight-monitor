@@ -150,15 +150,27 @@ int main(void)
         CHECK_STR(look("AUA25L", "EDDH", "LOWW", 0), "OS 254");
     }
 
-    GROUP("Austrian's digits must lead the number: a pair that breaks it is bad");
+    GROUP("Austrian's digits come from the number, in order: a pair that breaks it is bad");
     {
         tt_pair_t x[2];
         int nx = small("AUA25L,OS,264,EDDH,LOWW,1792411200", x, 2);
         CHECK_INT(nx, 1);
-        CHECK_STR(look_in(x, nx, "AUA25L", "EDDH", "LOWW", NOW), "");
-        /* All the digits kept is a prefix too: AUA235D = OS 235. */
+        CHECK_STR(look_in(x, nx, "AUA25L", "EDDH", "LOWW", NOW), "");   /* no 5 */
+        /* All the digits kept: AUA235D = OS 235. */
         nx = small("AUA235D,OS,235,LOWW,EDDB,1792411200", x, 2);
         CHECK_STR(look_in(x, nx, "AUA235D", "LOWW", "EDDB", NOW), "OS 235");
+        /* A middle digit dropped, from the first real file (2026-10-20). */
+        nx = small("AUA20C,OS,250,EDDH,LOWW,1792411200", x, 2);
+        CHECK_STR(look_in(x, nx, "AUA20C", "EDDH", "LOWW", NOW), "OS 250");
+        nx = small("AUA71RD,OS,731,LGTS,LOWW,1792411200", x, 2);
+        CHECK_STR(look_in(x, nx, "AUA71RD", "LGTS", "LOWW", NOW), "OS 731");
+        /* In the number, but not in order, or not from the first digit. */
+        nx = small("AUA21C,OS,125,EDDH,LOWW,1792411200", x, 2);
+        CHECK_STR(look_in(x, nx, "AUA21C", "EDDH", "LOWW", NOW), "");
+        nx = small("AUA2R,OS,46,KORD,LOWW,1792411200", x, 2);
+        CHECK_STR(look_in(x, nx, "AUA2R", "KORD", "LOWW", NOW), "");
+        nx = small("AUA8KS,OS,428,LEPA,LOWW,1792411200", x, 2);
+        CHECK_STR(look_in(x, nx, "AUA8KS", "LEPA", "LOWW", NOW), "");
         /* Other airlines' digits say nothing: DLH6HE = LH 1340. */
         nx = small("DLH6HE,LH,1340,LOWW,EDDF,1792411200", x, 2);
         CHECK_STR(look_in(x, nx, "DLH6HE", "LOWW", "EDDF", NOW), "LH 1340");

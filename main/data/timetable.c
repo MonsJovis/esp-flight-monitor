@@ -182,6 +182,26 @@ int timetable_parse(const char *text, size_t len, tt_pair_t *out, int max,
 
 /* ---- lookup ------------------------------------------------------------------ */
 
+/* Austrian's callsign digits appear in its flight number, in order, starting
+ * with the first: AUA25L = OS 254, AUA20C = OS 250, AUA30P = OS 320. Held for
+ * 106 of the 108 Austrian pairs in the first real file (2026-10-20); the two
+ * that broke it were OS 46 from Chicago and OS 428 from Palma. */
+static bool digits_in_order(const char *digits, unsigned number)
+{
+    char num[8];
+    snprintf(num, sizeof num, "%u", number);
+    if (digits[0] == '\0' || num[0] != digits[0]) {
+        return false;
+    }
+    const char *d = digits;
+    for (const char *c = num; *c != '\0' && *d != '\0'; c++) {
+        if (*c == *d) {
+            d++;
+        }
+    }
+    return *d == '\0';
+}
+
 size_t timetable_lookup(const tt_pair_t *tt, int n, const char *callsign,
                         const route_t *rt, int64_t now, char *out, size_t outsz)
 {
@@ -201,9 +221,9 @@ size_t timetable_lookup(const tt_pair_t *tt, int n, const char *callsign,
     if (!split_callsign(callsign, strlen(callsign), code, digits)) {
         return 0;
     }
-    /* Austrian keeps the leading digits of the flight number in its
-     * callsign; for everyone else the digits say nothing (timetable.h). */
-    bool prefix_rule = (strcmp(code, "AUA") == 0);
+    /* Austrian's callsign digits are drawn from its flight number; for
+     * everyone else they say nothing (timetable.h). */
+    bool digit_rule = (strcmp(code, "AUA") == 0);
 
     const tt_pair_t *hit = NULL;
     for (int i = 0; i < n; i++) {
@@ -216,12 +236,8 @@ size_t timetable_lookup(const tt_pair_t *tt, int n, const char *callsign,
         if (now > 0 && now - f->seen > TT_MAX_AGE_S) {
             continue;
         }
-        if (prefix_rule) {
-            char num[8];
-            snprintf(num, sizeof num, "%u", (unsigned)f->number);
-            if (strncmp(num, digits, strlen(digits)) != 0) {
-                continue;
-            }
+        if (digit_rule && !digits_in_order(digits, f->number)) {
+            continue;
         }
         if (hit != NULL &&
             (hit->number != f->number || strcmp(hit->carrier, f->carrier) != 0)) {

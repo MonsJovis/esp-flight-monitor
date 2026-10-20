@@ -72,10 +72,11 @@ int timetable_parse(const char *text, size_t len, tt_pair_t *out, int max,
  *     W6 2274, which D89's digit swap could never know (D93)
  *   - the route is resolved, plausible, and the pair's two airports
  *   - the pair is no older than TT_MAX_AGE_S, when `now` is known (> 0)
- *   - for Austrian only: the number starts with the callsign's digits. In 11
- *     of 11 pairs checked, Austrian kept the leading digits and replaced the
- *     rest with letters (AUA25L = OS 254, AUA52TV = OS 527). A pair that
- *     breaks that is a bad pair, not a new rule.
+ *   - for Austrian only: the callsign's digits appear in the number, in
+ *     order, starting with its first digit (AUA25L = OS 254, AUA20C = OS 250,
+ *     AUA52TV = OS 527). That held for 106 of the 108 Austrian pairs in the
+ *     first real file; a pair that breaks it shows the callsign rather than a
+ *     number that might be wrong.
  *
  * Writes "" and returns 0 otherwise. Returns the bytes written, excluding
  * the NUL, on a match. */
