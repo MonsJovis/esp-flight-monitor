@@ -178,6 +178,18 @@ The panel must run v1.0.7 or later; the key is in the personal 1Password as
 python3 tools/provision.py --timetable-key
 ```
 
+The board has two USB-C sockets and only one of them reaches the console: the ESP32-S3's
+own USB, which shows up as `USB JTAG/serial debug unit`. The other goes through a CH343
+chip to the UART, where only the boot ROM speaks. The tool picks the right one by USB
+vendor, and if it finds only the CH343 it stops and says to move the cable. With
+the key in 1Password, it can go straight from there to the panel:
+
+```bash
+op item get --account my.1password.eu --vault Private \
+  "esp-flight-monitor — timetable key (TIMETABLE_KEY)" --fields password --reveal \
+  | python3 tools/provision.py --timetable-key --key-stdin
+```
+
 It prompts for the key without echoing it, stores it in the panel's NVS, then waits until
 the panel has fetched and opened the timetable and says so ("done: the panel has the
 pairs"). If it reports that the key does not open the file, the key on the panel and the

@@ -18,15 +18,32 @@ hex digits as the repo's TIMETABLE_KEY secret, kept in the personal 1Password
 next to the signing key. The same rules as the password: prompted for, never
 echoed, never written anywhere, filtered out of everything printed back.
 """
-import argparse, getpass, json, subprocess, sys, time
+import argparse, getpass, json, re, subprocess, sys, time
 import serial
+
+ESPRESSIF_VID = 0x303A   # the ESP32-S3's own USB: the console lives here
+WCH_VID       = 0x1A86   # the board's CH343 USB-UART socket: boot ROM only
+
 
 def _default_port():
     """The board re-enumerates under a different node after a replug
-    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it."""
-    import glob
-    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
-    return ports[0] if ports else "/dev/cu.usbmodem1101"
+    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it.
+
+    By USB vendor, not by name: the board has TWO USB-C sockets and both show
+    up as /dev/cu.usbmodem*. Only the ESP32-S3's own one carries the console
+    (CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG). The other goes through a CH343 to
+    UART0, where nothing but the boot ROM ever speaks, so every command sent
+    there vanishes without an answer (found on 2026-10-25, D95)."""
+    from serial.tools import list_ports
+    ports = sorted(list_ports.comports(), key=lambda p: p.device)
+    for p in ports:
+        if p.vid == ESPRESSIF_VID:
+            return p.device
+    if any(p.vid == WCH_VID for p in ports):
+        sys.exit("the panel is on its CH343 (UART) socket, where the console does not "
+                 "listen. Move the cable to the board's other USB-C socket.")
+    usb = [p.device for p in ports if p.device.startswith("/dev/cu.usbmodem")]
+    return usb[0] if usb else "/dev/cu.usbmodem1101"
 
 
 
@@ -54,8 +71,13 @@ def prompt_credentials():
            _osascript("WLAN-Passwort:", True)
 
 
-def provision_timetable_key(port):
-    if sys.stdin.isatty():
+def provision_timetable_key(port, from_stdin=False):
+    if from_stdin:
+        # For `op item get ... --reveal | provision.py --timetable-key
+        # --key-stdin`: the key goes from 1Password to the panel and through
+        # nothing that shows it.
+        key = sys.stdin.read().strip()
+    elif sys.stdin.isatty():
         key = getpass.getpass("Timetable key, 64 hex digits (not echoed): ").strip()
     else:
         print("no TTY here — opening a dialog on your desktop...", flush=True)
@@ -80,10 +102,16 @@ def provision_timetable_key(port):
             # The console echoes what it reads; never print a line with the key.
             if not line or key.lower() in line.lower():
                 continue
-            if "timetable key" in line:
+            # Only the console's ANSWER ends this, never its status line
+            # ("timetable key   : (none)"), which comes first. Stopping on that
+            # closed the port while the key was still in flight, and macOS
+            # dropped it (2026-10-25).
+            # search, not match: the console prints its "> " prompt with no
+            # newline, so the answer arrives as "> timetable key stored; ...".
+            answer = re.search(r"timetable key (stored|rejected|could not)", line)
+            if answer:
                 print("  " + line)
-                # "could not be stored" contains "stored" too: test it first.
-                if "could not" in line or "rejected" in line or "stored" not in line:
+                if answer.group(1) != "stored":
                     return
                 stored = True
                 print("\nwaiting for the panel to fetch and open the timetable...")
@@ -106,13 +134,17 @@ def provision_timetable_key(port):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", default=_default_port())
+    ap.add_argument("--port", help="default: the ESP32-S3's own USB port, found by vendor")
     ap.add_argument("--slot", type=int, default=0, choices=range(4))
     ap.add_argument("--timetable-key", action="store_true",
                     help="store the timetable key instead of a WiFi network (D95)")
+    ap.add_argument("--key-stdin", action="store_true",
+                    help="with --timetable-key: read the key from stdin, e.g. piped "
+                         "from `op item get ... --fields password --reveal`")
     a = ap.parse_args()
+    a.port = a.port or _default_port()
     if a.timetable_key:
-        provision_timetable_key(a.port)
+        provision_timetable_key(a.port, from_stdin=a.key_stdin)
         return
 
     ssid, password = prompt_credentials()

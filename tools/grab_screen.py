@@ -9,12 +9,29 @@ it reads the actual RGB565 framebuffer being scanned out, not a re-render.
 import argparse, base64, re, struct, sys, time, zlib
 import serial
 
+ESPRESSIF_VID = 0x303A   # the ESP32-S3's own USB: the console lives here
+WCH_VID       = 0x1A86   # the board's CH343 USB-UART socket: boot ROM only
+
+
 def _default_port():
     """The board re-enumerates under a different node after a replug
-    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it."""
-    import glob
-    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
-    return ports[0] if ports else "/dev/cu.usbmodem1101"
+    (usbmodem1101 -> usbmodem101), so discover it rather than hardcode it.
+
+    By USB vendor, not by name: the board has TWO USB-C sockets and both show
+    up as /dev/cu.usbmodem*. Only the ESP32-S3's own one carries the console
+    (CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG). The other goes through a CH343 to
+    UART0, where nothing but the boot ROM ever speaks, so every command sent
+    there vanishes without an answer (found on 2026-10-25, D95)."""
+    from serial.tools import list_ports
+    ports = sorted(list_ports.comports(), key=lambda p: p.device)
+    for p in ports:
+        if p.vid == ESPRESSIF_VID:
+            return p.device
+    if any(p.vid == WCH_VID for p in ports):
+        sys.exit("the panel is on its CH343 (UART) socket, where the console does not "
+                 "listen. Move the cable to the board's other USB-C socket.")
+    usb = [p.device for p in ports if p.device.startswith("/dev/cu.usbmodem")]
+    return usb[0] if usb else "/dev/cu.usbmodem1101"
 
 
 MARK_START = re.compile(rb"<<<SHOT w=(\d+) h=(\d+) fmt=(\w+) bytes=(\d+) crc=([0-9a-f]+)>>>")
@@ -54,9 +71,10 @@ def rgb565_to_rgb888(buf, w, h):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
-    ap.add_argument("--port", default=_default_port())
+    ap.add_argument("--port", help="default: the ESP32-S3's own USB port, found by vendor")
     ap.add_argument("--timeout", type=float, default=40.0)
     a = ap.parse_args()
+    a.port = a.port or _default_port()
 
     with serial.Serial(a.port, 115200, timeout=0.3) as s:
         s.reset_input_buffer()
