@@ -62,10 +62,14 @@ assumptions:
   schematic), so the battery is polled, like the GT911.
 - **A cold start on battery alone needs a PWRKEY press** — datasheet §6.5.2, the BATFET is
   off until the key is pressed or an adapter appears. Unplugging a *running* device is
-  seamless.
+  seamless: seen on the unit at 74 %, no flicker. A key start from the cell works too.
+- **The BATFET goes off at charge done**, per the datasheet. So unplugging a *full* device is
+  a different case from the one above, and that case has not been read off the registers.
+- **A charge LED, `PWR1`, sits on CHGLED** (VSYS, 1 kΩ, LED; schematic). Its mode is an eFuse
+  in REG69, which `y` does not dump, and the firmware does not touch it.
 - Draw is **1.2–1.9 W calculated** (39 mA through the backlight string: 200 mV over R30's
-  5.1 Ω into the AP3032), so roughly four hours from 2000 mAh. **Calculated, not measured**
-  — the firmware logs the discharge once a minute so the first unplugging settles it.
+  5.1 Ω into the AP3032), so roughly four hours from 2000 mAh. **Calculated, and it stays
+  that way:** the owner decided on 2026-10-31 not to time it (PLAN.md M9).
 
 **GPIO budget is effectively zero.** The RGB bus consumes nearly everything. Expansion
 goes over I²C, or by repurposing TCA9554 EXIO pins after init.

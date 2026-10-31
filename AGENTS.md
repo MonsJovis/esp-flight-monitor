@@ -14,9 +14,13 @@ Operating manual for AI agents working in this repo. Read this before touching c
 > repo has actually failed (§11). Several rules were amended by the build; where they
 > were, they say so inline. Do not "restore" an amended rule to what it used to say.
 >
-> **Two things are still unexercised:** the printed desk stand, and the battery — the PMIC
-> driver is written and every register reads back correct on the unit, but no cell has been
-> connected to this board yet (D61, PLAN.md M9).
+> **One thing is still unexercised:** the printed desk stand, and nobody is building one
+> (PLAN.md M9).
+>
+> **The battery is no longer one of them.** 2026-10-31: the first cell went on this board. It
+> charges, pulling USB interrupts nothing, and the side key switches off and on from the cell.
+> Two things stay open: the runtime is calculated, not timed, by the owner's choice, and the
+> end of a full charge was never read off the registers (D61, D90, PLAN.md M9).
 >
 > **OTA is no longer one of them.** 2026-09-21: the unit downloaded 0.4.0 from a real
 > GitHub release, verified its RSA-3072 signature against its own running image, switched
@@ -253,8 +257,8 @@ display task behind `display_lock()`**, and the network never touches the tree d
 - **UI language: German.** See §1 for the font and place-name consequences.
 - **Form factor: desk stand**, powered over USB-C. The rear `5V_IN` header is not needed.
   It also means the device travels between the two locations — see §6. **Amended by D61:**
-  a PH2.0 cell now rides along as a UPS for about four hours off the cable. It is taped to
-  the back of the case, and it is optional — every code path is a no-op without one.
+  a PH2.0 cell now rides along as a UPS for a calculated four hours off the cable. It is
+  taped to the back of the case, and it is optional — every code path is a no-op without one.
 - **Two framebuffers, anti-tearing on** — measured on the unit, not guessed. Two is
   both faster than one (28.5 vs 21.4 FPS) and tear-free; three buys nothing. Numbers in
   PLAN.md M1.

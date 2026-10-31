@@ -429,23 +429,33 @@ outside for half an hour. Full reasoning in docs/DECISIONS.md D61.
       was asked for, and a panel that dims the moment it is unplugged reads as a fault.
 - [x] `y` prints the judged status and the registers under it; `Y` pretends to be a battery
       so the badge and the cap can be seen without flattening a real cell.
-- [ ] **A cell.** Ordered, arriving 2026-09-26: 3.7 V 2000 mAh 103450, JST-PH 2.0. Check the
-      polarity against the board's `+`/`-` silkscreen before plugging it in — J1 pin 1 is
+- [x] **A cell.** 3.7 V 2000 mAh 103450, JST-PH 2.0. First on the board 2026-10-31, polarity
+      right. Check it against the `+`/`-` silkscreen before plugging one in — J1 pin 1 is
       GND, and cell vendors are not consistent about which pin gets the red wire.
 - [x] ~~A pocket in the desk stand.~~ **Dropped, 2026-09-20, by the owner: no stand will be
       printed.** The cell goes on the back of the case with foam tape, plugged into the
       socket the back cover already exposes. That removes the last thing the runtime
       measurement was blocking, and `hardware/desk_stand.scad` is now a sketch nobody owns.
-- [ ] **The runtime, measured.** The firmware logs percentage and millivolts once a minute
-      while discharging, so the first time it is unplugged it produces its own discharge
-      curve. AGENTS.md §2's 1.2–1.9 W is calculated from the schematic and stands only
-      until that log exists. Nothing is blocked on the answer any more — it is now just a
-      number this repo would rather have measured than calculated.
+- [x] ~~The runtime, measured.~~ **Dropped, 2026-10-31, by the owner: nobody will time it.**
+      HARDWARE.md's 1.2–1.9 W and the four hours stay calculated. The curve this item
+      expected for free does not exist either way: the once-a-minute line goes to
+      USB-Serial/JTAG, the only console, and with the cable out nobody reads it.
 
 **Verified on the unit with no cell fitted** (2026-09-20): every configured register reads
 back correct, the panel survives the configuration write, 40 rapid overlay navigations
 produce zero crashes with the poll running, and the badge is rebuilt after a fixture
 suspend/resume. The one thing not verified is the battery.
+
+**Verified on the unit with a cell** (2026-10-31): cell present, charging from 4035 mV, 74 %,
+charger state 2, later state 3 at 4100 mV and 89 %. USB pulled with no flicker, the badge and
+"läuft mit Akku" on the glass, 3 s on the key off and on again from the cell, USB back in.
+REG21 = 0x02 and REG20 = 0x01 show the firmware's off and the key start. D61 and D90 carry the
+details.
+
+**Not verified:** the end of a full charge. The last reading was the 89 % above, so neither
+termination at 4.1 V nor what the panel says on a full cell has been read. WLAN scans found
+no network three times that day while the Mac heard 2.4 GHz networks, and worked later. The
+cause is unknown, so nothing says the cell had a part in it or did not.
 
 ---
 

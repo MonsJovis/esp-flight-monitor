@@ -1409,6 +1409,27 @@ worth keeping: foam tape, not cyanoacrylate, which attacks the pouch; no clampin
 folding; slack in the lead so the plug is not carrying the cell; and low on the back rather
 than centred, where 10 mm of cell leans the panel back instead of letting it rock.
 
+**Amended 2026-10-31: the cell is on the board.** This replaces "What is NOT verified" above
+as far as it goes. `y` read cell present, charging from 4035 mV at 74 %, charger state 2,
+REG00 = 0x38, REG01 = 0x32, then state 3 at 4100 mV and 89 %. REG20 = 0x10 named the battery
+insert as the power-on source. Pulling USB interrupted nothing, the badge and "läuft mit Akku"
+showed, and a key start from the cell worked.
+
+**Three claims above did not survive the check.**
+- "The firmware logs one line a minute … so the first unplugging produces the real curve."
+  The line goes to USB-Serial/JTAG, the only console, so with the cable out nobody reads it.
+  The owner decided not to time the runtime, so the power figures stay calculated.
+- "The PMIC's own VOFF": REG24 is an eFuse and `y` does not dump it, so its value here is
+  unknown. The practical floor is more likely DCDC1's undervoltage off (REG23[0], default on,
+  85 % of 3.3 V), near 2.8 V.
+- "The gauge is not trusted blindly" covers 0 and anything above 100, nothing else. A bogus
+  low value is believed, and on battery it caps the backlight.
+
+**Still unread: a full charge.** Termination at 4.1 V and the panel's words on a full cell
+were not seen. The comment in `battery_policy.c` that REG01 falls from DONE to 101b is not in
+the datasheet. If it does, a gauge under 85 % on a full cell prints "wird nicht geladen", and
+the gauge has no 4.1 V model. The charge had reached 89 % at the last reading.
+
 ## D62 — The long press into Einstellungen had never worked
 
 **What was wrong:** you could not reach the settings screen by touching the panel. Not
@@ -3427,6 +3448,11 @@ unconfirmed:
 The console `y` now dumps REG41 and REG49 as well, and the watcher logs every key event it
 reads (`PWRKEY: edge` / `PWRKEY: long`). So the second one can be checked from the host:
 a short press should log one or two edges, and a hold should log `long` after 2 s.
+
+**Seen on the panel, 2026-10-31.** A 3 s hold switched the device off on battery and a 3 s
+hold brought it back. REG21 = 0x02 is the software off from REG10[0], so the watcher read the
+key and REG49 latches on this unit. REG20 = 0x01 is the key start. The owner reports that a
+device switched off with USB plugged in stays off.
 
 ## D91 — Going back to a saved network goes back to it, and a full list forgets the stalest
 

@@ -488,13 +488,11 @@ static void power_tick(void)
         }
     }
 
-    /* The discharge curve, for free, the first time he ever unplugs it.
-     *
-     * AGENTS.md §2 carries a CALCULATED figure for how long this device runs
-     * on a cell — 1.2 to 1.9 W, so four hours from 2000 mAh — and this
-     * project does not leave calculated numbers standing when the hardware
-     * can be asked. One line a minute while discharging is the measurement,
-     * and it costs nothing on a device that is plugged in. */
+    /* One line a minute while discharging. It goes to USB-Serial/JTAG, the
+     * only console, so with the cable out it reaches nobody and it is not
+     * the measurement it was written to be: HARDWARE.md's 1.2 to 1.9 W stays
+     * calculated (PLAN.md M9). It costs nothing on a device that is plugged
+     * in. */
     static int64_t last_log_ms;
     int64_t now = esp_timer_get_time() / 1000;
     if (s_battery.state != BAT_ON_BATTERY) {

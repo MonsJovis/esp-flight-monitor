@@ -140,6 +140,10 @@ Routed here from AGENTS.md §7.
   Waveshare's own example disables it with the comment "otherwise it will cause abnormal
   charging". The symptom is a device that looks fine and quietly stays flat — the Akku line
   in Einstellungen says "wird nicht geladen" for exactly this case.
+- **A half-seated PH2.0 plug reads as "no cell".** `y` showed the battery pin floating at
+  14–391 mV on the first try, and a reseat fixed it. Check the plug before the driver.
+- **With USB out there is no console.** USB-Serial/JTAG is the only one, so `y` and the
+  discharge log are gone the moment the cable is. On battery the panel is the only instrument.
 - **Never write a rail.** REG80/REG90 and friends turn the panel or the ESP32 off, and the
   only way back is the PWRKEY on the side edge. The driver touches the charger, the ADC,
   the gauge and, since D90, the PWRKEY's own registers (REG22/27/41/49) plus the one

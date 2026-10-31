@@ -136,9 +136,9 @@ how every layout bug in [`docs/DECISIONS.md`](docs/DECISIONS.md) was found.
 - AXP2101 power management; power over USB-C
 - a standard 86-type wall plate, 86.5 × 86.5 × 14 mm
 
-An optional 3.7 V Li-ion cell on the PH2.0 header keeps it running for about four hours off
-the cable. The driver is written and reads back correctly on the unit, but no cell has been
-connected yet. Every code path works the same without one.
+An optional 3.7 V Li-ion cell on the PH2.0 header keeps it running off the cable. It has been
+tested on the unit: it charges, and pulling USB interrupts nothing. The four hours of runtime
+are calculated, nobody has timed them. Every code path works the same without one.
 
 The full board profile — pins, I²C addresses, and what is **not** on the board despite the
 reseller listings — is in [`docs/HARDWARE.md`](docs/HARDWARE.md). Beware: the
