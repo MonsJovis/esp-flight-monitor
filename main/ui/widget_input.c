@@ -45,7 +45,8 @@ static const char *TAG = "kbd";
 #define KB_MODE_UPPER   "ABC"
 #define KB_MODE_SPECIAL "1#"
 
-#define KB_DE_BUTTONS 36   /* 11 + 11 + 9 + 5, checked at install time */
+#define KB_DE_BUTTONS   36   /* 11 + 11 + 9 + 5, checked at install time */
+#define KB_SPEC_BUTTONS 45   /* 11 + 12 + 12 + 10, the same */
 
 static const char * const kb_de_map_lc[] = {
     "q", "w", "e", "r", "t", "z", "u", "i", "o", "p", "\xC3\xBC", "\n",
@@ -86,6 +87,35 @@ static const lv_buttonmatrix_ctrl_t kb_de_ctrl[] = {
     1, 5, 1, LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2,
 };
 
+/* The 1# layer. Three rows are LVGL's own, key for key; the fourth is ours
+ * (D96). LVGL's fourth row starts with its close-keyboard glyph, where a thumb
+ * lands when it reaches for the corner, and lv_keyboard_def_event_cb() reads
+ * that cap as "cancel": the step closed and the password was gone. So no cap
+ * on any layer may be LV_SYMBOL_KEYBOARD or LV_SYMBOL_CLOSE.
+ *
+ * The eight caps in that row are the printable ASCII no other layer has. With
+ * them every printable character is reachable, which a WPA passphrase needs.
+ * test/sim/sim_keyboard.c presses every key and counts the alphabet.
+ *
+ * Twelve units a row, not eleven like the letters: thirty-one symbols, a space
+ * and three wide keys do not fit in eleven. The second row runs to thirteen,
+ * as LVGL drew it, because "abc" does not fit on a one-unit key. LVGL's own
+ * ctrl table for this layer has one entry too many for that row, which shifts
+ * the rest by one and is why it could not simply be copied. */
+static const char * const kb_de_map_spec[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", LV_SYMBOL_BACKSPACE, "\n",
+    KB_MODE_LOWER, "+", "&", "/", "*", "=", "%", "!", "?", "#", "<", ">", "\n",
+    "\\", "@", "$", "(", ")", "{", "}", "[", "]", ";", "\"", "'", "\n",
+    ".", ",", "_", ":", "~", "^", "|", "`", " ", LV_SYMBOL_OK, ""
+};
+
+static const lv_buttonmatrix_ctrl_t kb_de_ctrl_spec[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, LV_BUTTONMATRIX_CTRL_CHECKED | 2,
+    LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 2, LV_KEYBOARD_CTRL_BUTTON_FLAGS | 2,
+};
+
 /* Buttons in a map: everything that is not a row break or the terminator.
  * Counted rather than asserted by hand — the last time a length in this
  * codebase was worked out by eye it was two JSON fixtures and both were
@@ -110,18 +140,23 @@ void widget_keyboard_install_de(lv_obj_t *kb)
      * than in a comment, because a comment does not notice an edit. */
     int lc = map_button_count(kb_de_map_lc);
     int uc = map_button_count(kb_de_map_uc);
-    if (lc != KB_DE_BUTTONS || uc != KB_DE_BUTTONS ||
-        (int)(sizeof kb_de_ctrl / sizeof kb_de_ctrl[0]) != KB_DE_BUTTONS) {
+    int sp = map_button_count(kb_de_map_spec);
+    if (lc != KB_DE_BUTTONS || uc != KB_DE_BUTTONS || sp != KB_SPEC_BUTTONS ||
+        (int)(sizeof kb_de_ctrl / sizeof kb_de_ctrl[0]) != KB_DE_BUTTONS ||
+        (int)(sizeof kb_de_ctrl_spec / sizeof kb_de_ctrl_spec[0]) != KB_SPEC_BUTTONS) {
         /* Leave LVGL's own layout in place. A keyboard missing its umlauts is
          * a nuisance; a keyboard reading past the end of its control table is
          * a bug that will be found somewhere else entirely. */
-        ESP_LOGE(TAG, "German layout not installed: %d/%d keys, %d ctrl entries, expected %d",
-                 lc, uc, (int)(sizeof kb_de_ctrl / sizeof kb_de_ctrl[0]), KB_DE_BUTTONS);
+        ESP_LOGE(TAG, "German layout not installed: %d/%d/%d keys, %d/%d ctrl entries, expected %d/%d",
+                 lc, uc, sp, (int)(sizeof kb_de_ctrl / sizeof kb_de_ctrl[0]),
+                 (int)(sizeof kb_de_ctrl_spec / sizeof kb_de_ctrl_spec[0]),
+                 KB_DE_BUTTONS, KB_SPEC_BUTTONS);
         return;
     }
 
     lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_LOWER, kb_de_map_lc, kb_de_ctrl);
     lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_TEXT_UPPER, kb_de_map_uc, kb_de_ctrl);
+    lv_keyboard_set_map(kb, LV_KEYBOARD_MODE_SPECIAL, kb_de_map_spec, kb_de_ctrl_spec);
 }
 
 bool widget_keyboard_debug_layer(lv_obj_t *kb)
@@ -136,9 +171,9 @@ bool widget_keyboard_debug_layer(lv_obj_t *kb)
     default:                          want = KB_MODE_UPPER;   break;
     }
 
-    /* The 1# layer is LVGL's own map and has more buttons than ours, so the
-     * loop is bounded by what the widget says it has rather than by
-     * KB_DE_BUTTONS — lv_buttonmatrix_get_button_text() returns NULL past the
+    /* The 1# layer has more buttons than the letters, so the loop is bounded
+     * by what the widget says it has rather than by KB_DE_BUTTONS —
+     * lv_buttonmatrix_get_button_text() returns NULL past the
      * end, which is the only count either map agrees to give. */
     for (uint32_t i = 0; i < 64; i++) {
         const char *txt = lv_buttonmatrix_get_button_text(kb, i);

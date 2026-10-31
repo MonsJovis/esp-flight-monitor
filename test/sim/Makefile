@@ -76,6 +76,19 @@ LIST_SRCS := $(ROOT)/main/ui/screen_list.c \
 $(BUILD)/sim_list: sim_list.c sim_common.h $(LIST_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
 	@$(CC) $(APP_CFLAGS) -o $@ sim_list.c $(LIST_SRCS) $(BUILD)/liblvgl.a -lm
 
+# The password step of the WLAN screen and its keyboard (D96).
+KEYBOARD_SRCS := $(ROOT)/main/ui/screen_wifi.c \
+                 $(ROOT)/main/ui/widget_input.c \
+                 $(ROOT)/main/ui/widget_busy.c \
+                 $(ROOT)/main/ui/widget_signal.c \
+                 $(wildcard $(ROOT)/main/ui/fonts/*.c) \
+                 $(wildcard $(ROOT)/main/data/*.c) \
+                 $(ROOT)/main/net/route_parse.c \
+                 $(CJSON_DIR)/cJSON.c
+
+$(BUILD)/sim_keyboard: sim_keyboard.c sim_common.h $(KEYBOARD_SRCS) $(BUILD)/liblvgl.a lv_conf.h Makefile
+	@$(CC) $(APP_CFLAGS) -o $@ sim_keyboard.c $(KEYBOARD_SRCS) $(BUILD)/liblvgl.a -lm
+
 # The README's pictures (sim_readme.c): the real Gloggnitz capture through
 # every screen, recompressed into docs/screens/. Not part of `run` — it writes
 # into the tree, and only when someone asks it to.
@@ -103,7 +116,7 @@ readme: $(BUILD)/sim_readme
 	@python3 png_squeeze.py $(OUT)/readme_detail.png   $(READMEDIR)/detail.png
 	@python3 png_squeeze.py $(OUT)/readme_no_route.png $(READMEDIR)/detail-no-route.png
 
-run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list
+run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list $(BUILD)/sim_keyboard
 	@mkdir -p $(OUT)
 	@echo "== radar"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_radar $(OUT)
@@ -111,6 +124,8 @@ run: $(BUILD)/sim_radar $(BUILD)/sim_detail $(BUILD)/sim_list
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_detail $(OUT)
 	@echo "== list"
 	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_list $(OUT)
+	@echo "== keyboard"
+	@ASAN_OPTIONS=detect_leaks=0 $(BUILD)/sim_keyboard $(OUT)
 
 clean:
 	rm -rf $(BUILD) $(OUT)

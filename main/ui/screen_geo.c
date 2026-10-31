@@ -534,10 +534,9 @@ static void exit_clicked_cb(lv_event_t *e)
 /* lv_keyboard's OK key sends LV_EVENT_READY to its text area, and — because
  * s_ta is one_line — so does its Enter key. Wiring both to do_search() means
  * the keyboard behaves the way every other on-screen keyboard he has used
- * behaves, on top of the explicit Suchen button. Its close glyph
- * (LV_EVENT_CANCEL) leaves the screen, matching Zurück beside it. */
-static void ta_ready_cb(lv_event_t *e)  { (void)e; do_search(); }
-static void ta_cancel_cb(lv_event_t *e) { (void)e; exit_clicked_cb(e); }
+ * behaves, on top of the explicit Suchen button. Leaving is Zurück's job
+ * alone: no key on the keyboard does it (D96). */
+static void ta_ready_cb(lv_event_t *e) { (void)e; do_search(); }
 
 /* ============================================================================
  * Public API
@@ -566,7 +565,6 @@ void screen_geo_create(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_ta, &plex_sans_cond_25, 0);
     widget_style_field(s_ta);
     lv_obj_add_event_cb(s_ta, ta_ready_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(s_ta, ta_cancel_cb, LV_EVENT_CANCEL, NULL);
     y += FIELD_H + GAP_MD;
 
     /* Suchen carries the green pairing theme.h already names for "the good

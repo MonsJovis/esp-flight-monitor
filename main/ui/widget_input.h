@@ -95,10 +95,10 @@ void widget_style_keyboard(lv_obj_t *kb);
  * installer from the styling function so that the two can never come apart.
  * It is idempotent: it writes the same two pointers every time.
  *
- * The 1# layer (digits and punctuation) is deliberately left as LVGL's own.
- * A WPA passphrase is arbitrary ASCII and has to stay typeable, that layer is
- * what makes it typeable, and re-spelling a table he reaches roughly once in
- * the life of the device would be risk spent on nothing.
+ * The 1# layer (digits and punctuation) was left as LVGL's own until it cost
+ * a typed password: LVGL's map still carried the close-keyboard glyph, and
+ * eight characters of a WPA passphrase were on no layer at all (D96). It is
+ * spelled here now, like the other two.
  *
  * Takes a keyboard although what it installs is global, because that is
  * lv_keyboard_set_map()'s signature: the table is shared, the refresh is per

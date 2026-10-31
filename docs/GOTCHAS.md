@@ -59,6 +59,11 @@ Routed here from AGENTS.md §7.
   must be the same keyboard — so `widget_input.c` leans on it and installs the German
   QWERTZ layout from the styling function. If you ever DO need two, the only per-instance
   hook is `LV_KEYBOARD_MODE_USER_1..4`.
+- **`LV_SYMBOL_KEYBOARD` and `LV_SYMBOL_CLOSE` on a key cap mean "cancel".**
+  `lv_keyboard_def_event_cb()` compares the cap text and sends `LV_EVENT_CANCEL`, and it is
+  in the first column of LVGL's own layers, where a thumb lands. It closed the password step
+  and wiped what was typed (D96). All three layers are spelled in `widget_input.c` now.
+  `test/sim/sim_keyboard.c` presses every key on every layer.
 - **The three layer keys are a contract with LVGL, spelled by hand.**
   `lv_keyboard_def_event_cb()` decides whether a key switches layer by comparing its CAP
   TEXT against `LV_KEYBOARD_CTRL_BUTTON_MODE_TEXT_LOWER` / `_UPPER` / `_SPECIAL` — macros

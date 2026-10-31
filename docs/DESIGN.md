@@ -382,10 +382,9 @@ diesem Namen" is his typo to fix; "Die Suche hat nicht geantwortet" is the devic
 and nothing he types will help; and they are amber and grey respectively, because only one
 of them is a caution.
 
-**The keyboard keeps a Montserrat face** while every word around it is Plex. Its backspace,
-shift, enter and close keys are `LV_SYMBOL_*` codepoints in the private use area and §3's
-Plex subset has no entry for any of them — a Plex keyboard renders four blank keys and logs
-nothing. It is built at 24 px rather than LVGL's 14, because §3's near floor applies to
+**The keyboard keeps a Montserrat face** while every word around it is Plex. Its backspace
+and tick keys are `LV_SYMBOL_*` codepoints in the private use area and §3's Plex subset has
+no entry for either — a Plex keyboard renders them blank and logs nothing. It is built at 24 px rather than LVGL's 14, because §3's near floor applies to
 something he has to hit with a fingertip.
 
 ### §5.1's supporting lines: two fit, and they close up

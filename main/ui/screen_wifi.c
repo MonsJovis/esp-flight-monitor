@@ -630,13 +630,12 @@ static void pw_cancel_clicked_cb(lv_event_t *e)  { (void)e; do_cancel(); }
 
 /* lv_keyboard's own "OK"/checkmark key sends LV_EVENT_READY to its assigned
  * text area, and — because s_pw_ta is one_line — so does its "Enter"/return
- * key (lv_keyboard.c). Wiring both of those to do_connect(), and the
- * keyboard's "close" glyph (LV_EVENT_CANCEL) to do_cancel(), means the
+ * key (lv_keyboard.c). Wiring both of those to do_connect() means the
  * on-screen keyboard behaves the way every other on-screen keyboard he has
  * ever used behaves, on top of the explicit Verbinden/Abbrechen buttons the
- * task brief asks for. */
-static void pw_ta_ready_cb(lv_event_t *e)  { (void)e; do_connect(); }
-static void pw_ta_cancel_cb(lv_event_t *e) { (void)e; do_cancel(); }
+ * task brief asks for. Leaving the step is Abbrechen's job alone: no key on
+ * the keyboard does it (D96). */
+static void pw_ta_ready_cb(lv_event_t *e) { (void)e; do_connect(); }
 
 /* ============================================================================
  * Suchen / exit
@@ -841,7 +840,6 @@ void screen_wifi_create(lv_obj_t *parent)
     lv_obj_set_style_text_font(s_pw_ta, &plex_sans_cond_25, 0);
     widget_style_field(s_pw_ta);
     lv_obj_add_event_cb(s_pw_ta, pw_ta_ready_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(s_pw_ta, pw_ta_cancel_cb, LV_EVENT_CANCEL, NULL);
 
     lv_obj_t *toggle_btn = make_button(s_pw, toggle_w, BTN_H, STR_WIFI_PW_SHOW,
                                        THEME_SURFACE_SEL, THEME_BORDER_IDLE, THEME_TEXT_PRIMARY);

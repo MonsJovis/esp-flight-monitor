@@ -3697,3 +3697,27 @@ all of them. What holds is looser: the digits appear in the number in order, sta
 its first digit, true for 106 of 108 Austrian pairs. The two that fail (AUA2R = OS 46 from
 Chicago, AUA8KS = OS 428 from Palma) keep their callsigns. `test_timetable.c` carries
 those real cases.
+
+## D96 — No key on the keyboard leaves the screen
+
+**What happened, 2026-10-31:** typing a hotspot password on the panel, Markus touched the
+keyboard icon at the bottom left of the 1# layer. The step closed and the password was gone.
+
+**Why:** `widget_input.h` said the German layout "drops" the close-keyboard glyph. It did, on
+the two letter layers. The 1# layer stayed LVGL's own, glyph included, and `screen_wifi.c`
+wired that key's `LV_EVENT_CANCEL` to `do_cancel()`, which clears the field. `screen_geo.c`
+wired it to leave the screen. The console key `a` only walks the layers, so no check ever
+pressed that key.
+
+**Now:** the 1# layer is ours too. The glyph and the two cursor keys are gone, and both
+screens no longer listen for `LV_EVENT_CANCEL`. Abbrechen and Zurück are the only ways out,
+in words, 64 px tall. The cursor moves by tapping into the text, as on the letter layers.
+
+**The same row fixes a second bug.** The header promised that a passphrase "is arbitrary
+ASCII and has to stay typeable". It was not: `, . : ^ _ ` | ~` lived on LVGL's letter layers,
+which the German layout replaced. They fill the freed row, so every printable ASCII
+character is now on a layer.
+
+**How it is held:** `test/sim/sim_keyboard.c`, real LVGL and the real `screen_wifi.c`.
+It presses every key on every layer, checks the step stays open and the field keeps its
+text, and counts the alphabet. Run against the old map it failed 17 of 424 checks.
